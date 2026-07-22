@@ -21,6 +21,37 @@ def test_ingest_cli_requires_exactly_one_input_mode() -> None:
                 "contract.yml",
             ]
         )
+
+
+def test_ingest_cli_accepts_environment_or_explicit_storage_backend() -> None:
+    parser = build_parser({"STORAGE_BACKEND": "minio"})
+    environment_default = parser.parse_args(
+        [
+            "ingest-settlements",
+            "--file",
+            "file.csv",
+            "--partner-id",
+            "VCB",
+            "--contract",
+            "contract.yml",
+        ]
+    )
+    explicit_local = parser.parse_args(
+        [
+            "ingest-settlements",
+            "--file",
+            "file.csv",
+            "--partner-id",
+            "VCB",
+            "--contract",
+            "contract.yml",
+            "--storage-backend",
+            "local",
+        ]
+    )
+
+    assert environment_default.storage_backend == "minio"
+    assert explicit_local.storage_backend == "local"
     with pytest.raises(SystemExit):
         parser.parse_args(
             [

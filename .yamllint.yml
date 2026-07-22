@@ -3,6 +3,9 @@ extends: default
 ignore: |
   .git/
   .venv/
+  .pytest_cache/
+  data/
+  tmp/
 
 rules:
   document-start: disable

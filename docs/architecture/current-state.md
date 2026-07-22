@@ -1,33 +1,45 @@
 # Current State
 
-## Status
+## Status through Phase 3
 
-The repository contains the **Phase 2 - Banking Partner Settlement Batch Ingestion Foundation**
-implementation. Phase 1 remains locally verified against PostgreSQL 16.4; Phase 2 is verified with
-Docker-independent filesystem and SQLite integration tests.
+The repository implements a local production-like source and ingestion foundation:
 
-Implemented in source control:
+```text
+Payment generator -> PostgreSQL 16 payments OLTP
 
-- A single PostgreSQL 16 Docker Compose service with a health check, named volume, and read-only
-  ordered initialization scripts.
-- The `payments` OLTP schema, reference data, constraints, indexes, timestamp triggers, and immutable
-  transaction-event enforcement.
-- A deterministic Python generator with environment/CLI configuration, Decimal money, UTC
-  timestamps, transactional persistence, and controlled invalid/duplicate probes.
-- Docker-independent unit tests and explicitly marked PostgreSQL integration tests.
-- Phase 1 schema and local-operation documentation.
-- A versioned settlement CSV contract and deterministic partner scenario fixtures.
-- Filename/checksum discovery, file/record validation, SQLite manifest lifecycle, immutable local
-  Bronze copy, metadata sidecars, rejected-record evidence, file quarantine, and replay protection.
-- A settlement CLI with single-file/directory, dry-run, and strict-rejection modes.
+Partner settlement CSV -> contract validation -> SQLite manifest
+                              |
+                              v
+                      SettlementStorage
+                         |         |
+                         v         v
+                  local files   private MinIO
+                  Bronze/QA     Bronze/QA buckets
+```
 
-Not implemented:
+Implemented:
 
-- Kafka, Debezium, Schema Registry, MinIO, Airflow, or distributed processing.
-- Executable CDC, domain-event, Silver, or reconciliation pipelines.
-- MinIO-backed Bronze; Phase 2 Bronze is a local storage adapter only.
-- Snowflake objects, executable dbt models, dashboards, alerts, lineage, or platform observability.
-- Production deployment, high availability, backup/restore, TLS, or secret-manager integration.
+- Phase 0 repository standards, safe configuration, documentation, CI, and quality gates.
+- Phase 1 PostgreSQL OLTP objects and deterministic Decimal/UTC payment generator.
+- Phase 2 versioned settlement contract, deterministic fixtures, discovery/checksum, file/record
+  validation, SQLite manifest lifecycle, partial rejection, local immutable Bronze/quarantine, and
+  batch CLI.
+- Phase 3 typed storage configuration, shared immutable interface, local and MinIO adapters,
+  deterministic object layout, allowlisted metadata, conditional collision-safe writes, bounded
+  retry/timeouts, private bucket bootstrap, CLI backend selection, and real MinIO integration tests.
 
-The target architecture describes future boundaries only. It is not evidence that those components
-are deployed.
+Compose contains exactly three services: `postgres`, `minio`, and one-shot `minio-init`. Local files
+remain the default backend so unit tests and lightweight ingestion do not require Docker. SQLite
+continues to own mutable manifest state; MinIO owns immutable data artifacts only.
+
+## Not implemented
+
+- Kafka, Debezium, Schema Registry, CDC consumers, or payment-event streaming.
+- Silver processing, reconciliation classification, cross-file business deduplication, or Parquet.
+- Airflow, Snowflake, executable dbt models, dashboards, catalog, lineage, metrics, or alerting.
+- Partner SFTP/API/PGP transport, malware scanning, or source-file deletion.
+- Distributed locking, MinIO object lock/versioning, TLS, external secrets, scoped service accounts,
+  replication, backup/restore, retention automation, or high availability.
+
+The target architecture and roadmap describe planned boundaries only; they are not evidence that
+later technologies are deployed.

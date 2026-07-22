@@ -8,8 +8,9 @@ Payment Operations, Finance, Risk, Product, Customer Support, Compliance, Analyt
 Engineering.
 
 Phase 1 supplies a constrained OLTP source and repeatable synthetic payment data. Phase 2 adds a
-versioned, replay-safe local ingestion boundary for banking-partner settlement files. Neither phase
-delivers reconciliation or business dashboards yet.
+versioned, replay-safe ingestion boundary for banking-partner settlement files. Phase 3 makes raw
+and quarantine persistence selectable between local files and private MinIO without changing the
+business rules. Reconciliation and business dashboards remain unimplemented.
 
 ## Implemented source coverage
 
@@ -42,8 +43,8 @@ event pipeline; it does not provide a near-real-time dashboard.
 
 Finance will compare completed internal transactions with partner settlement lines and classify
 matches, missing items, duplicates, amount/currency mismatches, and status mismatches. Phase 2 now
-validates and preserves the partner evidence with checksum/manifest lineage, but matching logic is
-still deliberately unimplemented.
+validates the evidence; Phase 3 preserves it in immutable object storage with checksum/manifest
+lineage. Matching logic is still deliberately unimplemented.
 
 ## Stakeholders
 
@@ -58,9 +59,9 @@ still deliberately unimplemented.
 
 ## Expected value
 
-Phases 1-2 reduce downstream ambiguity by establishing source grain, lifecycle rules, precision,
-content identity, quarantine evidence, and deterministic fixtures. Business outcomes such as shorter
-incident detection or on-time reconciliation remain targets until later data products are measured.
+Phases 1-3 reduce downstream ambiguity by establishing source grain, lifecycle rules, precision,
+content identity, quarantine evidence, deterministic fixtures, and backend-neutral raw storage.
+Business outcomes remain targets until later data products are measured.
 
 ## Assumptions and validation
 
@@ -71,6 +72,6 @@ incident detection or on-time reconciliation remain targets until later data pro
 | Merchant payments and account transfers cover the first source slice. | Implemented generator scope | Contract review before CDC |
 | Partner references are unique when present. | Database constraint | Settlement partner contract review |
 | Partners can provide UTF-8 CSV with stable references and timezone-aware timestamps. | Contract and fixtures implemented | Real partner onboarding |
-| Local filesystem semantics adequately prove batch invariants. | Implemented and tested locally | MinIO adapter integration |
+| Shared immutable object semantics can preserve partner evidence. | Local and MinIO adapters tested | Production retention/security review |
 | Operations needs minute-level data and Finance a daily cycle. | Design assumption | SLA benchmark and stakeholder approval |
 | Generated volumes represent production scale. | Not claimed | Workload benchmark in a later phase |

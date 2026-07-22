@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Phase 2 quality gates
+    name: Phase 3 quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -51,3 +51,39 @@ jobs:
 
       - name: Validate Docker Compose configuration
         run: docker compose --env-file .env.example config --quiet
+
+  minio-integration:
+    name: MinIO integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Start MinIO and bootstrap private buckets
+        run: |
+          docker compose --env-file .env.example up -d --wait minio
+          docker compose --env-file .env.example up minio-init
+
+      - name: Run MinIO integration tests
+        run: |
+          set -a
+          source .env.example
+          set +a
+          RUN_MINIO_INTEGRATION=1 python -m pytest -m minio_integration
+
+      - name: Stop MinIO
+        if: always()
+        run: docker compose --env-file .env.example down --volumes --remove-orphans

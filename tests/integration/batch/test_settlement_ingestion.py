@@ -50,8 +50,9 @@ def test_ingest_valid_csv_preserves_immutable_raw_and_manifest(tmp_path: Path) -
     assert result.accepted_count == 5
     assert result.rejected_count == 0
     assert result.bronze_path is not None
-    assert result.bronze_path.read_bytes() == source_bytes
-    assert result.bronze_path.with_name(f"{result.bronze_path.name}.metadata.json").is_file()
+    bronze_path = Path(result.bronze_path)
+    assert bronze_path.read_bytes() == source_bytes
+    assert bronze_path.with_name(f"{bronze_path.name}.metadata.json").is_file()
 
     persisted = ManifestStore(manifest.database_path).get(result.file_id or "")
     assert persisted is not None
@@ -67,9 +68,9 @@ def test_partially_invalid_csv_writes_rejections_and_still_processes(tmp_path: P
     assert result.status is ManifestStatus.PROCESSED
     assert result.accepted_count == 1
     assert result.rejected_count == 1
-    assert result.bronze_path is not None and result.bronze_path.is_file()
-    assert result.quarantine_path is not None and result.quarantine_path.is_file()
-    rejected_payload = result.quarantine_path.read_text(encoding="utf-8")
+    assert result.bronze_path is not None and Path(result.bronze_path).is_file()
+    assert result.quarantine_path is not None and Path(result.quarantine_path).is_file()
+    rejected_payload = Path(result.quarantine_path).read_text(encoding="utf-8")
     assert "DUPLICATE_ROW" in rejected_payload
     persisted = manifest.get(result.file_id or "")
     assert persisted is not None
@@ -86,7 +87,7 @@ def test_invalid_file_schema_is_quarantined_without_bronze(tmp_path: Path) -> No
     assert result.error_code == "INVALID_FILE_SCHEMA"
     assert result.bronze_path is None
     assert result.quarantine_path is not None
-    assert result.quarantine_path.read_bytes() == source_bytes
+    assert Path(result.quarantine_path).read_bytes() == source_bytes
 
 
 def test_rerun_same_name_and_checksum_is_skipped(tmp_path: Path) -> None:
@@ -135,11 +136,12 @@ def test_bronze_copy_does_not_change_when_inbound_changes_after_processing(
     fixtures, _manifest, _storage, ingestor = _environment(tmp_path)
     result = ingestor.ingest_file(fixtures["valid"], expected_partner_id="VCB")
     assert result.bronze_path is not None
-    bronze_bytes = result.bronze_path.read_bytes()
+    bronze_path = Path(result.bronze_path)
+    bronze_bytes = bronze_path.read_bytes()
 
     fixtures["valid"].write_bytes(b"changed after ingestion")
 
-    assert result.bronze_path.read_bytes() == bronze_bytes
+    assert bronze_path.read_bytes() == bronze_bytes
 
 
 def test_failed_bronze_write_never_marks_manifest_processed(tmp_path: Path) -> None:

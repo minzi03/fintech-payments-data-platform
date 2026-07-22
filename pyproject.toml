@@ -9,8 +9,10 @@ description = "Production-like batch and streaming data platform for fintech pay
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "minio==7.2.20",
   "psycopg[binary]>=3.2,<4.0",
   "PyYAML>=6.0,<7.0",
+  "urllib3>=2.2,<3.0",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +49,7 @@ pythonpath = ["src"]
 markers = [
   "batch_integration: local filesystem and SQLite settlement ingestion integration tests",
   "integration: tests that require one or more infrastructure dependencies",
+  "minio_integration: tests that require the local MinIO service",
   "end_to_end: tests that exercise a complete business data flow",
 ]
 

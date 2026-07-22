@@ -2,9 +2,9 @@
 
 ## Implementation status
 
-`contracts/batch/settlement_v1.yml` is implemented and executable in Phase 2. It governs partner CSV
-validation before immutable local Bronze storage. Reconciliation with internal transactions is
-planned for a later phase and is not performed by this contract.
+`contracts/batch/settlement_v1.yml` is implemented and unchanged in Phase 3. It governs partner CSV
+validation before immutable local or MinIO Bronze storage. Reconciliation with internal
+transactions is planned and is not performed by this contract.
 
 ## Ownership and classification
 
@@ -86,7 +86,9 @@ These labels only make later reconciliation cases reproducible. Phase 2 does not
 - File-level failures include invalid naming, encoding, CSV header/schema, or empty files. The raw
   file is copied to quarantine and is not written to Bronze.
 - Row-level failures allow partial acceptance by default. The source file is copied byte-for-byte to
-  Bronze and rejected rows are written as JSON Lines to quarantine.
+  selected Bronze storage and rejected rows are written as JSON Lines to selected quarantine.
 - `--fail-on-rejected-records` changes row failures to strict file quarantine.
 - Inbound files are never deleted automatically.
 - SHA-256 identifies content; successfully processed content is not processed again.
+- Local artifacts use paths; MinIO artifacts use private `s3://bucket/key` URIs. The contract and
+  record rules are independent of that infrastructure choice.

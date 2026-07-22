@@ -2,9 +2,9 @@
 
 ## Scope
 
-This runbook operates the Phase 2 local Python service for banking-partner settlement CSV files. It
-uses SQLite control state and local filesystem Bronze/quarantine storage. It does not perform
-reconciliation, upload to MinIO, or orchestrate a schedule.
+This runbook operates the settlement Python service through Phase 3. SQLite remains the control
+store while immutable Bronze/quarantine artifacts use either the default local filesystem or private
+MinIO buckets. It does not perform reconciliation or orchestrate a schedule.
 
 ## Prerequisites
 
@@ -65,6 +65,25 @@ python -m src.ingestion.batch.cli ingest-settlements \
 
 `--file` and `--input-dir` are mutually exclusive. Inbound files are retained.
 
+## Select storage backend
+
+Local storage is the default and needs no Docker:
+
+```bash
+python -m src.ingestion.batch.cli ingest-settlements ... --storage-backend local
+```
+
+For MinIO, start/bootstrap the service, configure untracked `.env`, and select the adapter:
+
+```bash
+make minio-up
+python -m src.ingestion.batch.cli ingest-settlements ... --storage-backend minio
+```
+
+`STORAGE_BACKEND` provides the CLI default. The explicit flag wins. Contract loading, validation,
+manifest identity, and status ordering are identical for both backends. See
+[Local MinIO](local-minio.md) for configuration, bucket verification, reset, and integration tests.
+
 ## Validation modes
 
 Dry-run performs filename, checksum, file-level, and row-level validation without creating manifest,
@@ -93,6 +112,7 @@ DISCOVERED -> VALIDATING -> VALIDATED -> PROCESSING -> PROCESSED
 The SQLite manifest records deterministic `file_id`, source/name/path, partner/date, byte size,
 SHA-256, schema version, timestamps, counts, errors, Bronze/quarantine paths, and ingestion run ID.
 `PROCESSED` is written only after the raw Bronze copy and any rejected-record artifact succeed.
+Local artifacts use filesystem paths; MinIO artifacts use credential-free `s3://bucket/key` URIs.
 
 ## Idempotency behavior
 
@@ -104,10 +124,10 @@ SHA-256, schema version, timestamps, counts, errors, Bronze/quarantine paths, an
 | Prior `FAILED` content | Retry validation and immutable writes using the same file ID |
 | Prior `QUARANTINED` content | Return existing quarantine result as skipped |
 
-Bronze path:
+Bronze object key (under `data/bronze` locally or `fintech-bronze` in MinIO):
 
 ```text
-data/bronze/settlements/
+settlements/
   partner_id=<partner>/
   settlement_date=YYYY-MM-DD/
   ingestion_date=YYYY-MM-DD/
@@ -115,8 +135,13 @@ data/bronze/settlements/
   <original_file_name>
 ```
 
-The adjacent `.metadata.json` sidecar records checksum, original path, ingestion time, schema version,
-row counts, and run ID. Raw CSV bytes are never normalized before storage.
+The local adjacent `.metadata.json` sidecar and MinIO user metadata record an allowlisted checksum,
+source name/file name and size, ingestion time, schema version, row counts, partner, artifact type,
+and run ID. Absolute paths and credentials are excluded. Raw CSV bytes are never normalized.
+
+Quarantine is keyed by partner, settlement date (or `unknown`), and `ingestion_run_id`. Invalid file
+schema/naming writes only the raw quarantine object. Partial record rejection writes unchanged raw
+Bronze plus `.rejected.jsonl` in quarantine.
 
 ## Replay procedure
 
@@ -131,13 +156,16 @@ row counts, and run ID. Raw CSV bytes are never normalized before storage.
 ```bash
 make test-batch-unit
 make test-batch-integration
+make test-minio-integration
 
 # Direct commands
 pytest tests/unit/ingestion/batch
 pytest -m batch_integration
+RUN_MINIO_INTEGRATION=1 pytest -m minio_integration
 ```
 
-These tests require no Docker or PostgreSQL.
+Batch unit/local integration tests require no Docker. MinIO integration tests are opt-in and require
+healthy bootstrapped MinIO; no PostgreSQL is involved.
 
 ## Destructive runtime cleanup
 
@@ -151,7 +179,8 @@ make clean-runtime-data CONFIRM=1
 ## Known limitations
 
 - Single-process local SQLite control store; no distributed lease or multi-worker claim.
-- Local filesystem only; MinIO server/client integration is planned later.
+- Single-node MinIO only; no distributed locking, object lock/versioning, replication, lifecycle,
+  scoped service identities, TLS, or external secret manager.
 - No partner transport/SFTP polling, encryption-at-rest integration, malware scanning, PGP, or
   retention automation.
 - No cross-file business-key deduplication beyond checksum and name/content history.

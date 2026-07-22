@@ -1,129 +1,89 @@
 # Implementation Roadmap
 
-Phases are dependency-ordered and independently testable. Planned technology names are boundaries,
-not claims of implementation.
-
-## Status and dependency flow
+Phases are dependency-ordered and independently testable. A technology named in a future phase is a
+plan, not an implementation claim.
 
 ```text
-Phase 0 Foundation                         [implemented]
-        |
-        v
-Phase 1 PostgreSQL OLTP + generator        [implemented and locally verified]
-        |
-        +----------------------+----------------------+
-        |                      |                      |
-        v                      v                      v
-Phase 2 Batch ingestion   Phase 3 CDC to Bronze   Phase 4 Event streaming
-      [implemented]             [planned]                [planned]
-        |                      |                      |
-        +----------------------+----------------------+
-                               |
-                               v
-                   Phase 5 Silver + data quality
-                               |
-                               v
-                   Phase 6 Snowflake + dbt
-                               |
-                               v
-                   Phase 7 Reconciliation product
-                               |
-                               v
-                Phase 8 Orchestration + observability
-                               |
-                               v
-                  Phase 9 Dashboards + hardening
+Phase 0 Foundation                                      [implemented]
+  -> Phase 1 PostgreSQL OLTP + generator                [implemented]
+      -> Phase 2 Settlement batch ingestion             [implemented]
+          -> Phase 3 Shared local/MinIO Bronze storage  [implemented]
+              -> Phase 4 PostgreSQL CDC + Kafka         [planned]
+                  -> Phase 5 CDC consumer to Bronze     [planned]
+                      -> Phase 6 Silver + data quality  [planned]
+                          -> Phase 7 Airflow             [planned]
+                              -> Phase 8 Snowflake/dbt  [planned]
+                                  -> Phase 9 Reconciliation product
+                                      -> Phase 10 Operations analytics/hardening
 ```
 
-## Phase 0 - Project Foundation
+## Completed phases
 
-**Status:** Implemented.
+### Phase 0 - Project Foundation
 
-Repository boundaries, safe configuration patterns, Python quality tooling, CI, and initial business
-and architecture documentation were established without runtime services.
+Repository boundaries, Python 3.11 tooling, safe environment patterns, CI, documentation skeletons,
+and placeholders were established without runtime pipeline implementations.
 
-## Phase 1 - PostgreSQL OLTP Source and Realistic Generator
+### Phase 1 - PostgreSQL OLTP Source and Generator
 
-**Status:** Implemented and locally verified against a clean PostgreSQL 16.4 volume.
+The constrained payments schema, reference data, indexes, lifecycle enforcement, deterministic
+synthetic generator, tests, and local PostgreSQL runbook were implemented and verified.
 
-**Depends on:** Phase 0.
+### Phase 2 - Banking Partner Settlement Batch Ingestion
 
-**Deliverables:** PostgreSQL payment schema/reference data/indexes, local Compose service,
-deterministic Decimal/UTC generator, valid lifecycle scenarios, controlled invalid/duplicate probes,
-unit tests, optional PostgreSQL integration tests, and a local runbook.
+The `settlement-v1` contract, scenario fixtures, filename/checksum discovery, file/record quality,
+SQLite manifest, local immutable Bronze/quarantine, structured CLI results, and replay rules were
+implemented. Reconciliation was deliberately deferred.
 
-**Independent acceptance:** clean-volume initialization and health succeed; the CLI persists related
-valid data; constraints reject invalid data; deterministic/precision/lifecycle unit tests pass; lint,
-format, default tests, Compose validation, and PostgreSQL integration tests pass.
+### Phase 3 - MinIO-backed Shared Bronze Storage
 
-**Deliberately deferred at Phase 1 completion:** partner settlement ingestion, CDC, Kafka,
-storage/processing, orchestration, warehouse, dashboards, and observability.
+**Depends on:** Phase 2's stable storage boundary and manifest ordering.
 
-## Phase 2 - Batch Settlement Ingestion
+**Implemented:** a small storage interface, local and MinIO adapters, content-addressed Bronze and
+run-addressed quarantine keys, SHA-256 metadata, collision protection, bounded client failures,
+private idempotent bucket bootstrap, backend selection, local/real-service tests, CI job, and
+operations documentation.
 
-**Status:** Implemented and locally verified with filesystem and SQLite integration tests.
+**Independent acceptance:** local behavior remains valid; MinIO raw bytes/checksum agree; identical
+content is idempotent; conflicting content cannot overwrite; invalid schemas are quarantine-only;
+partial row failures write Bronze and rejection evidence; failed upload cannot become `PROCESSED`.
 
-**Depends on:** stable Phase 1 internal transaction keys plus an approved partner-file contract.
+**Deliberately deferred:** distributed locking, production identity/TLS/retention, CDC, downstream
+format conversion, reconciliation, orchestration, warehouse, BI, and observability.
 
-**Deliverables:** versioned settlement contract, deterministic fixtures, file discovery,
-checksum/schema/record validation, SQLite manifests, local immutable Bronze, quarantine, structured
-results, and replay by deterministic content ID.
+## Planned phases
 
-**Independent acceptance:** replay is idempotent; changed content under a reused name is detected;
-file-level failures are quarantined; partial row errors retain evidence; failed Bronze writes never
-produce `PROCESSED`.
+### Phase 4 - PostgreSQL CDC and Kafka
 
-**Deliberately deferred:** partner transport, MinIO, reconciliation, Silver models, orchestration,
-observability, and production concurrency controls.
+Publication settings, pinned Kafka/Debezium topology, versioned CDC envelope, schema evolution,
+restart/rebalance tests, and durable source offsets. It must not change Phase 1 business semantics.
 
-## Phase 3 - PostgreSQL CDC to Bronze
+### Phase 5 - CDC Consumer to Shared Bronze
 
-**Depends on:** stable Phase 1 schema and an approved CDC contract.
+Validated CDC records, deterministic raw object keys, offset-safe publication, poison-message
+handling, and replay tests using the established storage abstraction.
 
-**Planned deliverables:** PostgreSQL publication settings, Debezium, Kafka, schema handling, durable
-consumer, deterministic Bronze keys, offset-safe commits, DLQ, and metrics.
+### Phase 6 - Silver Processing and Data Quality
 
-**Independent acceptance:** restart/rebalance/failure scenarios lose no accepted source changes and
-produce replay-safe output.
+Typed settlement/payment records, deduplication, CDC application, referential rules, quality gates,
+and publishable conformed schemas. A distributed engine is optional only if measured need warrants it.
 
-## Phase 4 - Payment Event Streaming
+### Phase 7 - Airflow Orchestration
 
-**Depends on:** stable Phase 1 event semantics; can progress independently of Phase 2.
+Schedules, dependencies, PostgreSQL control state, retries/backfills, runbooks, and failure signals
+around already executable pipelines.
 
-**Planned deliverables:** versioned event contracts, partitioning/ordering rules, validation,
-retry/DLQ, late-event policy, operational aggregates, and latency measurements.
+### Phase 8 - Snowflake and dbt
 
-## Phase 5 - Silver Processing and Data Quality
+Least-privilege warehouse objects, staging/intermediate/marts, SCD Type 2 dimensions, incremental
+facts, tests, documentation, and exposures after Silver contracts stabilize.
 
-**Depends on:** at least one stable Bronze source from Phases 2-4.
+### Phase 9 - Settlement Reconciliation Product
 
-**Planned deliverables:** typed conformed records, CDC application, deduplication, quarantine,
-referential checks, reconciliation counts, and publish gates.
+Versioned match rules, classified reconciliation facts, unmatched workflows, Finance marts, and
+daily evidence. This is the first phase that labels mismatch candidates.
 
-## Phase 6 - Snowflake and dbt Analytics
+### Phase 10 - Near-real-time Analytics and Hardening
 
-**Depends on:** stable Phase 5 schemas.
-
-**Planned deliverables:** least-privilege Snowflake objects, dbt staging/intermediate/marts, SCD2
-dimensions, late-arriving-safe facts, contracts, tests, docs, and exposures.
-
-## Phase 7 - Reconciliation Data Product
-
-**Depends on:** partner settlement Silver data and internal payment facts.
-
-**Planned deliverables:** versioned matching rules, classified result fact, unmatched workflow fields,
-Finance mart, and daily report.
-
-## Phase 8 - Orchestration and Observability
-
-**Depends on:** executable pipelines from Phases 2-7.
-
-**Planned deliverables:** Airflow DAGs, control state, lineage, freshness/volume/quality metrics,
-alerts, recovery runbooks, and backfill commands.
-
-## Phase 9 - Dashboards and Release Hardening
-
-**Depends on:** governed operations and reconciliation marts.
-
-**Planned deliverables:** Operations/Finance/Executive dashboards, semantic definitions, end-to-end
-tests, deployment environments, promotion controls, and measured SLA evidence.
+Operations marts/dashboard, SLAs, metrics/alerts, lineage/catalog choices, security hardening,
+performance evidence, deployment/promotion controls, and end-to-end recovery tests.

@@ -3,7 +3,7 @@
 ## Conventions
 
 - `Must` is required for the target platform; `Should` needs an ADR if omitted.
-- `Implemented` means code exists through Phase 2; acceptance still depends on recorded test evidence.
+- `Implemented` means code exists through Phase 3; acceptance still depends on recorded test evidence.
 - Target SLAs are design goals, not measured performance.
 
 ## Business requirements
@@ -32,14 +32,14 @@
 
 | ID | Requirement | Planned phase |
 | --- | --- | --- |
-| FR-001 | Capture PostgreSQL changes with delete and source-offset semantics. | Phase 3 |
-| FR-002 | Publish/ingest versioned payment events independently of CDC. | Phase 4 |
-| FR-003 | Move partner transport and Bronze persistence from local filesystem to production storage. | Future hardening |
-| FR-004 | Store immutable CDC/event raw payloads and metadata in Bronze. | Phases 3-4 |
-| FR-005 | Normalize, deduplicate, validate, and quarantine in Silver. | Phase 5 |
-| FR-006 | Build SCD Type 2 dimensions and incremental facts. | Phase 6 |
-| FR-007 | Produce operations and reconciliation data products. | Phases 6-7 |
-| FR-008 | Orchestrate dependencies and expose operational signals. | Phase 8 |
+| FR-001 | Capture PostgreSQL changes with delete and source-offset semantics. | Phase 4 |
+| FR-002 | Publish/ingest versioned payment events independently of CDC. | Phase 4+ |
+| FR-003 | Add partner SFTP/API transport and secure file onboarding. | Future hardening |
+| FR-004 | Store immutable CDC/event raw payloads and metadata in shared Bronze. | Phase 5 |
+| FR-005 | Normalize, deduplicate, validate, and quarantine in Silver. | Phase 6 |
+| FR-006 | Build SCD Type 2 dimensions and incremental facts. | Phase 8 |
+| FR-007 | Produce operations and reconciliation data products. | Phases 9-10 |
+| FR-008 | Orchestrate dependencies and expose operational signals. | Phases 7 and 10 |
 
 ## Non-functional requirements
 
@@ -51,10 +51,13 @@
 | NFR-004 | A failed generation iteration rolls back atomically. | Implemented with a database transaction |
 | NFR-005 | Runtime code uses typed interfaces and actionable logs without secrets. | Implemented baseline |
 | NFR-006 | Unit tests run without Docker; database tests are explicitly marked. | Implemented |
-| NFR-007 | Production services are highly available, backed up, and observable. | Out of scope through Phase 2 |
+| NFR-007 | Production services are highly available, backed up, and observable. | Out of scope through Phase 3 |
 | NFR-008 | A processed settlement checksum is not ingested again. | Implemented with SQLite manifest |
 | NFR-009 | Bronze publication occurs before a manifest becomes `PROCESSED`. | Implemented and integration tested |
 | NFR-010 | One invalid settlement record does not fail a file in partial-acceptance mode. | Implemented |
+| NFR-011 | Raw/quarantine storage can switch between local and MinIO without validation changes. | Implemented and tested |
+| NFR-012 | Same immutable key/checksum is idempotent; differing content cannot overwrite it. | Implemented and tested |
+| NFR-013 | Object metadata excludes secrets and absolute source paths. | Implemented by allowlist |
 
 ## Data SLA targets
 
@@ -97,3 +100,22 @@ The following are future targets and have not been measured in Phase 1:
   benchmarking.
 - Cross-currency payment processing, overdrafts, chargebacks, disputes, and settlement matching.
 - Partner SFTP/API transport, MinIO server integration, PGP, malware scanning, and distributed locks.
+
+## Phase 3 functional requirements
+
+| ID | Requirement | Verification |
+| --- | --- | --- |
+| P3-FR-001 | Select local or MinIO persistence through typed environment/CLI configuration. | Unit and CLI tests |
+| P3-FR-002 | Bootstrap private Bronze/quarantine buckets idempotently after MinIO health. | Compose and integration checks |
+| P3-FR-003 | Store unchanged source bytes with SHA-256 and non-secret metadata. | Byte/checksum/metadata integration tests |
+| P3-FR-004 | Return idempotent success for identical keys and reject immutable collisions. | Backend contract tests |
+| P3-FR-005 | Preserve partial/file-level quarantine and manifest ordering across backends. | Local and MinIO ingestion tests |
+| P3-FR-006 | Bound connection timeouts/retries and map failures without logging credentials. | Configuration/fake-client tests |
+
+## Out of scope for Phase 3
+
+- Kafka, Debezium, Airflow, Spark, Snowflake, dbt execution, dashboards, catalog, and observability.
+- Reconciliation, Silver transformations, cross-file business deduplication, and Parquet conversion.
+- Distributed locking, production TLS/identity, KMS, object lock/versioning, lifecycle/replication,
+  backup/restore, and high availability.
+- SFTP/API/PGP partner transport, malware scanning, and automated inbound deletion.

@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -141,8 +140,8 @@ class ProcessingResult:
     record_count: int = 0
     accepted_count: int = 0
     rejected_count: int = 0
-    bronze_path: Path | None = None
-    quarantine_path: Path | None = None
+    bronze_path: str | None = None
+    quarantine_path: str | None = None
     error_code: str | None = None
     error_message: str | None = None
     skipped: bool = False
@@ -153,6 +152,4 @@ class ProcessingResult:
         result = asdict(self)
         result["status"] = self.status.value
         result["duplicate_kind"] = self.duplicate_kind.value
-        result["bronze_path"] = str(self.bronze_path) if self.bronze_path else None
-        result["quarantine_path"] = str(self.quarantine_path) if self.quarantine_path else None
         return result

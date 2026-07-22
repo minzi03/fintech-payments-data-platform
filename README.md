@@ -10,7 +10,7 @@ Long-term business use cases:
 
 ## Project status
 
-**Current phase: Phase 2 - Banking Partner Settlement Batch Ingestion Foundation**
+**Current phase: Phase 3 - MinIO-backed Shared Bronze Storage**
 
 Implemented:
 
@@ -21,10 +21,12 @@ Implemented:
 - Deterministic settlement scenario fixtures.
 - A Python batch service with SHA-256 identity, SQLite manifest lifecycle, immutable local Bronze,
   file/record validation, partial rejection, quarantine, dry-run, and structured results.
-- Docker-independent batch unit and local filesystem/SQLite integration tests.
+- A storage interface with local filesystem and MinIO adapters, private bucket bootstrap, immutable
+  conditional writes, checksummed metadata, bounded retries, and collision protection.
+- Docker-independent unit/local batch tests and opt-in integration tests against a real MinIO.
 
-Kafka, Debezium, MinIO server, Airflow, Spark, executable dbt models, Snowflake, dashboards, and
-observability are not implemented. Phase 2 performs no reconciliation.
+Kafka, Debezium, Airflow, Spark, executable dbt models, Snowflake, dashboards, and observability are
+not implemented. Phase 3 performs no reconciliation.
 
 ## Implemented data flow
 
@@ -37,8 +39,8 @@ Partner settlement CSV
 filename + SHA-256 + settlement-v1 validation
         |
         +--> SQLite manifest/control state
-        +--> local Bronze (unaltered raw CSV + metadata)
-        `--> local quarantine (invalid file or rejected rows)
+        +--> storage interface --> local or MinIO Bronze (unaltered raw CSV + metadata)
+        `--> storage interface --> local or MinIO quarantine (invalid file or rejected rows)
 ```
 
 ## Repository map
@@ -48,16 +50,17 @@ filename + SHA-256 + settlement-v1 validation
 | `contracts/batch/` | Versioned partner settlement file contracts. |
 | `src/ingestion/batch/` | Discovery, contract loading, validation, manifest, storage, fixtures, orchestration, and CLI. |
 | `data/` | Ignored local inbound, Bronze, quarantine, and control runtime data. |
-| `src/common/` | Environment configuration, database lifecycle, and logging. |
+| `src/common/` | Typed configuration, database lifecycle, logging, and shared immutable storage backends. |
 | `src/generators/` | Phase 1 deterministic PostgreSQL domain generator. |
 | `infrastructure/postgres/init/` | Phase 1 OLTP schema, reference data, and indexes. |
 | `tests/unit/` | Docker-independent unit tests. |
 | `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
+| `tests/integration/minio/` | Opt-in real MinIO storage and ingestion integration tests. |
 | `docs/` | Business context, contracts, architecture, roadmap, and runbooks. |
 
 ## Setup
 
-Python 3.11 or newer is required. PostgreSQL/Docker is optional for settlement-only work.
+Python 3.11 or newer is required. Docker is optional for the default local storage backend.
 
 ```bash
 python -m venv .venv
@@ -92,15 +95,30 @@ Use `--file` for one file, `--dry-run` for validation without persistent writes,
 `--fail-on-rejected-records` for strict file quarantine. The default permits partial row rejection
 while preserving the complete raw source in Bronze.
 
+To use private MinIO buckets, put non-production local values in untracked `.env`, then run:
+
+```bash
+make minio-up
+python -m src.ingestion.batch.cli ingest-settlements \
+  --storage-backend minio \
+  --input-dir data/inbound/settlements \
+  --partner-id VCB \
+  --contract contracts/batch/settlement_v1.yml
+```
+
+MinIO manifests store `s3://fintech-bronze/...` and `s3://fintech-quarantine/...` URIs. The source
+bytes are unchanged; metadata headers contain only an explicit non-secret allowlist.
+
 GNU Make equivalents:
 
 ```bash
 make generate-settlement-fixtures
 make ingest-settlements
+make ingest-settlements-minio
 ```
 
 See the [settlement ingestion runbook](docs/runbooks/settlement-batch-ingestion.md) for manifest
-states, replay, object layout, and cleanup.
+states and replay, and the [local MinIO runbook](docs/runbooks/local-minio.md) for object storage.
 
 ## PostgreSQL source
 
@@ -120,12 +138,14 @@ ruff check .
 ruff format --check .
 pytest -m "not integration"
 pytest -m batch_integration
+RUN_MINIO_INTEGRATION=1 pytest -m minio_integration
 python -m yamllint .
 docker compose --env-file .env.example config --quiet
 ```
 
-PostgreSQL integration tests remain opt-in through `TEST_DATABASE_URL`. `make validate` keeps the
-fast unit/quality gate; `make test-batch-integration` runs Phase 2 integration tests.
+PostgreSQL integration tests remain opt-in through `TEST_DATABASE_URL`. MinIO tests require the
+healthy service and `RUN_MINIO_INTEGRATION=1`. `make validate` keeps the fast Docker-independent
+gate; the two storage integration suites have dedicated targets.
 
 ## Documentation
 
@@ -135,14 +155,18 @@ fast unit/quality gate; `make test-batch-integration` runs Phase 2 integration t
 - [Settlement contract](docs/data-model/settlement-contract.md)
 - [Source model](docs/data-model/source-model.md)
 - [Settlement batch runbook](docs/runbooks/settlement-batch-ingestion.md)
+- [Storage abstraction](docs/architecture/storage-abstraction.md)
+- [Local MinIO runbook](docs/runbooks/local-minio.md)
 - [Roadmap](docs/roadmap.md)
 
 ## Security baseline
 
-- No credentials are required for local batch ingestion.
+- No credentials are required for local batch ingestion; MinIO values come only from environment
+  variables and secret-bearing configuration fields are excluded from representations.
 - PostgreSQL credentials remain environment variables and are never logged in full.
 - No card data, customer name, national ID, bank credential, or authentication token belongs in the
   settlement contract.
 - Rejected-record evidence contains source financial references and must be treated as confidential.
-- Production encryption, secret management, role separation, transport security, and retention are
-  future hardening work.
+- Buckets are private; anonymous access is explicitly disabled by bootstrap.
+- TLS, external secret management, per-service roles, retention locking, and distributed deployment
+  are future hardening work.

@@ -14,11 +14,14 @@ export GENERATOR_SEED GENERATOR_CUSTOMERS GENERATOR_MERCHANTS GENERATOR_TRANSACT
 export GENERATOR_INVALID_RATE GENERATOR_DUPLICATE_RATE
 export SETTLEMENT_INBOUND_DIR SETTLEMENT_BRONZE_DIR SETTLEMENT_QUARANTINE_DIR
 export SETTLEMENT_MANIFEST_DB SETTLEMENT_FIXTURE_SEED
+export STORAGE_BACKEND MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_SECURE MINIO_REGION
+export MINIO_BRONZE_BUCKET MINIO_QUARANTINE_BUCKET MINIO_API_PORT MINIO_CONSOLE_PORT
+export MINIO_CONNECT_TIMEOUT_SECONDS MINIO_READ_TIMEOUT_SECONDS MINIO_MAX_RETRIES
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset generate-data generate-settlement-fixtures ingest-settlements clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
-	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration validate postgres-up postgres-down postgres-reset generate-data generate-settlement-fixtures ingest-settlements clean-runtime-data clean"
+	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration validate postgres-up postgres-down postgres-reset minio-up minio-down minio-reset generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean"
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -47,6 +50,9 @@ test-batch-unit:
 test-batch-integration:
 	$(PYTHON) -m pytest -m batch_integration
 
+test-minio-integration:
+	RUN_MINIO_INTEGRATION=1 $(PYTHON) -m pytest -m minio_integration
+
 coverage:
 	$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=xml
 
@@ -68,7 +74,7 @@ postgres-up:
 	docker compose --env-file $(COMPOSE_ENV) up -d --wait postgres
 
 postgres-down:
-	docker compose --env-file $(COMPOSE_ENV) down
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force postgres
 
 postgres-logs:
 	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f postgres
@@ -76,8 +82,27 @@ postgres-logs:
 postgres-reset:
 	@echo "WARNING: this permanently deletes the PostgreSQL named volume and all local data."
 	@test "$(CONFIRM)" = "1" || (echo "Re-run with CONFIRM=1 to continue."; exit 1)
-	docker compose --env-file $(COMPOSE_ENV) down --volumes --remove-orphans
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force postgres
+	docker volume rm fintech-payments-postgres-data
 	docker compose --env-file $(COMPOSE_ENV) up -d --wait postgres
+
+minio-up:
+	docker compose --env-file $(COMPOSE_ENV) up -d --wait minio
+	docker compose --env-file $(COMPOSE_ENV) up minio-init
+
+minio-down:
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force minio-init minio
+
+minio-logs:
+	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f minio minio-init
+
+minio-reset:
+	@echo "WARNING: this permanently deletes the MinIO named volume and all local objects."
+	@test "$(CONFIRM)" = "1" || (echo "Re-run with CONFIRM=1 to continue."; exit 1)
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force minio-init minio
+	docker volume rm fintech-payments-minio-data
+	docker compose --env-file $(COMPOSE_ENV) up -d --wait minio
+	docker compose --env-file $(COMPOSE_ENV) up minio-init
 
 generate-data:
 	$(PYTHON) -m generators.cli $(GENERATOR_ARGS)
@@ -87,6 +112,9 @@ generate-settlement-fixtures:
 
 ingest-settlements:
 	$(PYTHON) -m ingestion.batch.cli ingest-settlements $(SETTLEMENT_INGEST_ARGS)
+
+ingest-settlements-minio:
+	$(PYTHON) -m ingestion.batch.cli ingest-settlements --storage-backend minio $(SETTLEMENT_INGEST_ARGS)
 
 clean-runtime-data:
 	@echo "WARNING: this permanently deletes generated settlement inbound, Bronze, quarantine, and control data."

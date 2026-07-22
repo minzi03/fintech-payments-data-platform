@@ -24,7 +24,7 @@ def test_project_metadata() -> None:
     assert PROJECT_NAME == "Fintech Payments Data Platform"
     assert PROJECT_SLUG == "fintech-payments-data-platform"
     assert FOUNDATION_PHASE == 0
-    assert CURRENT_PHASE == 2
+    assert CURRENT_PHASE == 3
     assert MINIMUM_PYTHON >= (3, 11)
 
 
@@ -38,6 +38,7 @@ def test_required_foundation_files_exist() -> None:
         "README.md",
         "docker-compose.yml",
         "docs/architecture/target-architecture.md",
+        "docs/architecture/storage-abstraction.md",
         "docs/business/business-case.md",
         "docs/business/requirements.md",
         "docs/data-model/source-model.md",
@@ -45,6 +46,7 @@ def test_required_foundation_files_exist() -> None:
         "docs/data-model/oltp-schema.md",
         "docs/data-model/settlement-contract.md",
         "docs/runbooks/local-postgres.md",
+        "docs/runbooks/local-minio.md",
         "docs/runbooks/settlement-batch-ingestion.md",
         "contracts/batch/settlement_v1.yml",
         "infrastructure/postgres/init/001_create_database_objects.sql",
@@ -61,8 +63,6 @@ def test_required_foundation_files_exist() -> None:
 def test_sensitive_example_values_are_safe_placeholders() -> None:
     """Keep local credentials explicit, recognizable, and non-production."""
     empty_future_keys = {
-        "MINIO_ACCESS_KEY",
-        "MINIO_SECRET_KEY",
         "SNOWFLAKE_ACCOUNT",
         "SNOWFLAKE_PASSWORD",
         "SNOWFLAKE_USER",
@@ -78,16 +78,20 @@ def test_sensitive_example_values_are_safe_placeholders() -> None:
 
     assert empty_future_keys <= values.keys()
     assert all(values[key] == "" for key in empty_future_keys)
+    assert values["MINIO_ACCESS_KEY"].startswith("change_me")
+    assert values["MINIO_SECRET_KEY"].startswith("change_me")
     assert values["POSTGRES_USER"] == "payments_app"
     assert values["POSTGRES_PASSWORD"] == "change_me"
     assert "change_me" in values["DATABASE_URL"]
 
 
-def test_compose_file_has_only_the_postgres_service_through_phase_two() -> None:
-    """Prevent later-phase infrastructure from entering the Phase 2 Compose file."""
+def test_compose_file_has_only_phase_three_services() -> None:
+    """Allow only PostgreSQL, MinIO, and its private-bucket bootstrap."""
     compose_text = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "  postgres:" in compose_text
-    for forbidden_service in ("kafka:", "minio:", "airflow:", "spark:", "debezium:"):
+    assert "  minio:" in compose_text
+    assert "  minio-init:" in compose_text
+    for forbidden_service in ("kafka:", "airflow:", "spark:", "debezium:"):
         assert forbidden_service not in compose_text.lower()
 
 
@@ -113,5 +117,11 @@ def test_makefile_exposes_phase_zero_validation_targets() -> None:
         "test-batch-unit:",
         "test-batch-integration:",
         "clean-runtime-data:",
+        "minio-up:",
+        "minio-down:",
+        "minio-logs:",
+        "minio-reset:",
+        "test-minio-integration:",
+        "ingest-settlements-minio:",
     )
     assert all(target in makefile for target in required_targets)

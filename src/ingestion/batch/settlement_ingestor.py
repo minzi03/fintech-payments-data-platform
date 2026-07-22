@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from .contracts import SettlementContract
 from .discovery import DiscoveryError, calculate_sha256, parse_settlement_filename
-from .manifest import ManifestStore
+from .manifest import SOURCE_NAME, ManifestStore
 from .models import (
     DuplicateKind,
     FilenameMetadata,
@@ -128,9 +128,17 @@ class SettlementIngestor:
             error_message=None,
         )
         validation = self._validate(path, filename, now, ingestion_run_id)
+        metadata = self._storage_metadata(
+            path=path,
+            partner_id=filename.partner_id,
+            checksum=checksum,
+            ingestion_run_id=ingestion_run_id,
+            validation=validation,
+            now=now,
+        )
         if not validation.file_is_valid:
             return self._quarantine_invalid_file(
-                path, filename, checksum, duplicate_kind, record, validation, now
+                path, filename, checksum, duplicate_kind, record, validation, metadata, now
             )
 
         record = self.manifest.transition(
@@ -142,7 +150,7 @@ class SettlementIngestor:
         )
         if validation.rejected_records and fail_on_rejected_records:
             return self._quarantine_strict_file(
-                path, filename, checksum, duplicate_kind, record, validation, now
+                path, filename, checksum, duplicate_kind, record, validation, metadata, now
             )
 
         record = self.manifest.transition(
@@ -151,22 +159,13 @@ class SettlementIngestor:
             processing_started_at=now.isoformat(),
         )
         try:
-            metadata = {
-                "checksum_sha256": checksum,
-                "source_path": str(path),
-                "ingested_at": now.isoformat(),
-                "schema_version": self.contract.schema_version,
-                "record_count": validation.record_count,
-                "accepted_count": len(validation.accepted_records),
-                "rejected_count": len(validation.rejected_records),
-                "ingestion_run_id": ingestion_run_id,
-            }
             bronze_path = self.storage.copy_to_bronze(
                 path,
                 partner_id=filename.partner_id,
                 settlement_date=filename.settlement_date,
                 ingestion_date=now.date(),
                 checksum_sha256=checksum,
+                ingestion_run_id=ingestion_run_id,
                 metadata=metadata,
             )
             quarantine_path = None
@@ -176,8 +175,8 @@ class SettlementIngestor:
                     source_file_name=path.name,
                     partner_id=filename.partner_id,
                     settlement_date=filename.settlement_date,
-                    ingestion_date=now.date(),
-                    checksum_sha256=checksum,
+                    ingestion_run_id=ingestion_run_id,
+                    metadata=metadata,
                 )
             record = self.manifest.transition(
                 record.file_id,
@@ -243,12 +242,21 @@ class SettlementIngestor:
             ingestion_run_id=ingestion_run_id,
         )
         try:
+            metadata = self._storage_metadata(
+                path=path,
+                partner_id=partner_id,
+                checksum=checksum,
+                ingestion_run_id=ingestion_run_id,
+                validation=None,
+                now=now,
+            )
             quarantine_path = self.storage.quarantine_file(
                 path,
                 partner_id=partner_id,
                 settlement_date=None,
-                ingestion_date=now.date(),
+                ingestion_run_id=ingestion_run_id,
                 checksum_sha256=checksum,
+                metadata=metadata,
             )
             record = self.manifest.transition(
                 record.file_id,
@@ -270,6 +278,7 @@ class SettlementIngestor:
         duplicate_kind: DuplicateKind,
         record: ManifestRecord,
         validation: FileValidationResult,
+        metadata: dict[str, object],
         now: datetime,
     ) -> ProcessingResult:
         issue = validation.file_issues[0]
@@ -278,8 +287,9 @@ class SettlementIngestor:
                 path,
                 partner_id=filename.partner_id,
                 settlement_date=filename.settlement_date,
-                ingestion_date=now.date(),
+                ingestion_run_id=record.ingestion_run_id,
                 checksum_sha256=checksum,
+                metadata=metadata,
             )
             record = self.manifest.transition(
                 record.file_id,
@@ -302,6 +312,7 @@ class SettlementIngestor:
         duplicate_kind: DuplicateKind,
         record: ManifestRecord,
         validation: FileValidationResult,
+        metadata: dict[str, object],
         now: datetime,
     ) -> ProcessingResult:
         try:
@@ -309,16 +320,17 @@ class SettlementIngestor:
                 path,
                 partner_id=filename.partner_id,
                 settlement_date=filename.settlement_date,
-                ingestion_date=now.date(),
+                ingestion_run_id=record.ingestion_run_id,
                 checksum_sha256=checksum,
+                metadata=metadata,
             )
             self.storage.write_rejected_records(
                 validation.rejected_records,
                 source_file_name=path.name,
                 partner_id=filename.partner_id,
                 settlement_date=filename.settlement_date,
-                ingestion_date=now.date(),
-                checksum_sha256=checksum,
+                ingestion_run_id=record.ingestion_run_id,
+                metadata=metadata,
             )
             record = self.manifest.transition(
                 record.file_id,
@@ -363,6 +375,31 @@ class SettlementIngestor:
             rejected_at=now,
             ingestion_run_id=ingestion_run_id,
         )
+
+    def _storage_metadata(
+        self,
+        *,
+        path: Path,
+        partner_id: str,
+        checksum: str,
+        ingestion_run_id: str,
+        validation: FileValidationResult | None,
+        now: datetime,
+    ) -> dict[str, object]:
+        """Build the secret-free metadata allowlist shared by both storage backends."""
+        return {
+            "source_name": SOURCE_NAME,
+            "partner_id": partner_id,
+            "schema_version": self.contract.schema_version,
+            "checksum_sha256": checksum,
+            "ingestion_run_id": ingestion_run_id,
+            "source_file_name": path.name,
+            "source_file_size": path.stat().st_size,
+            "record_count": validation.record_count if validation else 0,
+            "accepted_count": len(validation.accepted_records) if validation else 0,
+            "rejected_count": len(validation.rejected_records) if validation else 0,
+            "ingested_at": now.isoformat(),
+        }
 
     @staticmethod
     def _dry_run_result(
@@ -409,8 +446,8 @@ class SettlementIngestor:
             record_count=record.record_count,
             accepted_count=record.accepted_count,
             rejected_count=record.rejected_count,
-            bronze_path=Path(record.bronze_path) if record.bronze_path else None,
-            quarantine_path=(Path(record.quarantine_path) if record.quarantine_path else None),
+            bronze_path=record.bronze_path,
+            quarantine_path=record.quarantine_path,
             error_code=record.error_code,
             error_message=record.error_message,
             skipped=skipped,

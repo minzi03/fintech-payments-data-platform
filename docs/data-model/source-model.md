@@ -1,10 +1,11 @@
 # Source Model
 
-## Implemented source boundary through Phase 2
+## Implemented source boundary through Phase 3
 
 The PostgreSQL `payments` schema contains current OLTP entities and immutable transaction events.
-Phase 2 adds a separate versioned settlement CSV source, SQLite control manifest, and immutable local
-raw storage. No settlement table is added to PostgreSQL.
+Phase 2 adds a versioned settlement CSV source and SQLite control manifest. Phase 3 adds selectable
+local/MinIO immutable raw storage; this is an infrastructure boundary, not a new business entity.
+No settlement table is added to PostgreSQL.
 
 ## Modeling rules
 
@@ -70,9 +71,9 @@ The executable contract and detailed rules are documented in
 
 ## Deferred source entities and metadata
 
-Warehouse/Silver settlement tables and reconciliation results are not created in Phase 2. The raw
-file, rejected-record evidence, and SQLite manifest are local ingestion artifacts rather than
-analytics models.
+Warehouse/Silver settlement tables and reconciliation results are not created in Phase 3. Raw
+files/rejected evidence are local or MinIO ingestion artifacts; the SQLite manifest is transactional
+control state. None is presented as an analytics model.
 
 Future CDC records will add source LSN, source transaction, commit time, topic/partition/offset,
 ingestion time, and processing time outside the OLTP tables. Those metadata fields are not simulated
