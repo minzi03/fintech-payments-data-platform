@@ -7,10 +7,11 @@ payments, account-to-account transfers, refunds, and partner-bank settlement. In
 Payment Operations, Finance, Risk, Product, Customer Support, Compliance, Analytics, and Data
 Engineering.
 
-Phase 1 supplies a constrained OLTP source and repeatable synthetic data for development. It does not
-deliver operational analytics or settlement reconciliation yet.
+Phase 1 supplies a constrained OLTP source and repeatable synthetic payment data. Phase 2 adds a
+versioned, replay-safe local ingestion boundary for banking-partner settlement files. Neither phase
+delivers reconciliation or business dashboards yet.
 
-## Payment products represented in Phase 1
+## Implemented source coverage
 
 - Merchant payments through card, bank transfer, QR, or wallet channels.
 - Account-to-account transfers between customer accounts.
@@ -18,7 +19,8 @@ deliver operational analytics or settlement reconciliation yet.
 - Full and partial refunds linked to completed transactions.
 - External partner references needed by future settlement matching.
 
-Partner settlement files and records are deliberately deferred to the batch-ingestion phase.
+- Daily banking-partner settlement CSV files with valid, mismatch-candidate, duplicate, and invalid
+  scenarios.
 
 ## Current problems addressed
 
@@ -39,26 +41,26 @@ event pipeline; it does not provide a near-real-time dashboard.
 ### Daily settlement reconciliation
 
 Finance will compare completed internal transactions with partner settlement lines and classify
-matches, missing items, duplicates, amount/currency mismatches, and status mismatches. Phase 1 stores
-unique partner references on transactions/refunds, but partner files and matching logic are not yet
-implemented.
+matches, missing items, duplicates, amount/currency mismatches, and status mismatches. Phase 2 now
+validates and preserves the partner evidence with checksum/manifest lineage, but matching logic is
+still deliberately unimplemented.
 
 ## Stakeholders
 
 | Stakeholder | Need | Phase 1 contribution |
 | --- | --- | --- |
 | Payment Operations | Status and failure visibility | Reproducible lifecycle source data |
-| Finance | Auditable settlement matching | Unique partner references and fixed-precision money |
+| Finance | Auditable settlement matching | Fixed-precision partner evidence and replay-safe manifest |
 | Product/Risk | Consistent domain behavior | Validated transaction types, channels, and statuses |
 | Customer Support | Payment/refund lookup | Related current-state records without sensitive identity data |
-| Data Engineering | Stable source contracts | Versioned SQL, generator, tests, and runbook |
+| Data Engineering | Stable source contracts | Versioned SQL/CSV contracts, generators, tests, and runbooks |
 | Compliance | Minimal data exposure | No national ID, card data, or real credentials |
 
 ## Expected value
 
-Phase 1 reduces downstream ambiguity by establishing source grain, relationships, lifecycle rules,
-precision, and deterministic test fixtures. Business outcomes such as shorter incident detection or
-on-time reconciliation remain target outcomes until later data products are implemented and measured.
+Phases 1-2 reduce downstream ambiguity by establishing source grain, lifecycle rules, precision,
+content identity, quarantine evidence, and deterministic fixtures. Business outcomes such as shorter
+incident detection or on-time reconciliation remain targets until later data products are measured.
 
 ## Assumptions and validation
 
@@ -68,5 +70,7 @@ on-time reconciliation remain target outcomes until later data products are impl
 | A customer may own multiple single-currency accounts. | Modeled; overdraft excluded | Product policy review |
 | Merchant payments and account transfers cover the first source slice. | Implemented generator scope | Contract review before CDC |
 | Partner references are unique when present. | Database constraint | Settlement partner contract review |
+| Partners can provide UTF-8 CSV with stable references and timezone-aware timestamps. | Contract and fixtures implemented | Real partner onboarding |
+| Local filesystem semantics adequately prove batch invariants. | Implemented and tested locally | MinIO adapter integration |
 | Operations needs minute-level data and Finance a daily cycle. | Design assumption | SLA benchmark and stakeholder approval |
 | Generated volumes represent production scale. | Not claimed | Workload benchmark in a later phase |

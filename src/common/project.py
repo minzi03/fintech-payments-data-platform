@@ -3,5 +3,5 @@
 PROJECT_NAME = "Fintech Payments Data Platform"
 PROJECT_SLUG = "fintech-payments-data-platform"
 FOUNDATION_PHASE = 0
-CURRENT_PHASE = 1
+CURRENT_PHASE = 2
 MINIMUM_PYTHON = (3, 11)

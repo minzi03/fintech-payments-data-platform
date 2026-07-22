@@ -1,10 +1,10 @@
 # Source Model
 
-## Phase 1 boundary
+## Implemented source boundary through Phase 2
 
-The implemented PostgreSQL source uses schema `payments`. It contains current OLTP entities and an
-immutable transaction event log. Future CDC and analytics metadata do not belong in these source
-tables.
+The PostgreSQL `payments` schema contains current OLTP entities and immutable transaction events.
+Phase 2 adds a separate versioned settlement CSV source, SQLite control manifest, and immutable local
+raw storage. No settlement table is added to PostgreSQL.
 
 ## Modeling rules
 
@@ -31,6 +31,8 @@ tables.
 | `payment_transactions` | One current payment transaction | `transaction_id` | Insert/update through declared status lifecycle |
 | `transaction_events` | One immutable lifecycle event for one transaction | `event_id` | Append only |
 | `refunds` | One current refund request/lifecycle | `refund_id` | Insert/update through declared status lifecycle |
+| Settlement CSV row | One partner-reported settlement item | Partner, date, settlement reference | Immutable raw file delivery |
+| Settlement manifest | One unique partner/source SHA-256 content identity | Deterministic `file_id` | Controlled lifecycle updates |
 
 Detailed columns, constraints, indexes, and lifecycle semantics are in
 [OLTP schema](oltp-schema.md).
@@ -56,11 +58,21 @@ A merchant payment has a merchant and no destination account. An account transfe
 account and no merchant. Source and destination accounts must differ; the generator also ensures
 their currencies match.
 
-## Deferred source entities
+## Settlement file relationship
 
-`settlement_files` and `settlement_records` are not created in Phase 1. Their grain and partner-file
-contract will be defined in Phase 2 so the database is not expanded before the batch use case has a
-concrete contract.
+`internal_transaction_id` is nullable partner input and will later reference
+`payments.payment_transactions.transaction_id` logically. Phase 2 validates UUID shape only and does
+not query PostgreSQL. `partner_transaction_reference`, amounts, currency, and status provide later
+matching evidence.
+
+The executable contract and detailed rules are documented in
+[Banking Partner Settlement Contract](settlement-contract.md).
+
+## Deferred source entities and metadata
+
+Warehouse/Silver settlement tables and reconciliation results are not created in Phase 2. The raw
+file, rejected-record evidence, and SQLite manifest are local ingestion artifacts rather than
+analytics models.
 
 Future CDC records will add source LSN, source transaction, commit time, topic/partition/offset,
 ingestion time, and processing time outside the OLTP tables. Those metadata fields are not simulated

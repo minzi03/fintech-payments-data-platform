@@ -1,0 +1,111 @@
+name: banking_partner_settlement
+schema_version: settlement-v1
+contract_version: 1.0.0
+owner: Finance Data Products
+source_owner: Banking Partnerships
+classification: confidential-financial
+description: Daily transaction settlement records reported by a banking partner.
+
+file:
+  format: csv
+  encoding: utf-8
+  delimiter: ","
+  header_required: true
+  allow_extra_columns: false
+  naming_convention: settlement_<partner_id>_<settlement_date>_<sequence>.csv
+  naming_pattern: >-
+    ^settlement_(?P<partner_id>[A-Z][A-Z0-9]{1,15})_(?P<settlement_date>\d{4}-\d{2}-\d{2})_(?P<sequence>\d{3})\.csv$
+  timestamp_convention: ISO-8601 with an explicit UTC offset; normalized to UTC in memory
+  business_key:
+    - partner_id
+    - settlement_date
+    - settlement_reference
+
+fields:
+  - name: partner_id
+    type: string
+    required: true
+    nullable: false
+    pattern: "^[A-Z][A-Z0-9]{1,15}$"
+    classification: internal
+  - name: settlement_date
+    type: date
+    required: true
+    nullable: false
+    format: YYYY-MM-DD
+    classification: internal
+  - name: settlement_reference
+    type: string
+    required: true
+    nullable: false
+    max_length: 128
+    classification: confidential-financial
+  - name: partner_transaction_reference
+    type: string
+    required: true
+    nullable: false
+    max_length: 128
+    classification: confidential-financial
+  - name: internal_transaction_id
+    type: uuid
+    required: true
+    nullable: true
+    classification: confidential-financial
+  - name: transaction_timestamp
+    type: timestamp
+    required: true
+    nullable: false
+    timezone_required: true
+    classification: confidential-financial
+  - name: amount
+    type: decimal
+    required: true
+    nullable: false
+    precision: 18
+    scale: 2
+    minimum_exclusive: "0.00"
+    classification: confidential-financial
+  - name: currency
+    type: string
+    required: true
+    nullable: false
+    pattern: "^[A-Z]{3}$"
+    classification: internal
+  - name: settlement_status
+    type: string
+    required: true
+    nullable: false
+    allowed_values:
+      - SETTLED
+      - REVERSED
+      - FAILED
+    classification: internal
+  - name: fee_amount
+    type: decimal
+    required: true
+    nullable: false
+    precision: 18
+    scale: 2
+    minimum: "0.00"
+    classification: confidential-financial
+  - name: net_amount
+    type: decimal
+    required: true
+    nullable: false
+    precision: 18
+    scale: 2
+    classification: confidential-financial
+
+quality_rules:
+  - code: PARTNER_MATCHES_FILENAME
+    description: partner_id in every row must equal the partner in the file name.
+  - code: DATE_MATCHES_FILENAME
+    description: settlement_date in every row must equal the date in the file name.
+  - code: UNIQUE_SETTLEMENT_REFERENCE
+    description: settlement_reference must be unique within one file.
+  - code: DUPLICATE_ROW
+    description: An identical row may appear only once within one file.
+  - code: NET_AMOUNT_CONSISTENT
+    description: net_amount must equal amount minus fee_amount at two-decimal precision.
+  - code: PARTIAL_ACCEPTANCE
+    description: Row-level failures are quarantined without rejecting an otherwise valid file.

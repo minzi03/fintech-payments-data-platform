@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "psycopg[binary]>=3.2,<4.0",
+  "PyYAML>=6.0,<7.0",
 ]
 
 [project.optional-dependencies]
@@ -40,10 +41,11 @@ select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
-cache_dir = "tmp/pytest_cache"
+cache_dir = ".pytest_cache"
 testpaths = ["tests", "airflow/tests"]
 pythonpath = ["src"]
 markers = [
+  "batch_integration: local filesystem and SQLite settlement ingestion integration tests",
   "integration: tests that require one or more infrastructure dependencies",
   "end_to_end: tests that exercise a complete business data flow",
 ]

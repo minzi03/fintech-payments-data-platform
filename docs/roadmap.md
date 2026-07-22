@@ -15,6 +15,7 @@ Phase 1 PostgreSQL OLTP + generator        [implemented and locally verified]
         |                      |                      |
         v                      v                      v
 Phase 2 Batch ingestion   Phase 3 CDC to Bronze   Phase 4 Event streaming
+      [implemented]             [planned]                [planned]
         |                      |                      |
         +----------------------+----------------------+
                                |
@@ -55,18 +56,25 @@ unit tests, optional PostgreSQL integration tests, and a local runbook.
 valid data; constraints reject invalid data; deterministic/precision/lifecycle unit tests pass; lint,
 format, default tests, Compose validation, and PostgreSQL integration tests pass.
 
-**Deliberately deferred:** settlement-file tables/contracts, CDC, Kafka, storage/processing,
-orchestration, warehouse, dashboards, and observability.
+**Deliberately deferred at Phase 1 completion:** partner settlement ingestion, CDC, Kafka,
+storage/processing, orchestration, warehouse, dashboards, and observability.
 
 ## Phase 2 - Batch Settlement Ingestion
 
+**Status:** Implemented and locally verified with filesystem and SQLite integration tests.
+
 **Depends on:** stable Phase 1 internal transaction keys plus an approved partner-file contract.
 
-**Planned deliverables:** settlement fixtures/contracts, file discovery, checksum/schema validation,
-manifests, quarantine, immutable Bronze objects, and replay by batch ID.
+**Deliverables:** versioned settlement contract, deterministic fixtures, file discovery,
+checksum/schema/record validation, SQLite manifests, local immutable Bronze, quarantine, structured
+results, and replay by deterministic content ID.
 
 **Independent acceptance:** replay is idempotent; changed content under a reused name is detected;
-rejected files never become processed.
+file-level failures are quarantined; partial row errors retain evidence; failed Bronze writes never
+produce `PROCESSED`.
+
+**Deliberately deferred:** partner transport, MinIO, reconciliation, Silver models, orchestration,
+observability, and production concurrency controls.
 
 ## Phase 3 - PostgreSQL CDC to Bronze
 

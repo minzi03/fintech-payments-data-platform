@@ -3,7 +3,7 @@
 ## Conventions
 
 - `Must` is required for the target platform; `Should` needs an ADR if omitted.
-- `Implemented` means code exists in Phase 1; acceptance still depends on recorded test evidence.
+- `Implemented` means code exists through Phase 2; acceptance still depends on recorded test evidence.
 - Target SLAs are design goals, not measured performance.
 
 ## Business requirements
@@ -11,9 +11,9 @@
 | ID | Requirement | Phase 1 contribution |
 | --- | --- | --- |
 | BR-001 | Operations must view payment volume, success/failure rates, and latency by channel. | Source status, channel, and event-time data implemented; analytics planned |
-| BR-002 | Finance must reconcile daily settlement lines with internal transactions. | Unique partner references implemented; settlement input/matching planned |
+| BR-002 | Finance must reconcile daily settlement lines with internal transactions. | Partner input is contract-validated and preserved; matching planned |
 | BR-003 | Users must drill down to an auditable transaction or batch. | Transaction, event, trace, and partner identifiers implemented |
-| BR-004 | Reprocessing must not create duplicate accepted records. | Unique idempotency keys and controlled duplicate probes implemented |
+| BR-004 | Reprocessing must not create duplicate accepted records. | OLTP idempotency and settlement checksum replay protection implemented |
 | BR-005 | Sensitive data must be access-controlled and minimized. | Generator omits national ID/card data; production policies planned |
 
 ## Phase 1 functional requirements
@@ -34,8 +34,8 @@
 | --- | --- | --- |
 | FR-001 | Capture PostgreSQL changes with delete and source-offset semantics. | Phase 3 |
 | FR-002 | Publish/ingest versioned payment events independently of CDC. | Phase 4 |
-| FR-003 | Ingest partner files with checksums, manifests, quarantine, and replay-safe IDs. | Phase 2 |
-| FR-004 | Store immutable raw payloads and metadata in Bronze. | Phases 2-4 |
+| FR-003 | Move partner transport and Bronze persistence from local filesystem to production storage. | Future hardening |
+| FR-004 | Store immutable CDC/event raw payloads and metadata in Bronze. | Phases 3-4 |
 | FR-005 | Normalize, deduplicate, validate, and quarantine in Silver. | Phase 5 |
 | FR-006 | Build SCD Type 2 dimensions and incremental facts. | Phase 6 |
 | FR-007 | Produce operations and reconciliation data products. | Phases 6-7 |
@@ -51,7 +51,10 @@
 | NFR-004 | A failed generation iteration rolls back atomically. | Implemented with a database transaction |
 | NFR-005 | Runtime code uses typed interfaces and actionable logs without secrets. | Implemented baseline |
 | NFR-006 | Unit tests run without Docker; database tests are explicitly marked. | Implemented |
-| NFR-007 | Production services are highly available, backed up, and observable. | Out of scope for Phase 1 |
+| NFR-007 | Production services are highly available, backed up, and observable. | Out of scope through Phase 2 |
+| NFR-008 | A processed settlement checksum is not ingested again. | Implemented with SQLite manifest |
+| NFR-009 | Bronze publication occurs before a manifest becomes `PROCESSED`. | Implemented and integration tested |
+| NFR-010 | One invalid settlement record does not fail a file in partial-acceptance mode. | Implemented |
 
 ## Data SLA targets
 
@@ -74,10 +77,23 @@ The following are future targets and have not been measured in Phase 1:
 | SEC-004 | Unnecessary national IDs, card data, and bank credentials are not stored. | Implemented generator/data-model rule |
 | SEC-005 | Production roles use least privilege, TLS, rotation, masking, and retention. | Planned hardening |
 
-## Out of scope for Phase 1
+## Phase 2 functional requirements
+
+| ID | Requirement | Verification |
+| --- | --- | --- |
+| P2-FR-001 | Enforce the versioned `settlement-v1` filename, schema, type, precision, status, and timestamp contract. | Contract/unit tests |
+| P2-FR-002 | Calculate SHA-256 and persist deterministic file/control identity. | Manifest integration tests |
+| P2-FR-003 | Preserve source bytes immutably in local partitioned Bronze. | Byte-equality integration test |
+| P2-FR-004 | Separate file-level quarantine from row-level rejected-record evidence. | Batch integration tests |
+| P2-FR-005 | Distinguish same-name/same-content, same-name/changed-content, and different-name/same-content discoveries. | Idempotency tests |
+| P2-FR-006 | Never mark a file processed before required storage writes succeed. | Simulated Bronze failure test |
+| P2-FR-007 | Generate deterministic candidate/error settlement scenarios. | Fixture tests |
+
+## Out of scope for Phase 2
 
 - Kafka, Debezium, MinIO, Airflow, Spark, Snowflake, executable dbt models, BI, and observability.
-- CDC publication settings, event topics, batch settlement files, Bronze/Silver processing, and marts.
+- CDC publication settings, event topics, Silver processing, reconciliation, and marts.
 - Production deployment, HA, backup/restore automation, TLS, secret-manager integration, and load
   benchmarking.
-- Cross-currency transactions, overdrafts, chargebacks, disputes, fees, and settlement matching.
+- Cross-currency payment processing, overdrafts, chargebacks, disputes, and settlement matching.
+- Partner SFTP/API transport, MinIO server integration, PGP, malware scanning, and distributed locks.

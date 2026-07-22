@@ -3,12 +3,14 @@
 ## Purpose and status
 
 The target platform supports operational visibility into payment processing and daily financial
-reconciliation. Phase 1 implements only the PostgreSQL OLTP source and its data generator.
+reconciliation. Phase 1 implements the PostgreSQL OLTP source/generator; Phase 2 implements local
+settlement batch ingestion, SQLite control state, and filesystem Bronze/quarantine.
 
 | Component | Status |
 | --- | --- |
 | PostgreSQL OLTP source and realistic generator | Implemented in Phase 1 |
-| Kafka, Debezium, MinIO, batch/streaming ingestion, and Silver | Planned; not implemented |
+| Settlement contract, Python batch ingestion, local Bronze/quarantine | Implemented in Phase 2 |
+| Kafka, Debezium, MinIO server, streaming ingestion, and Silver | Planned; not implemented |
 | Snowflake, executable dbt models, Airflow, BI, and observability | Planned; not implemented |
 | Optional distributed processing or serving systems | Future option; no commitment |
 
@@ -22,7 +24,7 @@ reconciliation. Phase 1 implements only the PostgreSQL OLTP source and its data 
 6. Keep secrets outside source control and grant services least privilege.
 7. Add technology only for an explicit, tested requirement.
 
-## Implemented Phase 1 architecture
+## Implemented architecture through Phase 2
 
 ```text
 Python generator -- one database transaction per run --> PostgreSQL 16
@@ -30,6 +32,11 @@ Python generator -- one database transaction per run --> PostgreSQL 16
                                                        |-- reference data
                                                        |-- current OLTP state
                                                        `-- immutable events
+
+Partner CSV --> contract validation --> SQLite manifest
+                     |                     |
+                     +--> local Bronze <---+
+                     `--> local quarantine
 ```
 
 This is a local development topology. It makes no high-availability, throughput, recovery-point, or
@@ -68,16 +75,17 @@ flowchart LR
     subgraph Sources
         OLTP["PostgreSQL OLTP - implemented"]
         EVENTS["Payment events - source table implemented"]
-        FILES["Partner settlement files - planned"]
+        FILES["Partner settlement files - source implemented"]
     end
 
     subgraph Ingestion
         CDC["Debezium CDC - planned"]
         KAFKA["Kafka - planned"]
-        BATCH["Batch ingestion - planned"]
+        BATCH["Python batch ingestion - local implementation"]
     end
 
     subgraph DataPlatform
+        LOCAL["Local Bronze - implemented"]
         BRONZE["MinIO Bronze - planned"]
         SILVER["Silver processing - planned"]
         WAREHOUSE["Snowflake and dbt - planned"]
@@ -90,7 +98,8 @@ flowchart LR
 
     OLTP --> CDC --> KAFKA --> BRONZE
     EVENTS --> KAFKA
-    FILES --> BATCH --> BRONZE
+    FILES --> BATCH --> LOCAL
+    BATCH -. future adapter .-> BRONZE
     BRONZE --> SILVER --> WAREHOUSE
     WAREHOUSE --> OPS
     WAREHOUSE --> FIN
@@ -98,12 +107,12 @@ flowchart LR
 
 ## Layer responsibilities
 
-| Layer | Responsibility | Phase 1 status |
+| Layer | Responsibility | Phase 2 status |
 | --- | --- | --- |
 | Source | Authoritative customer, account, merchant, payment, event, and refund records. | Implemented locally |
 | CDC/event ingestion | Durable offsets, deletes, ordering, and schema versions. | Planned |
-| Batch ingestion | Validate and ingest partner files idempotently. | Planned |
-| Bronze | Retain immutable payloads and source metadata. | Planned |
+| Batch ingestion | Validate and ingest partner files idempotently. | Implemented locally |
+| Bronze | Retain immutable payloads and source metadata. | Local adapter implemented; MinIO planned |
 | Silver | Normalize, deduplicate, apply CDC, and quarantine failures. | Planned |
 | Warehouse/dbt | Dimensions, facts, SCD2, and reconciliation marts. | Planned |
 | Consumption/observability | Governed analytics and platform health. | Planned |
@@ -116,4 +125,4 @@ flowchart LR
 - Warehouse sizing, production access model, catalog/lineage backend, and dashboard technology.
 - Production PostgreSQL high availability, backup/restore, TLS, and secret-manager integration.
 
-Each decision requires a later phase or ADR tied to measured needs. None is a Phase 1 dependency.
+Each decision requires a later phase or ADR tied to measured needs. None is a Phase 2 dependency.
