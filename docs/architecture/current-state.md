@@ -2,23 +2,27 @@
 
 ## Status
 
-The repository is in **Phase 0 - Project Foundation**.
+The repository contains the **Phase 1 - PostgreSQL OLTP Source and Realistic Data Generator**
+implementation. It has been locally verified against PostgreSQL 16.4; CI keeps the Docker-independent
+quality gate, while database integration tests remain an explicit developer command.
 
-Available today:
+Implemented in source control:
 
-- Repository boundaries for application code, infrastructure, orchestration, analytics, contracts,
-  dashboards, tests, and documentation.
-- Python 3.11+ project metadata and local quality tooling.
-- CI checks for linting, formatting, tests, coverage, YAML, and Docker Compose configuration.
-- Business, architecture, data-model, and roadmap skeletons.
+- A single PostgreSQL 16 Docker Compose service with a health check, named volume, and read-only
+  ordered initialization scripts.
+- The `payments` OLTP schema, reference data, constraints, indexes, timestamp triggers, and immutable
+  transaction-event enforcement.
+- A deterministic Python generator with environment/CLI configuration, Decimal money, UTC
+  timestamps, transactional persistence, and controlled invalid/duplicate probes.
+- Docker-independent unit tests and explicitly marked PostgreSQL integration tests.
+- Phase 1 schema and local-operation documentation.
 
-Not implemented today:
+Not implemented:
 
-- Source databases or synthetic data generation.
-- Kafka, Debezium, Schema Registry, MinIO, Airflow, or processing services.
-- Snowflake objects or executable dbt models.
-- Batch, CDC, or domain-event pipelines.
-- Dashboards, alerts, lineage, or production observability.
+- Kafka, Debezium, Schema Registry, MinIO, Airflow, or distributed processing.
+- Executable CDC, batch-settlement, domain-event, Bronze, or Silver pipelines.
+- Snowflake objects, executable dbt models, dashboards, alerts, lineage, or platform observability.
+- Production deployment, high availability, backup/restore, TLS, or secret-manager integration.
 
-This document must be updated at the end of every phase so that planned capabilities are not confused
-with deployed capabilities.
+The target architecture describes future boundaries only. It is not evidence that those components
+are deployed.

@@ -1,30 +1,41 @@
 # Target Architecture
 
-## Purpose
+## Purpose and status
 
 The target platform supports operational visibility into payment processing and daily financial
-reconciliation. This document defines component boundaries only; Phase 0 does not deploy them.
+reconciliation. Phase 1 implements only the PostgreSQL OLTP source and its data generator.
 
-## Implementation status
-
-**Status: Planned. Not implemented in Phase 0.**
-
-The architectures below define intended boundaries and an implementation sequence. Component names
-must not be interpreted as deployed services or measured capabilities.
+| Component | Status |
+| --- | --- |
+| PostgreSQL OLTP source and realistic generator | Implemented in Phase 1 |
+| Kafka, Debezium, MinIO, batch/streaming ingestion, and Silver | Planned; not implemented |
+| Snowflake, executable dbt models, Airflow, BI, and observability | Planned; not implemented |
+| Optional distributed processing or serving systems | Future option; no commitment |
 
 ## Architecture principles
 
-1. Preserve source data immutably before applying business transformations.
-2. Separate CDC from business-domain event streams because they have different semantics.
-3. Make every batch and streaming write replay-safe and auditable.
-4. Treat event time, ingestion time, and processing time as separate concepts.
-5. Publish governed data products instead of exposing raw storage to business users.
-6. Keep secrets outside source control and grant services least-privilege access.
-7. Add technology only when it supports an explicit business or reliability requirement.
+1. Preserve source data immutably before applying downstream transformations.
+2. Keep current OLTP state separate from immutable business lifecycle events.
+3. Make generator and future ingestion writes deterministic, replay-safe, and auditable.
+4. Treat event time, source commit time, ingestion time, and processing time separately.
+5. Use fixed-precision money and timezone-aware timestamps end to end.
+6. Keep secrets outside source control and grant services least privilege.
+7. Add technology only for an explicit, tested requirement.
 
-## MVP architecture
+## Implemented Phase 1 architecture
 
-The MVP proves both business use cases with the smallest coherent stack:
+```text
+Python generator -- one database transaction per run --> PostgreSQL 16
+                                                     payments schema
+                                                       |-- reference data
+                                                       |-- current OLTP state
+                                                       `-- immutable events
+```
+
+This is a local development topology. It makes no high-availability, throughput, recovery-point, or
+recovery-time claim.
+
+## Planned MVP architecture
 
 ```text
 PostgreSQL OLTP ---------------- Debezium + Kafka --------+
@@ -42,104 +53,67 @@ Partner settlement CSV -------- Python batch ingestion --+--> MinIO Bronze
                                             Operations mart              Reconciliation mart
 ```
 
-Planned MVP constraints:
+Planned constraints:
 
-- A local, single-node development topology; no high-availability claim.
-- Parquet Bronze objects with deterministic keys, checksums, and ingestion metadata.
-- Python processing before introducing a distributed processing engine.
-- Snowflake and dbt only after local source-to-Silver contracts are stable.
-- Dashboard SQL or lightweight prototypes only after certified marts exist.
+- Local-first development before deployment hardening.
+- Immutable Bronze objects with deterministic keys, checksums, and ingestion metadata.
+- Python processing before a distributed engine is considered.
+- Snowflake/dbt only after local source-to-Silver contracts are stable.
+- Dashboards only after certified marts exist.
 
-## Target production-like architecture
-
-The production-like target extends the MVP with scalable deployment, explicit schema governance,
-stream processing where measurements justify it, stronger security boundaries, lineage, and unified
-observability.
-
-### Target logical flow
+## Target production-like flow
 
 ```mermaid
 flowchart LR
     subgraph Sources
-        OLTP["PostgreSQL OLTP"]
-        APP["Payment domain events"]
-        FILES["Partner settlement files"]
+        OLTP["PostgreSQL OLTP - implemented"]
+        EVENTS["Payment events - source table implemented"]
+        FILES["Partner settlement files - planned"]
     end
 
     subgraph Ingestion
-        CDC["Debezium CDC"]
-        KAFKA["Kafka"]
-        BATCH["Python batch ingestion"]
+        CDC["Debezium CDC - planned"]
+        KAFKA["Kafka - planned"]
+        BATCH["Batch ingestion - planned"]
     end
 
-    subgraph Lake
-        BRONZE["MinIO Bronze - immutable"]
-        SILVER["Silver - validated and conformed"]
-    end
-
-    subgraph Analytics
-        SNOWFLAKE["Snowflake analytics warehouse"]
-        DBT["dbt staging, intermediate, marts"]
+    subgraph DataPlatform
+        BRONZE["MinIO Bronze - planned"]
+        SILVER["Silver processing - planned"]
+        WAREHOUSE["Snowflake and dbt - planned"]
     end
 
     subgraph Consumers
-        OPS["Payment operations"]
-        FIN["Finance reconciliation"]
-        EXEC["Executive analytics"]
+        OPS["Operations analytics - planned"]
+        FIN["Reconciliation analytics - planned"]
     end
 
-    OLTP --> CDC --> KAFKA
-    APP --> KAFKA
-    FILES --> BATCH
-    KAFKA --> BRONZE
-    BATCH --> BRONZE
-    BRONZE --> SILVER --> SNOWFLAKE --> DBT
-    DBT --> OPS
-    DBT --> FIN
-    DBT --> EXEC
+    OLTP --> CDC --> KAFKA --> BRONZE
+    EVENTS --> KAFKA
+    FILES --> BATCH --> BRONZE
+    BRONZE --> SILVER --> WAREHOUSE
+    WAREHOUSE --> OPS
+    WAREHOUSE --> FIN
 ```
 
 ## Layer responsibilities
 
-| Layer | Planned responsibility | Primary consumers |
+| Layer | Responsibility | Phase 1 status |
 | --- | --- | --- |
-| Sources | Authoritative payment, customer, merchant, refund, and settlement records. | Ingestion services |
-| Streaming/CDC ingestion | Capture source changes and domain events with durable offsets and schema versions. | Bronze storage, operations processing |
-| Batch ingestion | Discover, checksum, validate, register, and ingest partner files idempotently. | Bronze storage |
-| Bronze | Retain immutable source payloads, source metadata, batch IDs, and checksums. | Replay and Silver processing |
-| Silver | Validate contracts, normalize types/time zones, deduplicate, apply CDC, and quarantine failures. | Warehouse publishing and operational aggregates |
-| Snowflake/dbt | Build governed dimensions, facts, SCD2 history, reconciliation marts, and semantic definitions. | Analysts and dashboards |
-| Observability | Measure service health, freshness, volume, quality, lineage, and end-to-end latency. | Data engineering and operations |
+| Source | Authoritative customer, account, merchant, payment, event, and refund records. | Implemented locally |
+| CDC/event ingestion | Durable offsets, deletes, ordering, and schema versions. | Planned |
+| Batch ingestion | Validate and ingest partner files idempotently. | Planned |
+| Bronze | Retain immutable payloads and source metadata. | Planned |
+| Silver | Normalize, deduplicate, apply CDC, and quarantine failures. | Planned |
+| Warehouse/dbt | Dimensions, facts, SCD2, and reconciliation marts. | Planned |
+| Consumption/observability | Governed analytics and platform health. | Planned |
 
-## Cross-cutting controls
+## Deferred decisions
 
-- Data contracts and backward-compatible schema evolution.
-- Deterministic identifiers, manifests, checksums, and offset-range audit metadata.
-- Dead-letter and quarantine paths with explicit reason codes.
-- Role-based access, PII classification, masking, and retention policies.
-- CI/CD promotion with isolated test schemas and rollback-safe changes.
+- Debezium/Kafka topology, event contracts, and CDC publication settings.
+- Streaming processor and state-store selection.
+- Bronze object layout and possible lakehouse format.
+- Warehouse sizing, production access model, catalog/lineage backend, and dashboard technology.
+- Production PostgreSQL high availability, backup/restore, TLS, and secret-manager integration.
 
-## Decisions deferred beyond Phase 0
-
-- Streaming processor selection and state-store design.
-- Lakehouse table format, if one is required beyond Parquet.
-- Near-real-time serving choice for dashboard latency requirements.
-- Metadata catalog and lineage backend.
-- Dashboard technology.
-
-Each deferred choice requires an ADR tied to measured needs and local resource constraints.
-
-## Future optional components
-
-These components are not core dependencies and must be added only when a measured requirement
-justifies their operating cost:
-
-| Optional component | Trigger for adoption | Candidate choices |
-| --- | --- | --- |
-| Distributed stream processor | Stateful windows, high event volume, or latency targets exceed the Python design. | Spark Structured Streaming or Flink |
-| Lakehouse table format | Silver requires concurrent updates, schema evolution, compaction, or time travel. | Iceberg or Delta Lake |
-| Low-latency serving store | Warehouse refresh cannot meet the approved Operations SLA cost-effectively. | ClickHouse or an equivalent store |
-| Metadata catalog | Dataset count and ownership workflows outgrow dbt docs and repository metadata. | OpenMetadata or DataHub |
-| Query federation | Multiple governed stores require one SQL access layer. | Trino or Dremio |
-
-Optional components must not block the MVP payment-monitoring or settlement-reconciliation slices.
+Each decision requires a later phase or ADR tied to measured needs. None is a Phase 1 dependency.

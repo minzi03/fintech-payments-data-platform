@@ -1,77 +1,83 @@
 # Business and Platform Requirements
 
-## Requirement conventions
+## Conventions
 
-- `Must` is required for the target platform.
-- `Should` is expected unless an ADR documents a trade-off.
-- Target metrics are design goals, not measured results.
+- `Must` is required for the target platform; `Should` needs an ADR if omitted.
+- `Implemented` means code exists in Phase 1; acceptance still depends on recorded test evidence.
+- Target SLAs are design goals, not measured performance.
 
 ## Business requirements
 
-| ID | Requirement | Priority | Acceptance evidence |
-| --- | --- | --- | --- |
-| BR-001 | Operations must view payment volume, success/failure rates, and latency by channel. | P0 | Governed operations mart and dashboard tests |
-| BR-002 | Finance must reconcile daily partner settlement lines with internal transactions. | P0 | Classified reconciliation result for every eligible row |
-| BR-003 | Users must drill down from aggregate KPIs to an auditable transaction or batch. | P0 | Traceable business and ingestion identifiers |
-| BR-004 | Reprocessing must not create duplicate Silver or warehouse records. | P0 | Replay and idempotency integration tests |
-| BR-005 | Sensitive customer and payment data must be access-controlled and masked by role. | P0 | Policy tests and access review evidence |
-| BR-006 | Data owners must distinguish target metrics from observed metrics. | P0 | KPI catalog with measurement status |
+| ID | Requirement | Phase 1 contribution |
+| --- | --- | --- |
+| BR-001 | Operations must view payment volume, success/failure rates, and latency by channel. | Source status, channel, and event-time data implemented; analytics planned |
+| BR-002 | Finance must reconcile daily settlement lines with internal transactions. | Unique partner references implemented; settlement input/matching planned |
+| BR-003 | Users must drill down to an auditable transaction or batch. | Transaction, event, trace, and partner identifiers implemented |
+| BR-004 | Reprocessing must not create duplicate accepted records. | Unique idempotency keys and controlled duplicate probes implemented |
+| BR-005 | Sensitive data must be access-controlled and minimized. | Generator omits national ID/card data; production policies planned |
 
-## Functional requirements
+## Phase 1 functional requirements
 
-| ID | Requirement |
-| --- | --- |
-| FR-001 | Ingest PostgreSQL changes through a CDC stream without losing delete or source-offset semantics. |
-| FR-002 | Ingest versioned payment domain events independently of CDC records. |
-| FR-003 | Ingest partner settlement files using checksums, manifests, quarantine, and replay-safe batch IDs. |
-| FR-004 | Store immutable raw payloads and ingestion metadata in Bronze. |
-| FR-005 | Validate contracts, normalize data types, deduplicate records, and isolate rejected data in Silver. |
-| FR-006 | Build SCD Type 2 dimensions with non-overlapping validity intervals and one current version. |
-| FR-007 | Build incremental facts with a late-arriving lookback and deterministic merge keys. |
-| FR-008 | Produce payment-operations and reconciliation data products with documented grain. |
-| FR-009 | Orchestrate batch dependencies and publish data only after quality checks pass. |
-| FR-010 | Expose freshness, volume, quality, failure, and end-to-end latency signals. |
+| ID | Requirement | Verification |
+| --- | --- | --- |
+| P1-FR-001 | Model customers, accounts, merchants, payments, immutable events, and refunds with declared grain. | Schema inspection and integration tests |
+| P1-FR-002 | Store money as `NUMERIC(18,2)`/Python `Decimal`, never floating point. | SQL metadata and unit tests |
+| P1-FR-003 | Enforce valid currencies, statuses, amounts, relationships, partner references, and idempotency keys. | Database constraint tests |
+| P1-FR-004 | Produce successful, failed, pending-to-completed, pending-to-failed, event, and refund scenarios. | Deterministic generator unit tests |
+| P1-FR-005 | Configure the generator by environment and CLI without source-controlled credentials. | Configuration/CLI tests and secret review |
+| P1-FR-006 | Commit one generator run atomically and roll it back on failure. | Repository integration tests and connection handling |
+| P1-FR-007 | Reject controlled invalid/duplicate probes without persisting bad data. | Savepoint-backed integration tests |
+
+## Future functional requirements
+
+| ID | Requirement | Planned phase |
+| --- | --- | --- |
+| FR-001 | Capture PostgreSQL changes with delete and source-offset semantics. | Phase 3 |
+| FR-002 | Publish/ingest versioned payment events independently of CDC. | Phase 4 |
+| FR-003 | Ingest partner files with checksums, manifests, quarantine, and replay-safe IDs. | Phase 2 |
+| FR-004 | Store immutable raw payloads and metadata in Bronze. | Phases 2-4 |
+| FR-005 | Normalize, deduplicate, validate, and quarantine in Silver. | Phase 5 |
+| FR-006 | Build SCD Type 2 dimensions and incremental facts. | Phase 6 |
+| FR-007 | Produce operations and reconciliation data products. | Phases 6-7 |
+| FR-008 | Orchestrate dependencies and expose operational signals. | Phase 8 |
 
 ## Non-functional requirements
 
-| ID | Requirement |
-| --- | --- |
-| NFR-001 | Pipelines must be idempotent and recoverable by batch ID or source offset range. |
-| NFR-002 | Currency values must retain declared decimal precision end to end. |
-| NFR-003 | Data products must expose event time, ingestion time, and processing time where applicable. |
-| NFR-004 | Failed validation must block publication without deleting the rejected evidence. |
-| NFR-005 | Runtime components must emit structured logs and measurable health signals. |
+| ID | Requirement | Phase 1 status |
+| --- | --- | --- |
+| NFR-001 | Currency values retain declared decimal precision. | Implemented in schema and generator |
+| NFR-002 | Source/event timestamps are timezone-aware UTC values. | Implemented and unit tested |
+| NFR-003 | Generation is deterministic for the same seed and configuration. | Implemented and unit tested |
+| NFR-004 | A failed generation iteration rolls back atomically. | Implemented with a database transaction |
+| NFR-005 | Runtime code uses typed interfaces and actionable logs without secrets. | Implemented baseline |
+| NFR-006 | Unit tests run without Docker; database tests are explicitly marked. | Implemented |
+| NFR-007 | Production services are highly available, backed up, and observable. | Out of scope for Phase 1 |
 
 ## Data SLA targets
 
-These are initial **target metrics** to validate in later phases:
+The following are future targets and have not been measured in Phase 1:
 
-| ID | Target | Validation method |
+| ID | Target | Planned validation |
 | --- | --- | --- |
-| SLA-001 | Operational event data available within 2 minutes at the 95th percentile. | Event-time to serving-time benchmark |
+| SLA-001 | Operational event data available within 2 minutes at p95. | End-to-end streaming benchmark |
 | SLA-002 | Daily reconciliation published before 07:00 local business time. | Scheduled end-to-end run evidence |
-| SLA-003 | Zero duplicate business keys after Silver deduplication. | Quality assertion and replay test |
-| SLA-004 | Failed or quarantined files are never marked processed. | Manifest state-transition tests |
+| SLA-003 | Zero duplicate business keys after Silver deduplication. | Replay and quality tests |
+| SLA-004 | Failed files are never marked processed. | Batch manifest transition tests |
 
 ## Security requirements
 
-| ID | Requirement |
-| --- | --- |
-| SEC-001 | Credentials must come from environment variables or an approved secret manager. |
-| SEC-002 | Pipeline identities must use least-privilege roles and must not use administrative accounts. |
-| SEC-003 | PII and payment-sensitive columns must be classified before business publication. |
-| SEC-004 | Restricted columns must support masking or equivalent consumer-specific protection. |
-| SEC-005 | Credentials and sensitive payloads must not appear in source control or application logs. |
+| ID | Requirement | Phase 1 status |
+| --- | --- | --- |
+| SEC-001 | Credentials come from environment variables or an approved secret manager. | Environment variables implemented |
+| SEC-002 | Credentials and full connection URLs do not appear in logs. | Safe connection label implemented |
+| SEC-003 | Source control contains placeholders only, not real credentials. | Required review gate |
+| SEC-004 | Unnecessary national IDs, card data, and bank credentials are not stored. | Implemented generator/data-model rule |
+| SEC-005 | Production roles use least privilege, TLS, rotation, masking, and retention. | Planned hardening |
 
-## Out of scope for Phase 0
+## Out of scope for Phase 1
 
-- Executable PostgreSQL schemas and synthetic business data.
-- Kafka, Debezium, MinIO, Airflow, Spark, or Snowflake runtime services.
-- Executable batch, CDC, streaming, Silver, or warehouse pipelines.
-- Production dashboards, alerts, lineage, and access policies.
-- Deployment automation or CD to a runtime environment.
-
-## Phase 0 scope
-
-Phase 0 delivers structure, documentation, local quality configuration, and CI. It does not satisfy the
-runtime functional requirements above; later roadmap phases own their implementation and evidence.
+- Kafka, Debezium, MinIO, Airflow, Spark, Snowflake, executable dbt models, BI, and observability.
+- CDC publication settings, event topics, batch settlement files, Bronze/Silver processing, and marts.
+- Production deployment, HA, backup/restore automation, TLS, secret-manager integration, and load
+  benchmarking.
+- Cross-currency transactions, overdrafts, chargebacks, disputes, fees, and settlement matching.

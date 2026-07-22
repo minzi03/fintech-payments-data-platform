@@ -2,91 +2,71 @@
 
 ## Business context
 
-The project models a hypothetical mid-sized fintech that provides payment gateway integration,
-merchant payments, customer transfers, refunds, and settlement with banking partners.
+The project models a hypothetical mid-sized fintech providing payment gateway integration, merchant
+payments, account-to-account transfers, refunds, and partner-bank settlement. Internal users include
+Payment Operations, Finance, Risk, Product, Customer Support, Compliance, Analytics, and Data
+Engineering.
 
-Customers include online merchants, physical merchants, and consumers who initiate or receive
-payments. Internal users include Payment Operations, Finance, Risk, Product, Customer Support,
-Executive, Analytics, and Data Engineering teams.
+Phase 1 supplies a constrained OLTP source and repeatable synthetic data for development. It does not
+deliver operational analytics or settlement reconciliation yet.
 
-All scale figures remain **design assumptions** until Phase 1 defines a deterministic generator and a
-later benchmark records observed results.
+## Payment products represented in Phase 1
 
-## Payment products
+- Merchant payments through card, bank transfer, QR, or wallet channels.
+- Account-to-account transfers between customer accounts.
+- Successful, failed, and pending payment lifecycles.
+- Full and partial refunds linked to completed transactions.
+- External partner references needed by future settlement matching.
 
-- Payment gateway APIs for online merchants.
-- QR and merchant payments for online and physical acceptance channels.
-- Customer-to-customer and customer-to-merchant transfers.
-- Full and partial refunds linked to the original payment.
-- Daily settlement and reconciliation with banking partners.
+Partner settlement files and records are deliberately deferred to the batch-ingestion phase.
 
-## Current business problems
+## Current problems addressed
 
-- Payment status and failure data are fragmented across operational systems and events.
-- Operations cannot consistently identify a failing channel or error-code spike within minutes.
-- Finance receives daily settlement files that must be compared with internal transactions.
-- Reprocessing can create duplicates without manifests, deterministic keys, and durable audit state.
-- Different consumers can calculate payment and reconciliation metrics differently.
-- Pipeline freshness, completeness, ownership, and lineage are not visible in one place.
+- Engineers need realistic related data before building CDC and analytics pipelines.
+- Payment current state and immutable status history need explicit, testable semantics.
+- Duplicate requests must be rejected through an idempotency key.
+- Invalid money, currencies, statuses, and relationships must fail at the source boundary.
+- Test scenarios must be reproducible by seed without storing sensitive customer identity data.
 
-## Primary use case 1: payment operations monitoring
+## Long-term use cases
 
-Payment Operations needs a near-real-time view of volume, success rate, failure rate, processing
-latency, refunds, channel health, and backlog. The platform must preserve event history while also
-providing a trustworthy latest state for each payment.
+### Near-real-time payment operations monitoring
 
-Decisions supported:
+Operations will monitor volume, success/failure rates, latency, refunds, channel health, and pending
+backlog. Phase 1 provides the current transaction row and immutable events needed by a future CDC and
+event pipeline; it does not provide a near-real-time dashboard.
 
-- Investigate a channel, merchant, or error code when failure rates cross an agreed threshold.
-- Escalate payment-processing latency or event backlog before customer impact grows.
-- Compare current behavior with a recent baseline.
+### Daily settlement reconciliation
 
-## Primary use case 2: daily settlement reconciliation
-
-Finance and Operations need to match internal completed transactions with settlement lines received
-from banking partners. The result must classify matches and mismatches without overwriting evidence.
-
-Initial result classes:
-
-- `MATCHED`
-- `MISSING_INTERNAL`
-- `MISSING_SETTLEMENT`
-- `AMOUNT_MISMATCH`
-- `CURRENCY_MISMATCH`
-- `STATUS_MISMATCH`
-- `DUPLICATE_INTERNAL`
-- `DUPLICATE_SETTLEMENT`
-
-Decisions supported:
-
-- Release or hold finance reports based on completeness and mismatch thresholds.
-- Assign unmatched items for investigation using partner, currency, date, and reason.
-- Re-run a specific file or batch without duplicating prior results.
+Finance will compare completed internal transactions with partner settlement lines and classify
+matches, missing items, duplicates, amount/currency mismatches, and status mismatches. Phase 1 stores
+unique partner references on transactions/refunds, but partner files and matching logic are not yet
+implemented.
 
 ## Stakeholders
 
-| Stakeholder | Need | Planned output |
+| Stakeholder | Need | Phase 1 contribution |
 | --- | --- | --- |
-| Payment Operations | Fast channel and failure visibility | Operations mart, dashboard, alerts |
-| Finance | Auditable settlement matching | Reconciliation fact and finance dashboard |
-| Product | Merchant and payment-channel trends | Product and executive marts |
-| Risk | Reliable payment and device events | Governed risk-ready Silver data |
-| Customer Support | Payment and refund lookup | Restricted support-facing data product |
-| Data Engineering | Recoverable, observable pipelines | Control tables, metrics, lineage, runbooks |
-| Compliance | PII controls and audit history | Classification, masking, access evidence |
+| Payment Operations | Status and failure visibility | Reproducible lifecycle source data |
+| Finance | Auditable settlement matching | Unique partner references and fixed-precision money |
+| Product/Risk | Consistent domain behavior | Validated transaction types, channels, and statuses |
+| Customer Support | Payment/refund lookup | Related current-state records without sensitive identity data |
+| Data Engineering | Stable source contracts | Versioned SQL, generator, tests, and runbook |
+| Compliance | Minimal data exposure | No national ID, card data, or real credentials |
 
 ## Expected value
 
-Expected value will be evaluated through measurable outcomes such as shorter detection delay,
-reconciliation completion before the reporting deadline, reproducible reprocessing, and consistent KPI
-definitions. No outcome is claimed as achieved during Phase 0.
+Phase 1 reduces downstream ambiguity by establishing source grain, relationships, lifecycle rules,
+precision, and deterministic test fixtures. Business outcomes such as shorter incident detection or
+on-time reconciliation remain target outcomes until later data products are implemented and measured.
 
-## Assumptions and validation status
+## Assumptions and validation
 
-| Assumption | Current status | Planned validation |
+| Assumption | Phase 1 status | Later validation |
 | --- | --- | --- |
-| The fintech operates at a scale that benefits from both batch and event processing. | Design assumption | Phase 1 workload profile and later benchmarks |
-| Banking partners deliver one or more settlement files daily. | Design assumption | Phase 1 batch contracts and fixtures |
-| Payment lifecycle state is available through OLTP records and domain events. | Design assumption | Phase 1 source model and event contracts |
-| Operations needs minute-level visibility while Finance works on a daily cycle. | Design assumption | Stakeholder review and KPI approval |
-| The platform can use Snowflake for governed analytics. | Target-state assumption | Environment and cost review before Phase 6 |
+| Payments expose current state plus immutable lifecycle events. | Modeled and tested locally | CDC/event pipeline replay tests |
+| A customer may own multiple single-currency accounts. | Modeled; overdraft excluded | Product policy review |
+| Merchant payments and account transfers cover the first source slice. | Implemented generator scope | Contract review before CDC |
+| Partner references are unique when present. | Database constraint | Settlement partner contract review |
+| Operations needs minute-level data and Finance a daily cycle. | Design assumption | SLA benchmark and stakeholder approval |
+| Generated volumes represent production scale. | Not claimed | Workload benchmark in a later phase |

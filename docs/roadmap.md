@@ -1,15 +1,15 @@
 # Implementation Roadmap
 
-Phases are dependency-ordered and independently testable. A phase can start only when its required
-upstream contracts are stable; optional platform components must not block a core business slice.
+Phases are dependency-ordered and independently testable. Planned technology names are boundaries,
+not claims of implementation.
 
-## Dependency flow
+## Status and dependency flow
 
 ```text
-Phase 0 Foundation
+Phase 0 Foundation                         [implemented]
         |
         v
-Phase 1 Domain model + PostgreSQL OLTP + generator
+Phase 1 PostgreSQL OLTP + generator        [implemented and locally verified]
         |
         +----------------------+----------------------+
         |                      |                      |
@@ -36,98 +36,86 @@ Phase 2 Batch ingestion   Phase 3 CDC to Bronze   Phase 4 Event streaming
 
 ## Phase 0 - Project Foundation
 
-**Objective:** Establish repository boundaries, documentation, safe configuration patterns, local
-quality tooling, and CI.
+**Status:** Implemented.
 
-**Acceptance evidence:** Ruff, formatting, Pytest/coverage, YAML validation, and Docker Compose
-configuration validation pass; no service or pipeline is deployed.
+Repository boundaries, safe configuration patterns, Python quality tooling, CI, and initial business
+and architecture documentation were established without runtime services.
 
-## Phase 1 - Domain model and realistic sources
+## Phase 1 - PostgreSQL OLTP Source and Realistic Generator
+
+**Status:** Implemented and locally verified against a clean PostgreSQL 16.4 volume.
 
 **Depends on:** Phase 0.
 
-**Deliverables:** PostgreSQL payment schema, versioned event and batch contracts, deterministic data
-generator, normal and failure scenarios, and contract tests.
+**Deliverables:** PostgreSQL payment schema/reference data/indexes, local Compose service,
+deterministic Decimal/UTC generator, valid lifecycle scenarios, controlled invalid/duplicate probes,
+unit tests, optional PostgreSQL integration tests, and a local runbook.
 
-**Independent acceptance:** Generated records satisfy declared contracts; money uses decimal types;
-duplicate, invalid, late, out-of-order, update, delete, and replay cases are reproducible by seed.
+**Independent acceptance:** clean-volume initialization and health succeed; the CLI persists related
+valid data; constraints reject invalid data; deterministic/precision/lifecycle unit tests pass; lint,
+format, default tests, Compose validation, and PostgreSQL integration tests pass.
 
-## Phase 2 - Batch settlement ingestion
+**Deliberately deferred:** settlement-file tables/contracts, CDC, Kafka, storage/processing,
+orchestration, warehouse, dashboards, and observability.
 
-**Depends on:** Phase 1 settlement contract.
+## Phase 2 - Batch Settlement Ingestion
 
-**Deliverables:** Partner-file discovery, checksum and schema validation, ingestion manifests,
-quarantine, immutable Bronze objects, and replay by batch ID.
+**Depends on:** stable Phase 1 internal transaction keys plus an approved partner-file contract.
 
-**Independent acceptance:** Re-running the same unchanged file creates no duplicate accepted data;
-changed content under a reused name is detected; rejected files never become processed.
+**Planned deliverables:** settlement fixtures/contracts, file discovery, checksum/schema validation,
+manifests, quarantine, immutable Bronze objects, and replay by batch ID.
+
+**Independent acceptance:** replay is idempotent; changed content under a reused name is detected;
+rejected files never become processed.
 
 ## Phase 3 - PostgreSQL CDC to Bronze
 
-**Depends on:** Phase 1 source schema and CDC contract.
+**Depends on:** stable Phase 1 schema and an approved CDC contract.
 
-**Deliverables:** PostgreSQL, Debezium, Kafka, schema handling, durable Python micro-batch consumer,
-deterministic object keys, offset-safe commits, DLQ, and metrics.
+**Planned deliverables:** PostgreSQL publication settings, Debezium, Kafka, schema handling, durable
+consumer, deterministic Bronze keys, offset-safe commits, DLQ, and metrics.
 
-**Independent acceptance:** Restart, rebalance, and upload-before-commit scenarios lose no accepted
-records and create no duplicate Silver business keys.
+**Independent acceptance:** restart/rebalance/failure scenarios lose no accepted source changes and
+produce replay-safe output.
 
-## Phase 4 - Payment domain-event streaming
+## Phase 4 - Payment Event Streaming
 
-**Depends on:** Phase 1 event contracts; can progress independently of Phase 2.
+**Depends on:** stable Phase 1 event semantics; can progress independently of Phase 2.
 
-**Deliverables:** Versioned lifecycle events, partitioning and ordering rules, validation, retry/DLQ,
-watermarks, late-event policy, operational aggregates, and latency metrics.
+**Planned deliverables:** versioned event contracts, partitioning/ordering rules, validation,
+retry/DLQ, late-event policy, operational aggregates, and latency measurements.
 
-**Independent acceptance:** Duplicate and out-of-order fixtures produce deterministic transaction
-state and measured end-to-end latency.
+## Phase 5 - Silver Processing and Data Quality
 
-## Phase 5 - Silver processing and data quality
+**Depends on:** at least one stable Bronze source from Phases 2-4.
 
-**Depends on:** At least one stable Bronze source from Phases 2-4.
+**Planned deliverables:** typed conformed records, CDC application, deduplication, quarantine,
+referential checks, reconciliation counts, and publish gates.
 
-**Deliverables:** Typed conformed records, CDC application, deduplication, quarantine, referential
-checks, reconciliation counts, and publish gates.
+## Phase 6 - Snowflake and dbt Analytics
 
-**Independent acceptance:** Contract, duplicate, null, amount, status, and referential-integrity tests
-pass; quarantined rows retain actionable reason codes.
+**Depends on:** stable Phase 5 schemas.
 
-## Phase 6 - Snowflake and dbt analytics
+**Planned deliverables:** least-privilege Snowflake objects, dbt staging/intermediate/marts, SCD2
+dimensions, late-arriving-safe facts, contracts, tests, docs, and exposures.
 
-**Depends on:** Phase 5 schemas.
+## Phase 7 - Reconciliation Data Product
 
-**Deliverables:** Least-privilege Snowflake objects, dbt sources, staging/intermediate/marts, SCD2
-dimensions, late-arriving-safe incremental facts, model contracts, tests, docs, and exposures.
+**Depends on:** partner settlement Silver data and internal payment facts.
 
-**Independent acceptance:** SCD validity intervals do not overlap, one current dimension version
-exists, and reruns preserve fact uniqueness.
-
-## Phase 7 - Reconciliation data product
-
-**Depends on:** Phase 2 settlement Silver data and Phase 6 internal payment facts.
-
-**Deliverables:** Versioned matching rules, classified result fact, unmatched-item workflow fields,
+**Planned deliverables:** versioned matching rules, classified result fact, unmatched workflow fields,
 Finance mart, and daily report.
 
-**Independent acceptance:** Every eligible internal and settlement item is accounted for by a match or
-documented mismatch class; totals reconcile by partner and currency.
+## Phase 8 - Orchestration and Observability
 
-## Phase 8 - Orchestration and observability
+**Depends on:** executable pipelines from Phases 2-7.
 
-**Depends on:** Executable pipelines from Phases 2-7.
+**Planned deliverables:** Airflow DAGs, control state, lineage, freshness/volume/quality metrics,
+alerts, recovery runbooks, and backfill commands.
 
-**Deliverables:** Airflow DAGs, control tables, lineage events, freshness/volume/quality metrics,
-infrastructure metrics, alerts, recovery runbooks, and backfill commands.
+## Phase 9 - Dashboards and Release Hardening
 
-**Independent acceptance:** Failed upstream work blocks publication, recovery alerts clear correctly,
-and a controlled backfill is auditable.
+**Depends on:** governed operations and reconciliation marts.
 
-## Phase 9 - Business dashboards and release hardening
-
-**Depends on:** Governed operations and reconciliation marts.
-
-**Deliverables:** Operations, Finance, and Executive dashboards; semantic definitions; integration and
-end-to-end tests; deployment environments; promotion and rollback controls.
-
-**Independent acceptance:** Dashboard totals agree with certified marts, drill-downs preserve business
-keys, target SLAs are benchmarked, and observed metrics are reported separately from targets.
+**Planned deliverables:** Operations/Finance/Executive dashboards, semantic definitions, end-to-end
+tests, deployment environments, promotion controls, and measured SLA evidence.

@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Production-like batch and streaming data platform for fintech payments analytics."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "psycopg[binary]>=3.2,<4.0",
+]
 
 [project.optional-dependencies]
 dev = [

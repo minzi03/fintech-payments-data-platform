@@ -1,109 +1,116 @@
 # Fintech Payments Data Platform
 
 A production-like data platform for a hypothetical fintech that provides a payment gateway,
-merchant payments, transfers, refunds, and partner-bank settlement.
+merchant payments, account-to-account transfers, refunds, and settlement with banking partners.
 
-The platform is designed around two business-critical use cases:
+The long-term platform serves two business use cases:
 
 1. Near-real-time payment operations monitoring.
-2. Daily reconciliation between internal payment transactions and settlement files received from
-   banking partners.
+2. Daily reconciliation between internal transactions and partner settlement files.
 
 ## Project status
 
-**Current phase: Phase 0 - Project Foundation**
+**Current phase: Phase 1 - PostgreSQL OLTP Source and Realistic Data Generator**
 
-Phase 0 establishes the repository boundaries, engineering standards, documentation, tests, and CI
-checks. It intentionally contains no running data pipelines and no Docker services. Kafka,
-Debezium, MinIO, Airflow, Spark, Snowflake, and dbt models will be implemented in later phases.
+Implemented in this phase:
 
-Targets and scale figures in the documentation are design assumptions until a benchmark or an
-end-to-end test records an observed result.
+- A PostgreSQL 16 OLTP source with payment-domain tables, reference data, constraints, indexes,
+  audit timestamps, and immutable transaction events.
+- A typed, deterministic Python generator for customers, accounts, merchants, payment lifecycles,
+  events, and refunds.
+- Controlled invalid-amount and duplicate-idempotency probes that prove database constraints without
+  leaving invalid rows behind.
+- Unit tests that require no database and optional PostgreSQL integration tests.
 
-## Target capabilities
+Kafka, Debezium, MinIO, Airflow, Spark, dbt execution, Snowflake, BI, and observability remain planned
+and are not deployed in Phase 1. Targets and scale figures remain assumptions until measured.
 
-- Batch and streaming ingestion.
-- PostgreSQL change data capture through Debezium and Kafka.
-- Python ingestion and data-quality services.
-- Immutable Bronze storage in MinIO and conformed Silver processing.
-- Snowflake analytics warehouse with dbt staging, intermediate, and marts layers.
-- SCD Type 2 dimensions and late-arriving-safe incremental facts.
-- Settlement reconciliation and payment operations analytics.
-- Airflow orchestration, observability, CI/CD, and business dashboards.
-
-## Planned data flow
+## Phase 1 data flow
 
 ```text
-Source systems
-  |-- PostgreSQL OLTP -- Debezium CDC -- Kafka
-  |-- Payment domain events ----------- Kafka
-  `-- Partner settlement files -------- Batch ingestion
-                         |
-                         v
-                 MinIO Bronze (raw)
-                         |
-                         v
-                 Silver processing
-                         |
-                         v
-             Snowflake + dbt data products
-                         |
-             +-----------+------------+
-             |                        |
-    Operations analytics     Finance reconciliation
+Deterministic Python generator
+            |
+            v
+PostgreSQL OLTP (payments schema)
+  |-- current customer/account/merchant/payment/refund state
+  `-- immutable transaction lifecycle events
 ```
 
-This is a target-state view, not a claim that the components are already implemented.
+The broader target architecture is documented separately and must not be interpreted as running.
 
 ## Repository map
 
 | Path | Responsibility |
 | --- | --- |
-| `src/` | Python packages for shared code, generators, ingestion, processing, quality, and observability. |
-| `infrastructure/` | Versioned infrastructure configuration, grouped by platform component. |
-| `airflow/` | Future DAGs, shared orchestration assets, and DAG tests. |
-| `dbt/` | dbt project configuration and future staging, intermediate, mart, snapshot, macro, and test assets. |
-| `contracts/` | Versioned contracts for event streams and batch sources. |
-| `dashboards/` | Operations, finance, and executive dashboard definitions. |
-| `tests/` | Unit, integration, and end-to-end tests with explicit scope boundaries. |
-| `docs/` | Business context, architecture, data models, ADRs, runbooks, and roadmap. |
-| `.github/workflows/` | Automated repository quality gates. |
+| `src/common/` | Environment configuration, safe database connection handling, and logging. |
+| `src/generators/` | Deterministic domain generation, persistence, and the Phase 1 CLI. |
+| `infrastructure/postgres/init/` | Ordered PostgreSQL schema, reference-data, and index scripts. |
+| `tests/unit/` | Docker-independent tests for configuration and domain rules. |
+| `tests/integration/` | PostgreSQL schema, constraint, and generator persistence tests. |
+| `docs/` | Business context, architecture, data models, runbooks, and roadmap. |
+| `airflow/`, `dbt/`, `contracts/`, `dashboards/` | Reserved Phase 0 boundaries; no runtime implementation yet. |
 
 ## Local setup
 
-Python 3.11 or newer is required.
+Python 3.11 or newer, Docker Compose, and optionally GNU Make are required.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
+cp .env.example .env             # PowerShell: Copy-Item .env.example .env
 ```
 
-Create a local environment file before a later phase needs runtime configuration:
+The example values are local-only placeholders. Change them in the ignored `.env` file; never commit
+real credentials.
+
+## Start PostgreSQL and generate data
 
 ```bash
-cp .env.example .env
+docker compose config --quiet
+docker compose up -d --wait postgres
+make generate-data GENERATOR_ARGS="--once --seed 20260722 --customers 50 --merchants 15 --transactions 250 --invalid-rate 0.02 --duplicate-rate 0.02"
 ```
 
-Keep real credentials only in `.env` or an external secret manager. Never commit them.
+With Make:
+
+`Makefile` loads `.env` when it exists and otherwise uses `.env.example`. Without GNU Make, export the
+required database environment variables in the current shell, then run `python -m generators.cli`
+with the same generator arguments.
+
+`invalid-rate` and `duplicate-rate` run isolated constraint probes inside savepoints. Rejected probes
+are counted, rolled back, and never pollute the generated business data.
+
+See the [local PostgreSQL runbook](docs/runbooks/local-postgres.md) for health checks, logs,
+troubleshooting, and the destructive reset procedure.
 
 ## Quality checks
 
-Run the checks directly:
-
 ```bash
 ruff check .
-pytest
+ruff format --check .
+pytest -m "not integration"
 python -m yamllint .
-docker compose --env-file .env.example config --quiet
+docker compose config --quiet
 ```
 
-On systems with GNU Make, the same checks are available through:
+PostgreSQL integration tests are explicit:
 
 ```bash
-make validate
+TEST_DATABASE_URL=postgresql://payments_app:change_me@localhost:5432/fintech_payments \
+  pytest -m integration
 ```
+
+PowerShell:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql://payments_app:change_me@localhost:5432/fintech_payments"
+pytest -m integration
+```
+
+`make validate` preserves the fast default gate; `make test-integration` runs the database suite when
+PostgreSQL is available.
 
 ## Documentation entry points
 
@@ -111,13 +118,16 @@ make validate
 - [Business and platform requirements](docs/business/requirements.md)
 - [Target architecture](docs/architecture/target-architecture.md)
 - [Source model](docs/data-model/source-model.md)
+- [Detailed OLTP schema](docs/data-model/oltp-schema.md)
+- [Local PostgreSQL runbook](docs/runbooks/local-postgres.md)
 - [Implementation roadmap](docs/roadmap.md)
 
 ## Security baseline
 
-- The repository contains variable names and non-sensitive local defaults only.
-- Secret-bearing variables are empty in `.env.example`.
-- The example dbt profile resolves all connection settings from environment variables.
-- `.env`, local dbt profiles, logs, build outputs, and data files are ignored by Git.
-- Least-privilege platform roles and credential rotation will be implemented before external systems
-  are connected.
+- Runtime credentials come only from environment variables or a future secret manager.
+- The generator never logs passwords or a complete connection URL.
+- `.env`, logs, runtime data, test caches, and database volumes are excluded from Git.
+- National identifiers, card data, bank credentials, and other unnecessary sensitive values are not
+  generated or stored.
+- Phase 1 uses a local application role. Production role separation, rotation, TLS, masking, and
+  retention controls remain future hardening work.
