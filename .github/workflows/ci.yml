@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Phase 3 quality gates
+    name: Phase 4 quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

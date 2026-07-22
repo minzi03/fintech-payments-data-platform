@@ -8,6 +8,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=${POSTGRES_MAX_REPLICATION_SLOTS:-10}
+      - -c
+      - max_wal_senders=${POSTGRES_MAX_WAL_SENDERS:-10}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -72,8 +80,123 @@ services:
         mc anonymous set none "local/$${MINIO_BRONZE_BUCKET}" &&
         mc anonymous set none "local/$${MINIO_QUARANTINE_BUCKET}"
 
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KAFKA_EXTERNAL_PORT:-29092}:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-29092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID must be set}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: ${KAFKA_DEFAULT_PARTITIONS:-3}
+      KAFKA_LOG_RETENTION_MS: ${KAFKA_RETENTION_MS:-604800000}
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  kafka-connect:
+    image: quay.io/debezium/connect:3.6.0.Final
+    hostname: kafka-connect
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${KAFKA_CONNECT_PORT:-8083}:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: fintech-payments-connect
+      CONFIG_STORAGE_TOPIC: fintech.connect.configs
+      OFFSET_STORAGE_TOPIC: fintech.connect.offsets
+      STATUS_STORAGE_TOPIC: fintech.connect.status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "true"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "true"
+      REST_ADVERTISED_HOST_NAME: kafka-connect
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent http://localhost:8083/connector-plugins >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  connector-init:
+    build:
+      context: ./infrastructure/debezium
+      dockerfile: connector-init.Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app/src
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      KAFKA_CONNECT_URL: http://kafka-connect:8083
+      KAFKA_TOPIC_PREFIX: ${KAFKA_TOPIC_PREFIX:-fintech.cdc}
+      KAFKA_DEFAULT_PARTITIONS: ${KAFKA_DEFAULT_PARTITIONS:-3}
+      KAFKA_RETENTION_MS: ${KAFKA_RETENTION_MS:-604800000}
+      DEBEZIUM_CONNECTOR_NAME: ${DEBEZIUM_CONNECTOR_NAME:-payments-postgres-cdc}
+      DEBEZIUM_SLOT_NAME: ${DEBEZIUM_SLOT_NAME:-fintech_payments_cdc_slot}
+      DEBEZIUM_PUBLICATION_NAME: ${DEBEZIUM_PUBLICATION_NAME:-fintech_payments_cdc_publication}
+      DEBEZIUM_DATABASE_HOST: postgres
+      DEBEZIUM_DATABASE_PORT: 5432
+      DEBEZIUM_DATABASE_NAME: ${DEBEZIUM_DATABASE_NAME:-fintech_payments}
+      DEBEZIUM_DATABASE_USER: ${DEBEZIUM_DATABASE_USER:-payments_cdc}
+      DEBEZIUM_DATABASE_PASSWORD: ${DEBEZIUM_DATABASE_PASSWORD:?DEBEZIUM_DATABASE_PASSWORD must be set}
+      DEBEZIUM_HEARTBEAT_INTERVAL_MS: ${DEBEZIUM_HEARTBEAT_INTERVAL_MS:-10000}
+      DEBEZIUM_SNAPSHOT_MODE: ${DEBEZIUM_SNAPSHOT_MODE:-initial}
+      CDC_HTTP_TIMEOUT_SECONDS: ${CDC_HTTP_TIMEOUT_SECONDS:-10}
+      CDC_HTTP_MAX_ATTEMPTS: ${CDC_HTTP_MAX_ATTEMPTS:-10}
+    volumes:
+      - ./src:/app/src:ro
+      - ./scripts:/app/scripts:ro
+      - ./infrastructure/debezium/connectors:/app/connectors:ro
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        python scripts/cdc/bootstrap_postgres.py &&
+        python scripts/cdc/register_connector.py
+        --template /app/connectors/payments-postgres.json --wait-running
+
 volumes:
   postgres_data:
     name: fintech-payments-postgres-data
   minio_data:
     name: fintech-payments-minio-data
+  kafka_data:
+    name: fintech-payments-kafka-data

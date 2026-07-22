@@ -48,6 +48,7 @@ testpaths = ["tests", "airflow/tests"]
 pythonpath = ["src"]
 markers = [
   "batch_integration: local filesystem and SQLite settlement ingestion integration tests",
+  "cdc_integration: tests that require PostgreSQL, Kafka, and Debezium services",
   "integration: tests that require one or more infrastructure dependencies",
   "minio_integration: tests that require the local MinIO service",
   "end_to_end: tests that exercise a complete business data flow",

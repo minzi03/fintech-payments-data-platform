@@ -10,7 +10,7 @@ Long-term business use cases:
 
 ## Project status
 
-**Current phase: Phase 3 - MinIO-backed Shared Bronze Storage**
+**Current phase: Phase 4 - PostgreSQL CDC Infrastructure with Debezium and Kafka**
 
 Implemented:
 
@@ -23,15 +23,23 @@ Implemented:
   file/record validation, partial rejection, quarantine, dry-run, and structured results.
 - A storage interface with local filesystem and MinIO adapters, private bucket bootstrap, immutable
   conditional writes, checksummed metadata, bounded retries, and collision protection.
+- PostgreSQL logical replication with a dedicated non-superuser CDC role, explicit six-table
+  publication, Kafka 4 KRaft broker, Debezium Kafka Connect, idempotent connector bootstrap, and
+  schema-enabled CDC topics.
+- Bounded metadata-only topic inspection plus opt-in integration coverage for initial snapshots,
+  inserts, updates, delete/tombstone behavior, exact Decimals, timestamps, LSNs, and restart safety.
 - Docker-independent unit/local batch tests and opt-in integration tests against a real MinIO.
 
-Kafka, Debezium, Airflow, Spark, executable dbt models, Snowflake, dashboards, and observability are
-not implemented. Phase 3 performs no reconciliation.
+No CDC consumer writes to MinIO in Phase 4. Airflow, Spark/Flink, executable dbt models, Snowflake,
+dashboards, reconciliation, and observability are not implemented.
 
 ## Implemented data flow
 
 ```text
 Payment generator --------------------------> PostgreSQL OLTP
+                                                    |
+                                                    v
+                                    logical WAL -> Debezium -> Kafka CDC topics
 
 Partner settlement CSV
         |
@@ -53,9 +61,12 @@ filename + SHA-256 + settlement-v1 validation
 | `src/common/` | Typed configuration, database lifecycle, logging, and shared immutable storage backends. |
 | `src/generators/` | Phase 1 deterministic PostgreSQL domain generator. |
 | `infrastructure/postgres/init/` | Phase 1 OLTP schema, reference data, and indexes. |
+| `infrastructure/debezium/` | Versioned connector config and pinned bootstrap image. |
+| `scripts/cdc/` | Least-privilege PostgreSQL bootstrap, connector lifecycle, and safe topic inspection. |
 | `tests/unit/` | Docker-independent unit tests. |
 | `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
 | `tests/integration/minio/` | Opt-in real MinIO storage and ingestion integration tests. |
+| `tests/integration/cdc/` | Opt-in PostgreSQL/Kafka/Debezium end-to-topic acceptance tests. |
 | `docs/` | Business context, contracts, architecture, roadmap, and runbooks. |
 
 ## Setup
@@ -131,6 +142,29 @@ make generate-data GENERATOR_ARGS="--once --seed 20260722 --customers 50 --merch
 
 See the [local PostgreSQL runbook](docs/runbooks/local-postgres.md).
 
+## PostgreSQL CDC to Kafka
+
+Configure ignored `.env`, generate source rows before the first connector registration when you
+want to exercise the initial snapshot, then start the bounded Phase 4 stack:
+
+```bash
+make postgres-up
+make generate-data GENERATOR_ARGS="--once --seed 20260722 --customers 50 --merchants 15 --transactions 250"
+make cdc-up
+make cdc-status
+make cdc-inspect CDC_TABLE=payment_transactions
+```
+
+The six CDC topics follow `fintech.cdc.payments.<table>`. JSON converters keep schemas and the full
+Debezium envelope. `NUMERIC(18,2)` uses Kafka Connect Decimal bytes (`precise`), never a binary
+floating-point representation. Inspection prints primary keys and operational metadata only, not
+full customer/payment payloads. `make cdc-down` removes only connector/Kafka containers and retains
+PostgreSQL, MinIO, and the Kafka volume.
+
+See [CDC architecture](docs/architecture/cdc-architecture.md), the
+[CDC event contract](docs/data-model/cdc-event-contract.md), and the
+[local Kafka/Debezium runbook](docs/runbooks/local-kafka-debezium.md).
+
 ## Quality checks
 
 ```bash
@@ -139,13 +173,14 @@ ruff format --check .
 pytest -m "not integration"
 pytest -m batch_integration
 RUN_MINIO_INTEGRATION=1 pytest -m minio_integration
+RUN_CDC_INTEGRATION=1 pytest -m cdc_integration
 python -m yamllint .
 docker compose --env-file .env.example config --quiet
 ```
 
-PostgreSQL integration tests remain opt-in through `TEST_DATABASE_URL`. MinIO tests require the
-healthy service and `RUN_MINIO_INTEGRATION=1`. `make validate` keeps the fast Docker-independent
-gate; the two storage integration suites have dedicated targets.
+PostgreSQL integration tests remain opt-in through `TEST_DATABASE_URL`. MinIO and CDC tests require
+their healthy services and explicit run flags. `make validate` remains the fast default gate; real
+infrastructure suites have dedicated targets.
 
 ## Documentation
 
@@ -156,6 +191,9 @@ gate; the two storage integration suites have dedicated targets.
 - [Source model](docs/data-model/source-model.md)
 - [Settlement batch runbook](docs/runbooks/settlement-batch-ingestion.md)
 - [Storage abstraction](docs/architecture/storage-abstraction.md)
+- [CDC architecture](docs/architecture/cdc-architecture.md)
+- [CDC event contract](docs/data-model/cdc-event-contract.md)
+- [Local Kafka and Debezium runbook](docs/runbooks/local-kafka-debezium.md)
 - [Local MinIO runbook](docs/runbooks/local-minio.md)
 - [Roadmap](docs/roadmap.md)
 
@@ -164,9 +202,13 @@ gate; the two storage integration suites have dedicated targets.
 - No credentials are required for local batch ingestion; MinIO values come only from environment
   variables and secret-bearing configuration fields are excluded from representations.
 - PostgreSQL credentials remain environment variables and are never logged in full.
+- The Debezium role is separate from the application administrator, has replication plus explicit
+  schema/table read grants, and is actively verified as non-superuser.
+- Kafka and Kafka Connect bind only to loopback for local diagnostics; the inspection command
+  redacts row payloads and never creates a durable consumer group.
 - No card data, customer name, national ID, bank credential, or authentication token belongs in the
   settlement contract.
 - Rejected-record evidence contains source financial references and must be treated as confidential.
 - Buckets are private; anonymous access is explicitly disabled by bootstrap.
-- TLS, external secret management, per-service roles, retention locking, and distributed deployment
-  are future hardening work.
+- Local Kafka/Connect traffic is plaintext. TLS/SASL, external secret management, ACLs, retention
+  locking, and distributed deployment are future hardening work.

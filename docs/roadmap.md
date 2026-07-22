@@ -8,7 +8,7 @@ Phase 0 Foundation                                      [implemented]
   -> Phase 1 PostgreSQL OLTP + generator                [implemented]
       -> Phase 2 Settlement batch ingestion             [implemented]
           -> Phase 3 Shared local/MinIO Bronze storage  [implemented]
-              -> Phase 4 PostgreSQL CDC + Kafka         [planned]
+              -> Phase 4 PostgreSQL CDC + Kafka         [implemented]
                   -> Phase 5 CDC consumer to Bronze     [planned]
                       -> Phase 6 Silver + data quality  [planned]
                           -> Phase 7 Airflow             [planned]
@@ -51,12 +51,27 @@ partial row failures write Bronze and rejection evidence; failed upload cannot b
 **Deliberately deferred:** distributed locking, production identity/TLS/retention, CDC, downstream
 format conversion, reconciliation, orchestration, warehouse, BI, and observability.
 
+### Phase 4 - PostgreSQL CDC Infrastructure with Debezium and Kafka
+
+**Depends on:** Phase 1's stable business schema and Phase 3's independently validated Bronze
+boundary. Phase 4 does not connect those paths yet.
+
+**Implemented:** logical WAL settings, dedicated non-superuser connector role, explicit publication,
+single-node Kafka KRaft, Debezium Kafka Connect, persistent internal state, versioned connector
+template, precise Decimal and microsecond timestamp settings, schema-enabled full envelopes,
+idempotent create/update bootstrap, connector lifecycle scripts, metadata-only topic inspection, and
+real-service tests for snapshot/create/update/delete/restart/event/refund semantics.
+
+**Independent acceptance:** all six topics exist; connector and task are `RUNNING`; bootstrap returns
+`unchanged` on replay; initial snapshot emits `r`; later writes emit `c`/`u`/`d`; tombstones are
+distinguished; Decimal remains logical bytes; timestamps, source LSN, source transaction ID, Kafka
+partition, and offset remain available.
+
+**Deliberately deferred:** CDC consumer, MinIO publication, transforms/SMTs that discard envelope
+metadata, Schema Registry, business event topics, reconciliation, orchestration, analytics, and
+production Kafka security/HA.
+
 ## Planned phases
-
-### Phase 4 - PostgreSQL CDC and Kafka
-
-Publication settings, pinned Kafka/Debezium topology, versioned CDC envelope, schema evolution,
-restart/rebalance tests, and durable source offsets. It must not change Phase 1 business semantics.
 
 ### Phase 5 - CDC Consumer to Shared Bronze
 

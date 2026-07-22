@@ -2,8 +2,9 @@
 
 ## Scope
 
-This runbook operates the Phase 1 single-node local PostgreSQL source. It is not a production backup,
-recovery, high-availability, or security procedure.
+This runbook operates the Phase 1 single-node local PostgreSQL source and its Phase 4 logical
+replication prerequisites. It is not a production backup, recovery, high-availability, or security
+procedure.
 
 ## Prerequisites and configuration
 
@@ -16,7 +17,9 @@ python -m pip install -e ".[dev]"
 
 PowerShell uses `Copy-Item .env.example .env`. Update only the ignored `.env` file. Required variables
 are `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
-`DATABASE_URL`. Do not paste the URL into logs or tickets because it contains a password.
+`DATABASE_URL`. Phase 4 additionally uses `POSTGRES_MAX_REPLICATION_SLOTS`,
+`POSTGRES_MAX_WAL_SENDERS`, and the `DEBEZIUM_DATABASE_*` variables. Do not paste passwords or the
+database URL into logs or tickets.
 
 ## Validate and start
 
@@ -41,12 +44,27 @@ docker compose logs postgres
 make postgres-logs
 ```
 
+Compose starts PostgreSQL with `wal_level=logical` and bounded slot/sender counts. Verify without
+printing credentials:
+
+```bash
+docker compose --env-file .env exec postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "SHOW wal_level; SHOW max_replication_slots; SHOW max_wal_senders;"
+```
+
 ## Initialization lifecycle
 
 On an empty named volume, PostgreSQL executes the read-only scripts in lexical order from
 `infrastructure/postgres/init/`. On subsequent starts, PostgreSQL reuses the existing database and
 does not rerun the initialization directory. Editing an init script therefore does not migrate an
 existing local volume.
+
+The CDC role and publication intentionally are not init SQL. The one-shot `connector-init` service
+reconciles them after every CDC startup, so Phase 4 works with a populated Phase 1 volume without a
+reset. It creates/rotates a dedicated LOGIN REPLICATION role, verifies `NOSUPERUSER`, grants CONNECT,
+payments schema USAGE, SELECT on exactly six captured tables, and sets an explicit publication.
+Changing the application schema/constraints is outside this bootstrap.
 
 ## Generate a dataset
 
@@ -95,6 +113,13 @@ pytest -m integration
 Integration tests open a transaction per test and roll it back, leaving committed local generator
 data unchanged.
 
+CDC integration commits uniquely keyed probe rows because only committed WAL changes are emitted.
+Run it separately after the full CDC stack is healthy:
+
+```bash
+RUN_CDC_INTEGRATION=1 pytest -m cdc_integration
+```
+
 ## Stop and restart
 
 ```bash
@@ -103,6 +128,7 @@ make postgres-up
 ```
 
 `docker compose down` removes the container/network but preserves Phase 1 data in the named volume.
+If a logical slot is active, stop Kafka Connect before resetting PostgreSQL.
 
 ## Destructive reset
 
@@ -128,8 +154,14 @@ run against a clean database. Never use this procedure for a shared or productio
   for disposable local data only, the destructive reset.
 - **Authentication failure:** ensure the shell/test URL matches `.env`; never print the full URL.
 
-## Phase 1 limitations
+## PostgreSQL limitations through Phase 4
 
-- One local PostgreSQL node, one application role, no TLS, no HA, no automated backup, and no load SLA.
+- One local PostgreSQL node, plaintext local network, no HA, automated backup, or load SLA.
+- The application bootstrap account remains local-development administrative identity. Debezium uses
+  a separate non-superuser role, but production authentication/rotation and pg_hba hardening are not
+  implemented.
+- Replication slots can retain WAL when Connect is unavailable; inspect/remove abandoned slots only
+  through the documented CDC troubleshooting procedure.
 - No ledger posting, account balance mutation, cross-currency conversion, or settlement records.
-- No Kafka, Debezium, MinIO, Airflow, Spark, dbt execution, Snowflake, BI, or observability services.
+- Kafka/Debezium transport is implemented, but no CDC consumer, Silver processing, Airflow, Spark,
+  dbt execution, Snowflake, BI, or observability service exists.
