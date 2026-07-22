@@ -1,0 +1,52 @@
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Runtime data, logs, and temporary files
+data/
+logs/
+tmp/
+*.log
+airflow/logs/
+airflow/airflow.db
+airflow/airflow.cfg
+
+# dbt generated and local files
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/packages.yml.lock
+dbt/profiles.yml
+
+# Local orchestration and warehouse credentials
+**/secrets/
+*.pem
+*.key
+*.p12

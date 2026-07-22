@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fintech-payments-data-platform"
+version = "0.1.0"
+description = "Production-like batch and streaming data platform for fintech payments analytics."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "coverage[toml]>=7.0,<8.0",
+  "pytest>=8.0,<10.0",
+  "pytest-cov>=6.0,<8.0",
+  "ruff>=0.12,<1.0",
+  "yamllint>=1.35,<2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+  ".git",
+  ".venv",
+  "build",
+  "dbt/target",
+  "dist",
+]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+cache_dir = "tmp/pytest_cache"
+testpaths = ["tests", "airflow/tests"]
+pythonpath = ["src"]
+markers = [
+  "integration: tests that require one or more infrastructure dependencies",
+  "end_to_end: tests that exercise a complete business data flow",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_empty = true
+exclude_lines = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "pragma: no cover",
+  "raise NotImplementedError",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"

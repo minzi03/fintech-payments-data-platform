@@ -1,0 +1,5 @@
+name: fintech-payments-data-platform
+
+# Phase 0 validates the Compose document without starting infrastructure.
+# Services will be added independently in later phases.
+services: {}
