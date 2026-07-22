@@ -2,14 +2,19 @@
 
 ## Status and boundary
 
-Implemented in Phase 4. The pipeline ends at schema-enabled Kafka topics:
+The Phase 4 transport remains implemented and unchanged. Phase 5 now consumes its table topics into
+immutable Bronze while preserving the envelope:
 
 ```text
-payments OLTP -> PostgreSQL logical WAL -> Debezium PostgreSQL connector -> Kafka CDC topics
+payments OLTP -> PostgreSQL logical WAL -> Debezium -> Kafka CDC topics
+                                                        |
+                                                        v
+                                            reliable consumer -> MinIO Bronze
 ```
 
-No Phase 4 component consumes CDC records into MinIO, classifies settlements, builds Silver data, or
-emits business-event topics. Those are separate later phases.
+The transport still ends at Kafka as an independently testable boundary. The Phase 5 consumer is a
+separate process and does not alter connector semantics. No component builds Silver data, classifies
+settlements, or emits business-event topics.
 
 ## Components
 
@@ -95,6 +100,11 @@ Kafka messages already published remain in their topics; diagnostic inspection s
 beginning without a durable consumer group. At-least-once boundaries still require downstream
 deduplication by source position/business key in Phase 5/6.
 
+Phase 5 adds a separate consumer group with automatic commit/store disabled. It retains the full
+envelope plus Kafka coordinates in explicit-schema Parquet and commits only after immutable upload,
+checksum verification, and manifest `UPLOADED`. See `cdc-bronze-ingestion.md` for the crash matrix,
+replay, rebalance, DLQ, and object identity contract.
+
 ## Security and limitations
 
 Kafka and Connect host ports bind to `127.0.0.1`; containers use their private Compose network.
@@ -103,5 +113,6 @@ are redacted from errors. The inspection CLI outputs primary keys and operationa
 full `before`/`after` rows.
 
 Local broker/Connect/PostgreSQL traffic is plaintext and has no SASL/ACL/TLS. There is one broker,
-one Connect worker, one connector task, no capacity benchmark, no dead-letter path, and no production
-WAL/retention alerting. These are known limitations, not hidden production claims.
+one Connect worker, one connector task, no capacity benchmark, and no production WAL/retention
+alerting. Poison CDC records now use private MinIO quarantine, but there is no centralized alerting or
+distributed recovery coordinator. These are known limitations, not hidden production claims.

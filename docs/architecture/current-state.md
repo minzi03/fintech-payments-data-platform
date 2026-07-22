@@ -1,6 +1,6 @@
 # Current State
 
-## Status through Phase 4
+## Status through Phase 5
 
 The repository now has independently executable batch and CDC intake foundations:
 
@@ -9,6 +9,13 @@ Payment generator -> PostgreSQL 16 payments OLTP
                          |
                          v logical WAL
                     Debezium Connect -> Kafka CDC topics
+                                             |
+                                             v
+                                 reliable Python CDC consumer
+                                  |          |             |
+                                  v          v             v
+                            Parquet       SQLite       quarantine
+                            MinIO Bronze  manifest     poison evidence
 
 Partner settlement CSV -> contract validation -> SQLite manifest
                               |
@@ -32,14 +39,18 @@ Implemented:
   publication for six business tables, Kafka 4 KRaft, Debezium Connect, versioned connector config,
   persistent offsets/config/status topics, idempotent connector reconciliation, full schema-enabled
   envelopes, redacted bounded inspection, and real CDC integration tests.
+- Phase 5 manual-commit Kafka consumer, envelope validation, deterministic partition/range
+  micro-batching, explicit Arrow schema, ZSTD Parquet, immutable MinIO Bronze publication, SQLite
+  batch lifecycle, MinIO poison quarantine, safe rebalance/shutdown, replay/recovery, and real
+  Kafka/MinIO integration tests.
 
-Compose contains exactly `postgres`, `minio`, `minio-init`, `kafka`, `kafka-connect`, and
-`connector-init`. Local storage remains the default for batch tests. SQLite continues to own mutable
-batch manifest state; MinIO owns immutable artifacts; Kafka owns the CDC log and Connect state.
+Compose contains those six Phase 1-4 services plus one profile-gated `cdc-consumer`; it opens no host
+port. Local storage remains available for lightweight tests. SQLite owns mutable settlement/CDC
+manifest state; MinIO owns immutable artifacts; Kafka owns the CDC log and Connect state.
 
 ## Runtime boundaries
 
-- Phase 4 ends at Kafka topics. No application consumes CDC records or writes them to Bronze.
+- Phase 5 ends at immutable CDC Bronze Parquet. No current-state merge or Silver projection runs.
 - Source rows are unchanged by the CDC implementation. Only PostgreSQL runtime WAL settings, a
   connector role, grants, and an explicit publication are added.
 - Kafka uses three partitions per CDC topic locally, replication factor one, seven-day retention,
@@ -49,9 +60,9 @@ batch manifest state; MinIO owns immutable artifacts; Kafka owns the CDC log and
 
 ## Not implemented
 
-- CDC-to-MinIO consumer, Silver CDC application/deduplication, DLQ, or replay coordinator.
+- Silver CDC application/deduplication, schema evolution policy, or business-event derivation.
 - Business event topics such as `payment_completed`; Phase 4 contains database CDC topics only.
-- Reconciliation classification, Parquet/table formats, Airflow, Spark/Flink, Snowflake, executable
+- Reconciliation classification, table formats, Airflow, Spark/Flink, Snowflake, executable
   dbt models, dashboards, catalog, lineage, metrics, or alerting.
 - TLS/SASL/ACLs, external secrets, distributed Kafka/Connect/PostgreSQL, replication factor greater
   than one, backups, disaster recovery, production retention sizing, or capacity benchmarks.

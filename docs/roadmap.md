@@ -9,7 +9,7 @@ Phase 0 Foundation                                      [implemented]
       -> Phase 2 Settlement batch ingestion             [implemented]
           -> Phase 3 Shared local/MinIO Bronze storage  [implemented]
               -> Phase 4 PostgreSQL CDC + Kafka         [implemented]
-                  -> Phase 5 CDC consumer to Bronze     [planned]
+                  -> Phase 5 CDC consumer to Bronze     [implemented]
                       -> Phase 6 Silver + data quality  [planned]
                           -> Phase 7 Airflow             [planned]
                               -> Phase 8 Snowflake/dbt  [planned]
@@ -71,12 +71,24 @@ partition, and offset remain available.
 metadata, Schema Registry, business event topics, reconciliation, orchestration, analytics, and
 production Kafka security/HA.
 
-## Planned phases
-
 ### Phase 5 - CDC Consumer to Shared Bronze
 
-Validated CDC records, deterministic raw object keys, offset-safe publication, poison-message
-handling, and replay tests using the established storage abstraction.
+**Depends on:** Phase 4 CDC topic semantics and Phase 3 immutable storage.
+
+**Implemented:** manual commit/store control, wrapper/direct Debezium parsing, snapshot/create/update/
+delete/tombstone handling, deterministic Kafka event and range identity, partition-aware contiguous
+micro-batches, explicit-schema ZSTD Parquet, immutable MinIO publication, SQLite batch manifest,
+private poison quarantine, bounded retry, rebalance/shutdown flush, payload-safe inspection, and
+upload-before-commit replay/recovery tests.
+
+**Independent acceptance:** exact Kafka coordinates are preserved; upload/checksum/`UPLOADED`
+precede synchronous `offset_end + 1`; replay reuses identical objects; collision does not overwrite;
+poison offsets advance only after quarantine; committed groups do not reprocess on restart.
+
+**Deliberately deferred:** Silver merging/deduplication, distributed locks/control store, production
+security/HA/retention, schema registry/governance, orchestration, analytics, and observability.
+
+## Planned phases
 
 ### Phase 6 - Silver Processing and Data Quality
 

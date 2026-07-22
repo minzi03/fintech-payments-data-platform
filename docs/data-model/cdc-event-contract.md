@@ -2,9 +2,9 @@
 
 ## Contract status
 
-Implemented transport contract for Phase 4 PostgreSQL CDC topics. The versioned connector template
-and database schema determine the record schema. Phase 5 must preserve this envelope and transport
-metadata when publishing to Bronze; no Phase 4 consumer or Bronze object exists.
+Implemented transport contract for Phase 4 PostgreSQL CDC topics and consumed unchanged by the
+Phase 5 Bronze service. The versioned connector template and database schema determine the embedded
+record schema; `cdc-bronze-v1` preserves the envelope and transport metadata in Parquet.
 
 ## Record key
 
@@ -74,27 +74,27 @@ Source and envelope clocks additionally expose integer `ts_ms`, `ts_us`, and (co
 `ts_ns`. Consumers must distinguish source commit time, connector processing time, and Kafka broker
 position.
 
-## Metadata required by Phase 5
+## Metadata preserved by Phase 5
 
-A future Bronze consumer must retain at least:
+The implemented Bronze consumer retains:
 
-- complete schema-enabled key and value bytes;
+- deterministic key/envelope JSON plus the original non-tombstone UTF-8 value;
 - connector name and Debezium version;
 - source database/schema/table, LSN, transaction ID, snapshot flag, and source timestamps;
 - envelope operation and processing timestamps;
 - Kafka topic, partition, offset, and record timestamp;
-- ingestion run/time and future object checksum/schema version.
+- ingestion time, deterministic event/batch IDs, object checksum, and Bronze schema version.
 
 `topic + partition + offset` is the unique Kafka transport position. Source LSN/transaction metadata
 supports database ordering/audit but must not be assumed globally unique without the source identity.
 Connector-level BEGIN/END ordering metadata is also emitted to `fintech.cdc.transaction`; Phase 5
-must treat it as transaction metadata rather than a row/table change topic.
+does not subscribe to it because the consumer uses an explicit six-table allowlist.
 
 ## Schema handling and compatibility
 
 Phase 4 uses no flattening SMT and no external Schema Registry. Each JSON record carries its Kafka
-Connect schema; connector/source evolution can therefore change the embedded schema. Phase 5 must
-store the original bytes before interpretation. Phase 6 will define compatibility, projection,
+Connect schema; connector/source evolution can therefore change the embedded schema. Phase 5 stores
+the original JSON value alongside projected metadata. Phase 6 will define compatibility, projection,
 defaults, and breaking-change quarantine based on actual downstream requirements.
 
 ## Classification and data sensitivity

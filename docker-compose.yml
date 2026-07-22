@@ -193,6 +193,58 @@ services:
         python scripts/cdc/register_connector.py
         --template /app/connectors/payments-postgres.json --wait-running
 
+  cdc-consumer:
+    profiles:
+      - cdc-consumer
+    build:
+      context: .
+      dockerfile: infrastructure/cdc-consumer/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      connector-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      STORAGE_BACKEND: minio
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      MINIO_BRONZE_BUCKET: ${MINIO_BRONZE_BUCKET:-fintech-bronze}
+      MINIO_QUARANTINE_BUCKET: ${MINIO_QUARANTINE_BUCKET:-fintech-quarantine}
+      MINIO_CONNECT_TIMEOUT_SECONDS: ${MINIO_CONNECT_TIMEOUT_SECONDS:-5}
+      MINIO_READ_TIMEOUT_SECONDS: ${MINIO_READ_TIMEOUT_SECONDS:-30}
+      MINIO_MAX_RETRIES: ${MINIO_MAX_RETRIES:-3}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_PREFIX: ${KAFKA_TOPIC_PREFIX:-fintech.cdc}
+      CDC_CONSUMER_GROUP_ID: ${CDC_CONSUMER_GROUP_ID:-fintech-cdc-bronze-v1}
+      CDC_CONSUMER_CLIENT_ID: ${CDC_CONSUMER_CLIENT_ID:-fintech-cdc-bronze-consumer}
+      CDC_CONSUMER_TOPICS: ${CDC_CONSUMER_TOPICS:?CDC_CONSUMER_TOPICS must be set}
+      CDC_CONSUMER_AUTO_OFFSET_RESET: ${CDC_CONSUMER_AUTO_OFFSET_RESET:-earliest}
+      CDC_CONSUMER_BATCH_SIZE: ${CDC_CONSUMER_BATCH_SIZE:-100}
+      CDC_CONSUMER_FLUSH_INTERVAL_SECONDS: ${CDC_CONSUMER_FLUSH_INTERVAL_SECONDS:-5}
+      CDC_CONSUMER_POLL_TIMEOUT_MS: ${CDC_CONSUMER_POLL_TIMEOUT_MS:-1000}
+      CDC_CONSUMER_MAX_POLL_INTERVAL_MS: ${CDC_CONSUMER_MAX_POLL_INTERVAL_MS:-300000}
+      CDC_CONSUMER_SESSION_TIMEOUT_MS: ${CDC_CONSUMER_SESSION_TIMEOUT_MS:-45000}
+      CDC_CONSUMER_HEARTBEAT_INTERVAL_MS: ${CDC_CONSUMER_HEARTBEAT_INTERVAL_MS:-15000}
+      CDC_CONSUMER_MAX_RETRIES: ${CDC_CONSUMER_MAX_RETRIES:-3}
+      CDC_CONSUMER_RETRY_BACKOFF_SECONDS: ${CDC_CONSUMER_RETRY_BACKOFF_SECONDS:-0.5}
+      CDC_DLQ_TOPIC: ${CDC_DLQ_TOPIC:-fintech.cdc.dlq}
+      CDC_BRONZE_BUCKET: ${CDC_BRONZE_BUCKET:-fintech-bronze}
+      CDC_QUARANTINE_BUCKET: ${CDC_QUARANTINE_BUCKET:-fintech-quarantine}
+      CDC_SCHEMA_VERSION: ${CDC_SCHEMA_VERSION:-cdc-bronze-v1}
+      CDC_CONSUMER_MANIFEST_DB: /app/data/control/cdc_consumer_manifest.sqlite3
+      CDC_CONSUMER_TEMP_DIR: /app/data/tmp/cdc_consumer
+      CDC_CONSUMER_SHUTDOWN_TIMEOUT_SECONDS: ${CDC_CONSUMER_SHUTDOWN_TIMEOUT_SECONDS:-30}
+    volumes:
+      - cdc_consumer_state:/app/data/control
+      - cdc_consumer_tmp:/app/data/tmp
+
 volumes:
   postgres_data:
     name: fintech-payments-postgres-data
@@ -200,3 +252,7 @@ volumes:
     name: fintech-payments-minio-data
   kafka_data:
     name: fintech-payments-kafka-data
+  cdc_consumer_state:
+    name: fintech-payments-cdc-consumer-state
+  cdc_consumer_tmp:
+    name: fintech-payments-cdc-consumer-tmp

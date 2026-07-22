@@ -8,6 +8,8 @@ SETTLEMENT_INPUT_DIR ?= data/inbound/settlements
 SETTLEMENT_FIXTURE_ARGS ?= --partner-id $(SETTLEMENT_PARTNER) --settlement-date $(SETTLEMENT_DATE) --seed $(SETTLEMENT_FIXTURE_SEED)
 SETTLEMENT_INGEST_ARGS ?= --input-dir $(SETTLEMENT_INPUT_DIR) --partner-id $(SETTLEMENT_PARTNER) --contract $(SETTLEMENT_CONTRACT)
 CDC_TABLE ?= payment_transactions
+CDC_CONSUMER_ARGS ?= --storage-backend minio
+CDC_CONSUMER_INSPECT_ARGS ?=
 
 -include $(COMPOSE_ENV)
 export APP_ENV LOG_LEVEL POSTGRES_HOST POSTGRES_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_URL
@@ -25,11 +27,19 @@ export DEBEZIUM_CONNECTOR_NAME DEBEZIUM_SLOT_NAME DEBEZIUM_PUBLICATION_NAME
 export DEBEZIUM_DATABASE_HOST DEBEZIUM_DATABASE_PORT DEBEZIUM_DATABASE_NAME
 export DEBEZIUM_DATABASE_USER DEBEZIUM_DATABASE_PASSWORD DEBEZIUM_HEARTBEAT_INTERVAL_MS
 export DEBEZIUM_SNAPSHOT_MODE CDC_HTTP_TIMEOUT_SECONDS CDC_HTTP_MAX_ATTEMPTS
+export CDC_CONSUMER_GROUP_ID CDC_CONSUMER_CLIENT_ID CDC_CONSUMER_TOPICS
+export CDC_CONSUMER_AUTO_OFFSET_RESET CDC_CONSUMER_BATCH_SIZE
+export CDC_CONSUMER_FLUSH_INTERVAL_SECONDS CDC_CONSUMER_POLL_TIMEOUT_MS
+export CDC_CONSUMER_MAX_POLL_INTERVAL_MS CDC_CONSUMER_SESSION_TIMEOUT_MS
+export CDC_CONSUMER_HEARTBEAT_INTERVAL_MS CDC_CONSUMER_MAX_RETRIES
+export CDC_CONSUMER_RETRY_BACKOFF_SECONDS CDC_DLQ_TOPIC CDC_BRONZE_BUCKET
+export CDC_QUARANTINE_BUCKET CDC_SCHEMA_VERSION CDC_CONSUMER_MANIFEST_DB
+export CDC_CONSUMER_TEMP_DIR CDC_CONSUMER_SHUTDOWN_TIMEOUT_SECONDS
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
-	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration validate postgres-up minio-up kafka-up cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean"
+	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration validate postgres-up minio-up kafka-up cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean"
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -63,6 +73,12 @@ test-minio-integration:
 
 test-cdc-integration:
 	RUN_CDC_INTEGRATION=1 $(PYTHON) -m pytest -m cdc_integration
+
+test-cdc-consumer-unit:
+	$(PYTHON) -m pytest tests/unit/ingestion/cdc_consumer
+
+test-cdc-consumer-integration:
+	RUN_CDC_CONSUMER_INTEGRATION=1 $(PYTHON) -m pytest -m cdc_consumer_integration
 
 coverage:
 	$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=xml
@@ -150,6 +166,25 @@ cdc-delete:
 
 cdc-inspect:
 	$(PYTHON) scripts/cdc/inspect_topic.py --table $(CDC_TABLE)
+
+cdc-consumer-run:
+	$(PYTHON) -m ingestion.cdc_consumer.cli run $(CDC_CONSUMER_ARGS)
+
+cdc-consumer-once:
+	$(PYTHON) -m ingestion.cdc_consumer.cli run --once $(CDC_CONSUMER_ARGS)
+
+cdc-consumer-logs:
+	docker compose --env-file $(COMPOSE_ENV) --profile cdc-consumer logs --tail=200 -f cdc-consumer
+
+inspect-cdc-bronze:
+	$(PYTHON) -m ingestion.cdc_consumer.cli inspect --storage-backend minio $(CDC_CONSUMER_INSPECT_ARGS)
+
+reset-cdc-consumer-state:
+	@echo "WARNING: this deletes only the CDC consumer manifest/temp volumes and offsets for $(CDC_CONSUMER_GROUP_ID)."
+	@test "$(CONFIRM)" = "1" || (echo "Re-run with CONFIRM=1 to continue."; exit 1)
+	docker compose --env-file $(COMPOSE_ENV) --profile cdc-consumer rm --stop --force cdc-consumer
+	docker compose --env-file $(COMPOSE_ENV) exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --delete --group $(CDC_CONSUMER_GROUP_ID)
+	docker volume rm fintech-payments-cdc-consumer-state fintech-payments-cdc-consumer-tmp
 
 generate-data:
 	$(PYTHON) -m generators.cli $(GENERATOR_ARGS)

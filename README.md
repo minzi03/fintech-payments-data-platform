@@ -10,7 +10,7 @@ Long-term business use cases:
 
 ## Project status
 
-**Current phase: Phase 4 - PostgreSQL CDC Infrastructure with Debezium and Kafka**
+**Current phase: Phase 5 - Reliable Kafka CDC Consumer to MinIO Bronze**
 
 Implemented:
 
@@ -28,10 +28,13 @@ Implemented:
   schema-enabled CDC topics.
 - Bounded metadata-only topic inspection plus opt-in integration coverage for initial snapshots,
   inserts, updates, delete/tombstone behavior, exact Decimals, timestamps, LSNs, and restart safety.
-- Docker-independent unit/local batch tests and opt-in integration tests against a real MinIO.
+- A Python `confluent-kafka` consumer with auto commit/store disabled, partition-aware contiguous
+  micro-batches, explicit-schema ZSTD Parquet, deterministic event/batch/object identity, SQLite
+  batch manifest, upload-before-commit recovery, and private MinIO poison quarantine.
+- Docker-independent unit/local batch tests and opt-in integration tests against real Kafka/MinIO.
 
-No CDC consumer writes to MinIO in Phase 4. Airflow, Spark/Flink, executable dbt models, Snowflake,
-dashboards, reconciliation, and observability are not implemented.
+Silver processing, Airflow, Spark/Flink, executable dbt models, Snowflake, dashboards,
+reconciliation, and an observability platform are not implemented.
 
 ## Implemented data flow
 
@@ -40,6 +43,14 @@ Payment generator --------------------------> PostgreSQL OLTP
                                                     |
                                                     v
                                     logical WAL -> Debezium -> Kafka CDC topics
+                                                                  |
+                                                                  v
+                                         partition micro-batch -> Parquet
+                                                   |                   |
+                                                   v                   v
+                                         SQLite batch manifest   MinIO Bronze
+                                                                  |
+                                             poison record -------+--> MinIO quarantine
 
 Partner settlement CSV
         |
@@ -63,10 +74,13 @@ filename + SHA-256 + settlement-v1 validation
 | `infrastructure/postgres/init/` | Phase 1 OLTP schema, reference data, and indexes. |
 | `infrastructure/debezium/` | Versioned connector config and pinned bootstrap image. |
 | `scripts/cdc/` | Least-privilege PostgreSQL bootstrap, connector lifecycle, and safe topic inspection. |
+| `src/ingestion/cdc_consumer/` | Envelope parsing, batching, Parquet, manifest, storage, DLQ, recovery, Kafka loop, and CLI. |
+| `infrastructure/cdc-consumer/` | Profile-gated pinned Python consumer image. |
 | `tests/unit/` | Docker-independent unit tests. |
 | `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
 | `tests/integration/minio/` | Opt-in real MinIO storage and ingestion integration tests. |
 | `tests/integration/cdc/` | Opt-in PostgreSQL/Kafka/Debezium end-to-topic acceptance tests. |
+| `tests/integration/cdc_consumer/` | Opt-in real Kafka-to-MinIO Parquet/recovery acceptance tests. |
 | `docs/` | Business context, contracts, architecture, roadmap, and runbooks. |
 
 ## Setup
@@ -165,6 +179,31 @@ See [CDC architecture](docs/architecture/cdc-architecture.md), the
 [CDC event contract](docs/data-model/cdc-event-contract.md), and the
 [local Kafka/Debezium runbook](docs/runbooks/local-kafka-debezium.md).
 
+## Reliable CDC Bronze consumer
+
+Run a bounded pass after Kafka, Connect, and MinIO are healthy:
+
+```bash
+python -m ingestion.cdc_consumer.cli run --storage-backend minio --once
+```
+
+The consumer subscribes only to the configured six-table allowlist. It stores one immutable object
+per topic/partition/contiguous offset range, verifies its checksum, records `UPLOADED`, synchronously
+commits `offset_end + 1`, and only then records `COMMITTED`. A replay reuses the same object when its
+checksum agrees and fails rather than overwriting when it differs. Malformed records are written to
+the private quarantine bucket before their source offsets advance.
+
+```bash
+make cdc-consumer-run
+make cdc-consumer-once
+make inspect-cdc-bronze
+```
+
+The Compose `cdc-consumer` service is behind the `cdc-consumer` profile, so core infrastructure does
+not automatically start a long-running consumer. See [CDC Bronze architecture](docs/architecture/cdc-bronze-ingestion.md),
+the [Bronze schema](docs/data-model/cdc-bronze-schema.md), and the
+[consumer runbook](docs/runbooks/cdc-consumer.md).
+
 ## Quality checks
 
 ```bash
@@ -174,6 +213,7 @@ pytest -m "not integration"
 pytest -m batch_integration
 RUN_MINIO_INTEGRATION=1 pytest -m minio_integration
 RUN_CDC_INTEGRATION=1 pytest -m cdc_integration
+RUN_CDC_CONSUMER_INTEGRATION=1 pytest -m cdc_consumer_integration
 python -m yamllint .
 docker compose --env-file .env.example config --quiet
 ```
@@ -193,6 +233,10 @@ infrastructure suites have dedicated targets.
 - [Storage abstraction](docs/architecture/storage-abstraction.md)
 - [CDC architecture](docs/architecture/cdc-architecture.md)
 - [CDC event contract](docs/data-model/cdc-event-contract.md)
+- [CDC Bronze ingestion architecture](docs/architecture/cdc-bronze-ingestion.md)
+- [CDC Bronze Parquet schema](docs/data-model/cdc-bronze-schema.md)
+- [CDC consumer runbook](docs/runbooks/cdc-consumer.md)
+- [CDC recovery runbook](docs/runbooks/cdc-recovery.md)
 - [Local Kafka and Debezium runbook](docs/runbooks/local-kafka-debezium.md)
 - [Local MinIO runbook](docs/runbooks/local-minio.md)
 - [Roadmap](docs/roadmap.md)
@@ -209,6 +253,7 @@ infrastructure suites have dedicated targets.
 - No card data, customer name, national ID, bank credential, or authentication token belongs in the
   settlement contract.
 - Rejected-record evidence contains source financial references and must be treated as confidential.
+- CDC Parquet and poison evidence are confidential; logs/inspection omit keys and row payloads.
 - Buckets are private; anonymous access is explicitly disabled by bootstrap.
 - Local Kafka/Connect traffic is plaintext. TLS/SASL, external secret management, ACLs, retention
   locking, and distributed deployment are future hardening work.

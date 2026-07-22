@@ -3,8 +3,9 @@
 ## Purpose and truthful status
 
 The target supports near-real-time payment operations and daily settlement reconciliation. Through
-Phase 4, the source/generator, settlement batch intake, selectable local/MinIO raw storage, and
-PostgreSQL-to-Kafka CDC transport are implemented. CDC consumption and analytics remain planned.
+Phase 5, the source/generator, settlement batch intake, selectable local/MinIO raw storage,
+PostgreSQL-to-Kafka transport, and reliable CDC-to-Bronze consumption are implemented. Silver and
+analytics remain planned.
 
 | Component | Status |
 | --- | --- |
@@ -12,7 +13,8 @@ PostgreSQL-to-Kafka CDC transport are implemented. CDC consumption and analytics
 | Settlement contract, validation, manifest, and local storage | Implemented in Phase 2 |
 | Shared storage interface and private MinIO Bronze/quarantine | Implemented in Phase 3 |
 | PostgreSQL logical replication, Debezium, Kafka CDC topics | Implemented in Phase 4 |
-| CDC consumer to Bronze and Silver processing | Planned for Phases 5-6 |
+| Reliable CDC consumer to immutable Bronze Parquet | Implemented in Phase 5 |
+| Silver processing and data quality | Planned for Phase 6 |
 | Airflow, Snowflake, executable dbt models, BI, observability | Planned for Phases 7-10 |
 
 ## Architecture principles
@@ -32,6 +34,9 @@ flowchart LR
     GEN["Deterministic payment generator"] --> PG["PostgreSQL payments OLTP"]
     PG -->|"logical WAL / pgoutput"| DBZ["Debezium PostgreSQL connector"]
     DBZ --> KAFKA["Kafka CDC topics"]
+    KAFKA --> CONSUMER["Manual-commit CDC consumer"]
+    CONSUMER --> CDCMANIFEST["SQLite CDC batch manifest"]
+    CONSUMER --> MINIO
     CSV["Partner settlement CSV"] --> BATCH["Contract + record validation"]
     BATCH --> MANIFEST["SQLite manifest"]
     BATCH --> STORE["Settlement storage interface"]
@@ -50,7 +55,7 @@ flowchart LR
     PG["PostgreSQL OLTP - implemented"] --> CDC["Debezium CDC - implemented"]
     CDC --> KAFKA["Kafka CDC topics - implemented"]
     FILES["Partner settlement CSV"] --> BATCH["Python batch - implemented"]
-    KAFKA --> CONSUMER["CDC consumer - Phase 5"]
+    KAFKA --> CONSUMER["CDC consumer - implemented"]
     BATCH --> BRONZE["Shared MinIO Bronze - batch implemented"]
     CONSUMER --> BRONZE
     BRONZE --> SILVER["Silver processing - Phase 6"]
@@ -68,18 +73,18 @@ flowchart LR
 | Source | Authoritative payment state/events and partner evidence | Implemented locally |
 | CDC transport | Schema-aware row changes, source offsets, restart continuity | Implemented to Kafka |
 | Batch ingestion | Contract validation and idempotent partner-file intake | Implemented |
-| Bronze/quarantine | Immutable raw bytes/envelopes and rejected evidence | Batch local + MinIO only |
-| Control | Transactional lifecycle and coordination | SQLite batch manifest; Connect internal topics |
+| Bronze/quarantine | Immutable raw bytes/envelopes and rejected evidence | Batch raw + CDC Parquet in MinIO |
+| Control | Transactional lifecycle and coordination | SQLite manifests; Connect internal topics |
 | Silver | Normalize, deduplicate, apply CDC, quality gates | Planned |
 | Warehouse/dbt | Dimensions, facts, SCD2, reconciliation marts | Planned |
 | Orchestration/consumption | Scheduling, signals, governed analytics | Planned |
 
 ## Deferred decisions
 
-- CDC object layout, micro-batching, offset-to-object commit protocol, DLQ, and poison records.
+- Distributed CDC leases, PostgreSQL control-store migration, and retention/reprocess governance.
 - Schema compatibility governance/registry after real downstream requirements are known.
 - SQLite-to-PostgreSQL manifest migration and distributed locking.
 - Kafka partition/retention sizing, TLS/SASL/ACLs, multi-broker replication, and Connect scaling.
-- Parquet/table format and whether measured scale warrants distributed processing.
+- Silver/table format and whether measured scale warrants distributed processing.
 - Production MinIO identity, TLS, KMS, object lock/versioning, lifecycle, replication, and backup.
 - Warehouse sizing/access, catalog/lineage backend, dashboards, and platform SLOs.

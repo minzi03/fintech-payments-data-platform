@@ -24,7 +24,7 @@ def test_project_metadata() -> None:
     assert PROJECT_NAME == "Fintech Payments Data Platform"
     assert PROJECT_SLUG == "fintech-payments-data-platform"
     assert FOUNDATION_PHASE == 0
-    assert CURRENT_PHASE == 4
+    assert CURRENT_PHASE == 5
     assert MINIMUM_PYTHON >= (3, 11)
 
 
@@ -40,6 +40,7 @@ def test_required_foundation_files_exist() -> None:
         "docs/architecture/target-architecture.md",
         "docs/architecture/storage-abstraction.md",
         "docs/architecture/cdc-architecture.md",
+        "docs/architecture/cdc-bronze-ingestion.md",
         "docs/business/business-case.md",
         "docs/business/requirements.md",
         "docs/data-model/source-model.md",
@@ -47,10 +48,13 @@ def test_required_foundation_files_exist() -> None:
         "docs/data-model/oltp-schema.md",
         "docs/data-model/settlement-contract.md",
         "docs/data-model/cdc-event-contract.md",
+        "docs/data-model/cdc-bronze-schema.md",
         "docs/runbooks/local-postgres.md",
         "docs/runbooks/local-minio.md",
         "docs/runbooks/settlement-batch-ingestion.md",
         "docs/runbooks/local-kafka-debezium.md",
+        "docs/runbooks/cdc-consumer.md",
+        "docs/runbooks/cdc-recovery.md",
         "contracts/batch/settlement_v1.yml",
         "infrastructure/postgres/init/001_create_database_objects.sql",
         "infrastructure/postgres/init/002_create_reference_data.sql",
@@ -91,8 +95,8 @@ def test_sensitive_example_values_are_safe_placeholders() -> None:
     assert "change_me" in values["DATABASE_URL"]
 
 
-def test_compose_file_has_only_phase_four_services() -> None:
-    """Allow only Phase 1, 3, and 4 infrastructure services."""
+def test_compose_file_has_only_phase_five_services() -> None:
+    """Allow only Phase 1, 3, 4, and the profile-gated Phase 5 consumer."""
     compose_text = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "  postgres:" in compose_text
     assert "  minio:" in compose_text
@@ -100,6 +104,7 @@ def test_compose_file_has_only_phase_four_services() -> None:
     assert "  kafka:" in compose_text
     assert "  kafka-connect:" in compose_text
     assert "  connector-init:" in compose_text
+    assert "  cdc-consumer:" in compose_text
     for forbidden_service in ("airflow:", "spark:", "flink:", "snowflake:"):
         assert forbidden_service not in compose_text.lower()
 
@@ -143,5 +148,12 @@ def test_makefile_exposes_phase_zero_validation_targets() -> None:
         "cdc-delete:",
         "cdc-inspect:",
         "test-cdc-integration:",
+        "cdc-consumer-run:",
+        "cdc-consumer-once:",
+        "cdc-consumer-logs:",
+        "test-cdc-consumer-unit:",
+        "test-cdc-consumer-integration:",
+        "inspect-cdc-bronze:",
+        "reset-cdc-consumer-state:",
     )
     assert all(target in makefile for target in required_targets)
