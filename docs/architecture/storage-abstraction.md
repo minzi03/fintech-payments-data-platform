@@ -2,7 +2,8 @@
 
 ## Status and intent
 
-Implemented in Phase 3 for settlement raw and quarantine artifacts. Validation, discovery, the
+Implemented in Phase 3 for settlement raw and quarantine artifacts and reused without changing its
+immutable contract by Phase 5 CDC Bronze and Phase 6 Silver publication. Validation, discovery, the
 SQLite manifest, and orchestration depend on `SettlementStorage`, not on the MinIO SDK. A small
 shared `StorageBackend` supplies immutable file/byte writes, existence/stat/read operations, and
 backend-neutral integrity metadata.
@@ -25,6 +26,7 @@ manifest transition changes with that selection.
 | --- | --- | --- | --- |
 | Raw accepted file | `fintech-bronze` | `data/bronze` | local path or `s3://fintech-bronze/<key>` |
 | Invalid file/rejected rows | `fintech-quarantine` | `data/quarantine` | local path or `s3://fintech-quarantine/<key>` |
+| Typed Silver outputs | `fintech-silver` | `data/silver` | local path or `s3://fintech-silver/<key>` |
 
 Buckets remain private. The `s3://` convention describes the S3-compatible object identity; it
 does not expose credentials or an authenticated endpoint.
@@ -83,4 +85,5 @@ Unknown fields, secrets, authenticated URLs, and absolute local paths are discar
 - Phase 3 is single-node development infrastructure. Distributed locks, bucket versioning, object
   lock/WORM retention, TLS, KMS encryption, scoped service accounts, replication, and lifecycle
   policies are planned hardening, not implemented claims.
-- Kafka, Debezium, Silver, Airflow, Snowflake, dbt, dashboards, and observability are out of scope.
+- Kafka/Debezium and Silver now reuse the boundary. Airflow, Snowflake execution, dashboards, and
+  observability remain out of scope.

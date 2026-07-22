@@ -3,7 +3,8 @@
 ## Scope
 
 Phase 3 runs a single private MinIO service and an idempotent one-shot `minio-init` service. It
-creates `fintech-bronze` and `fintech-quarantine`; PostgreSQL remains the only other long-running
+creates private `fintech-bronze`, `fintech-quarantine`, and `fintech-silver` buckets; PostgreSQL
+remains the only other long-running
 Compose service. This runbook is for local development, not production deployment.
 
 ## Configure
@@ -13,7 +14,7 @@ client settings are:
 
 ```text
 MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_SECURE, MINIO_REGION
-MINIO_BRONZE_BUCKET, MINIO_QUARANTINE_BUCKET
+MINIO_BRONZE_BUCKET, MINIO_QUARANTINE_BUCKET, MINIO_SILVER_BUCKET
 MINIO_API_PORT, MINIO_CONSOLE_PORT
 MINIO_CONNECT_TIMEOUT_SECONDS, MINIO_READ_TIMEOUT_SECONDS, MINIO_MAX_RETRIES
 STORAGE_BACKEND
@@ -60,7 +61,8 @@ python -m src.ingestion.batch.cli ingest-settlements \
   --contract contracts/batch/settlement_v1.yml
 ```
 
-The SQLite manifest remains under `data/control/` and records `s3://` URIs. Inbound files are not
+The ingestion and Silver SQLite manifests remain under `data/control/` and record credential-free
+`s3://` URIs. Inbound files are not
 deleted. Replaying an already successful checksum returns the existing manifest record and does not
 create another object. Changed content receives a new checksum path.
 

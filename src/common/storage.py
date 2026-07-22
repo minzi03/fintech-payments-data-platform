@@ -7,7 +7,7 @@ import json
 import os
 import shutil
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, TypeVar
@@ -23,6 +23,7 @@ SAFE_METADATA_FIELDS = frozenset(
         "accepted_count",
         "artifact_type",
         "checksum_sha256",
+        "code_version",
         "consumer_group",
         "contains_delete",
         "contains_snapshot",
@@ -32,14 +33,22 @@ SAFE_METADATA_FIELDS = frozenset(
         "error_code",
         "ingested_at",
         "ingestion_run_id",
+        "input_checksum",
         "kafka_offset",
         "offset_end",
         "offset_start",
+        "output_type",
         "partner_id",
+        "pipeline_name",
         "partition",
+        "processing_date",
+        "processing_run_id",
         "record_count",
         "rejected_count",
         "schema_version",
+        "silver_schema_version",
+        "source_schema_version",
+        "source_type",
         "source_file_name",
         "source_file_size",
         "source_name",
@@ -111,6 +120,8 @@ class StorageBackend(Protocol):
 
     def read_bytes(self, bucket: str, object_key: str) -> bytes: ...
 
+    def list_objects(self, bucket: str, prefix: str = "") -> tuple[StoredObject, ...]: ...
+
 
 class MinioClient(Protocol):
     """Injectable S3 operations used by the backend."""
@@ -128,6 +139,8 @@ class MinioClient(Protocol):
     ) -> Any: ...
 
     def get_object(self, bucket_name: str, object_name: str) -> Any: ...
+
+    def list_objects(self, bucket_name: str, *, prefix: str, recursive: bool) -> Iterable[Any]: ...
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -296,12 +309,32 @@ class LocalStorageBackend:
             raise StorageBackendError(f"Object does not exist: {bucket}/{object_key}")
         return path.read_bytes()
 
+    def list_objects(self, bucket: str, prefix: str = "") -> tuple[StoredObject, ...]:
+        root = self._bucket_root(bucket)
+        normalized_prefix = prefix.strip("/")
+        results: list[StoredObject] = []
+        if not root.exists():
+            return ()
+        for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
+            if path.name.endswith(".metadata.json") or path.name.startswith("."):
+                continue
+            object_key = path.relative_to(root).as_posix()
+            if normalized_prefix and not object_key.startswith(normalized_prefix):
+                continue
+            stored = self.stat(bucket, object_key)
+            if stored is not None:
+                results.append(stored)
+        return tuple(results)
+
     def _path(self, bucket: str, object_key: str) -> Path:
+        root = self._bucket_root(bucket)
+        return root / Path(*validate_object_key(object_key).split("/"))
+
+    def _bucket_root(self, bucket: str) -> Path:
         try:
-            root = self._bucket_roots[bucket]
+            return self._bucket_roots[bucket]
         except KeyError as error:
             raise StorageBackendError(f"Unknown local bucket: {bucket}") from error
-        return root / Path(*validate_object_key(object_key).split("/"))
 
     @staticmethod
     def _metadata_path(path: Path) -> Path:
@@ -505,6 +538,28 @@ class MinioStorageBackend:
         finally:
             response.close()
             response.release_conn()
+
+    def list_objects(self, bucket: str, prefix: str = "") -> tuple[StoredObject, ...]:
+        normalized_prefix = prefix.strip("/")
+        objects = self._retry(
+            "list objects",
+            lambda: tuple(
+                self._client.list_objects(
+                    bucket,
+                    prefix=normalized_prefix,
+                    recursive=True,
+                )
+            ),
+        )
+        results = []
+        for item in objects:
+            object_name = str(getattr(item, "object_name", ""))
+            if not object_name:
+                continue
+            stored = self.stat(bucket, object_name)
+            if stored is not None:
+                results.append(stored)
+        return tuple(results)
 
     def _verify_upload(
         self, bucket: str, object_key: str, checksum: str, expected_size: int

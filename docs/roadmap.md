@@ -10,7 +10,7 @@ Phase 0 Foundation                                      [implemented]
           -> Phase 3 Shared local/MinIO Bronze storage  [implemented]
               -> Phase 4 PostgreSQL CDC + Kafka         [implemented]
                   -> Phase 5 CDC consumer to Bronze     [implemented]
-                      -> Phase 6 Silver + data quality  [planned]
+                      -> Phase 6 Silver + data quality  [implemented]
                           -> Phase 7 Airflow             [planned]
                               -> Phase 8 Snowflake/dbt  [planned]
                                   -> Phase 9 Reconciliation product
@@ -88,12 +88,15 @@ poison offsets advance only after quarantine; committed groups do not reprocess 
 **Deliberately deferred:** Silver merging/deduplication, distributed locks/control store, production
 security/HA/retention, schema registry/governance, orchestration, analytics, and observability.
 
-## Planned phases
-
 ### Phase 6 - Silver Processing and Data Quality
 
-Typed settlement/payment records, deduplication, CDC application, referential rules, quality gates,
-and publishable conformed schemas. A distributed engine is optional only if measured need warrants it.
+**Implemented:** typed settlement/payment records, explicit PyArrow schemas, precise Decimal/UTC
+normalization, CDC history and current/latest state, delete/tombstone behavior, coordinate
+deduplication/order guards, unresolved references, quality outputs, immutable Silver storage,
+incremental SQLite lineage, force/dry-run controls, and real MinIO tests. No distributed engine was
+needed at the current scale.
+
+## Planned phases
 
 ### Phase 7 - Airflow Orchestration
 

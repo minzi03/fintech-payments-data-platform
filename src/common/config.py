@@ -135,6 +135,8 @@ class StorageSettings:
     local_quarantine_root: Path
     bronze_bucket: str
     quarantine_bucket: str
+    local_silver_root: Path = Path("data/silver")
+    silver_bucket: str = "fintech-silver"
     minio: MinioSettings | None = None
 
     @classmethod
@@ -159,12 +161,18 @@ class StorageSettings:
             environ.get("MINIO_QUARANTINE_BUCKET", "fintech-quarantine").strip(),
             "MINIO_QUARANTINE_BUCKET",
         )
+        silver_bucket = _validate_bucket_name(
+            environ.get("MINIO_SILVER_BUCKET", "fintech-silver").strip(),
+            "MINIO_SILVER_BUCKET",
+        )
         return cls(
             backend=backend,
             local_bronze_root=Path(environ.get("SETTLEMENT_BRONZE_DIR", "data/bronze")),
             local_quarantine_root=Path(environ.get("SETTLEMENT_QUARANTINE_DIR", "data/quarantine")),
             bronze_bucket=bronze_bucket,
             quarantine_bucket=quarantine_bucket,
+            local_silver_root=Path(environ.get("SILVER_LOCAL_ROOT", "data/silver")),
+            silver_bucket=silver_bucket,
             minio=MinioSettings.from_env(environ) if backend is StorageBackendKind.MINIO else None,
         )
 

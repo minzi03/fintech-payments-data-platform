@@ -24,7 +24,7 @@ def test_project_metadata() -> None:
     assert PROJECT_NAME == "Fintech Payments Data Platform"
     assert PROJECT_SLUG == "fintech-payments-data-platform"
     assert FOUNDATION_PHASE == 0
-    assert CURRENT_PHASE == 5
+    assert CURRENT_PHASE == 6
     assert MINIMUM_PYTHON >= (3, 11)
 
 
@@ -55,6 +55,11 @@ def test_required_foundation_files_exist() -> None:
         "docs/runbooks/local-kafka-debezium.md",
         "docs/runbooks/cdc-consumer.md",
         "docs/runbooks/cdc-recovery.md",
+        "docs/architecture/silver-processing.md",
+        "docs/data-model/silver-data-model.md",
+        "docs/data-model/silver-quality-rules.md",
+        "docs/runbooks/silver-processing.md",
+        "docs/runbooks/silver-recovery.md",
         "contracts/batch/settlement_v1.yml",
         "infrastructure/postgres/init/001_create_database_objects.sql",
         "infrastructure/postgres/init/002_create_reference_data.sql",
@@ -95,8 +100,8 @@ def test_sensitive_example_values_are_safe_placeholders() -> None:
     assert "change_me" in values["DATABASE_URL"]
 
 
-def test_compose_file_has_only_phase_five_services() -> None:
-    """Allow only Phase 1, 3, 4, and the profile-gated Phase 5 consumer."""
+def test_compose_file_has_only_phase_six_services() -> None:
+    """Phase 6 adds a private bucket, not a processing service or host port."""
     compose_text = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "  postgres:" in compose_text
     assert "  minio:" in compose_text
@@ -155,5 +160,12 @@ def test_makefile_exposes_phase_zero_validation_targets() -> None:
         "test-cdc-consumer-integration:",
         "inspect-cdc-bronze:",
         "reset-cdc-consumer-state:",
+        "silver-process-cdc:",
+        "silver-process-settlements:",
+        "silver-process-once:",
+        "silver-inspect:",
+        "test-silver-unit:",
+        "test-silver-integration:",
+        "reset-silver-state:",
     )
     assert all(target in makefile for target in required_targets)

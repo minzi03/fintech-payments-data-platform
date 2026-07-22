@@ -10,6 +10,9 @@ SETTLEMENT_INGEST_ARGS ?= --input-dir $(SETTLEMENT_INPUT_DIR) --partner-id $(SET
 CDC_TABLE ?= payment_transactions
 CDC_CONSUMER_ARGS ?= --storage-backend minio
 CDC_CONSUMER_INSPECT_ARGS ?=
+SILVER_CDC_ARGS ?= --storage-backend minio --input-prefix cdc/
+SILVER_SETTLEMENT_ARGS ?= --storage-backend minio --input-prefix settlements/
+SILVER_INSPECT_ARGS ?= --storage-backend minio
 
 -include $(COMPOSE_ENV)
 export APP_ENV LOG_LEVEL POSTGRES_HOST POSTGRES_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_URL
@@ -19,6 +22,7 @@ export SETTLEMENT_INBOUND_DIR SETTLEMENT_BRONZE_DIR SETTLEMENT_QUARANTINE_DIR
 export SETTLEMENT_MANIFEST_DB SETTLEMENT_FIXTURE_SEED
 export STORAGE_BACKEND MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_SECURE MINIO_REGION
 export MINIO_BRONZE_BUCKET MINIO_QUARANTINE_BUCKET MINIO_API_PORT MINIO_CONSOLE_PORT
+export MINIO_SILVER_BUCKET
 export MINIO_CONNECT_TIMEOUT_SECONDS MINIO_READ_TIMEOUT_SECONDS MINIO_MAX_RETRIES
 export POSTGRES_MAX_REPLICATION_SLOTS POSTGRES_MAX_WAL_SENDERS
 export KAFKA_CLUSTER_ID KAFKA_BOOTSTRAP_SERVERS KAFKA_EXTERNAL_PORT KAFKA_CONNECT_PORT
@@ -35,11 +39,14 @@ export CDC_CONSUMER_HEARTBEAT_INTERVAL_MS CDC_CONSUMER_MAX_RETRIES
 export CDC_CONSUMER_RETRY_BACKOFF_SECONDS CDC_DLQ_TOPIC CDC_BRONZE_BUCKET
 export CDC_QUARANTINE_BUCKET CDC_SCHEMA_VERSION CDC_CONSUMER_MANIFEST_DB
 export CDC_CONSUMER_TEMP_DIR CDC_CONSUMER_SHUTDOWN_TIMEOUT_SECONDS
+export SILVER_LOCAL_ROOT SILVER_MANIFEST_DB SILVER_TEMP_DIR SILVER_CODE_VERSION
+export SILVER_SCHEMA_VERSION SILVER_SUPPORTED_CDC_SCHEMA SILVER_SETTLEMENT_CONTRACT
+export SILVER_MAX_OBJECTS
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
-	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration validate postgres-up minio-up kafka-up cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean"
+	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration validate postgres-up minio-up kafka-up cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean"
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -79,6 +86,12 @@ test-cdc-consumer-unit:
 
 test-cdc-consumer-integration:
 	RUN_CDC_CONSUMER_INTEGRATION=1 $(PYTHON) -m pytest -m cdc_consumer_integration
+
+test-silver-unit:
+	$(PYTHON) -m pytest tests/unit/processing/silver
+
+test-silver-integration:
+	RUN_SILVER_INTEGRATION=1 $(PYTHON) -m pytest -m silver_integration
 
 coverage:
 	$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=xml
@@ -185,6 +198,23 @@ reset-cdc-consumer-state:
 	docker compose --env-file $(COMPOSE_ENV) --profile cdc-consumer rm --stop --force cdc-consumer
 	docker compose --env-file $(COMPOSE_ENV) exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --delete --group $(CDC_CONSUMER_GROUP_ID)
 	docker volume rm fintech-payments-cdc-consumer-state fintech-payments-cdc-consumer-tmp
+
+silver-process-cdc:
+	$(PYTHON) -m processing.silver.cli process-cdc $(SILVER_CDC_ARGS)
+
+silver-process-settlements:
+	$(PYTHON) -m processing.silver.cli process-settlements $(SILVER_SETTLEMENT_ARGS)
+
+silver-process-once:
+	$(PYTHON) -m processing.silver.cli process-cdc --max-objects 1 $(SILVER_CDC_ARGS)
+
+silver-inspect:
+	$(PYTHON) -m processing.silver.cli inspect $(SILVER_INSPECT_ARGS)
+
+reset-silver-state:
+	@echo "WARNING: this deletes only the local Silver processing SQLite manifest; Bronze and object data remain untouched."
+	@test "$(CONFIRM)" = "1" || (echo "Re-run with CONFIRM=1 to continue."; exit 1)
+	$(PYTHON) -m processing.silver.cli reset-state --confirm
 
 generate-data:
 	$(PYTHON) -m generators.cli $(GENERATOR_ARGS)

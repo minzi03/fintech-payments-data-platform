@@ -39,8 +39,8 @@ Phase 5 preserves that representation rather than projecting money into an infer
 The `raw_event_json` column intentionally duplicates information available through envelope
 columns. The cost is larger Bronze storage; the benefit is byte-level forensic replay and future
 schema re-projection before a registry/compatibility policy exists. Tombstones have null raw values.
-Phase 6 may introduce a normalized money column after decoding scale/precision under a versioned
-Silver contract.
+Phase 6 decodes the known scale/precision into versioned Silver `decimal128(18,2)` columns while
+retaining this Bronze representation unchanged.
 
 ## Timestamp convention
 

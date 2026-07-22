@@ -54,6 +54,7 @@ markers = [
   "cdc_consumer_integration: tests that require Kafka, MinIO, and CDC topics",
   "integration: tests that require one or more infrastructure dependencies",
   "minio_integration: tests that require the local MinIO service",
+  "silver_integration: tests that require MinIO Bronze and Silver buckets",
   "end_to_end: tests that exercise a complete business data flow",
 ]
 

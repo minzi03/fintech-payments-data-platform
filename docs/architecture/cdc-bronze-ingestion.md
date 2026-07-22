@@ -12,8 +12,9 @@ Kafka CDC topic -> parse/validate -> topic-partition micro-batch -> Parquet -> M
                                 SQLite manifest          quarantine DLQ
 ```
 
-There is no Silver projection, current-state merge, business-event derivation, reconciliation, or
-orchestration in this phase. Kafka may replay records, so the contract is **effectively once at the
+Phase 5 itself has no Silver projection or current-state merge. Phase 6 now consumes this immutable
+contract without changing the Phase 5 commit protocol; reconciliation and orchestration remain
+later. Kafka may replay records, so the contract is **effectively once at the
 immutable object boundary**, not exactly once end to end.
 
 ## Reliability invariants
@@ -102,5 +103,5 @@ retry, recovery, payload-safe inspection, and opt-in Kafka/MinIO acceptance test
 Planned: PostgreSQL control schema and distributed leases, production Kafka/MinIO authentication,
 metrics/alerts, schema compatibility governance, retention, and controlled repair tooling.
 
-Out of scope: Silver state application/deduplication, Spark/Flink, Airflow, dbt, Snowflake,
-reconciliation, BI, and an observability platform.
+Downstream Phase 6 now implements Silver state/history/quality. Spark/Flink, Airflow, dbt,
+Snowflake, reconciliation, BI, and an observability platform remain out of scope.

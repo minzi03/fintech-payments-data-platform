@@ -3,9 +3,9 @@
 ## Purpose and truthful status
 
 The target supports near-real-time payment operations and daily settlement reconciliation. Through
-Phase 5, the source/generator, settlement batch intake, selectable local/MinIO raw storage,
-PostgreSQL-to-Kafka transport, and reliable CDC-to-Bronze consumption are implemented. Silver and
-analytics remain planned.
+Phase 6, the source/generator, settlement batch intake, selectable local/MinIO raw storage,
+PostgreSQL-to-Kafka transport, reliable CDC-to-Bronze consumption, and Bronze-to-Silver processing
+are implemented. Orchestration and analytics remain planned.
 
 | Component | Status |
 | --- | --- |
@@ -14,7 +14,7 @@ analytics remain planned.
 | Shared storage interface and private MinIO Bronze/quarantine | Implemented in Phase 3 |
 | PostgreSQL logical replication, Debezium, Kafka CDC topics | Implemented in Phase 4 |
 | Reliable CDC consumer to immutable Bronze Parquet | Implemented in Phase 5 |
-| Silver processing and data quality | Planned for Phase 6 |
+| Silver processing and data quality | Implemented in Phase 6 |
 | Airflow, Snowflake, executable dbt models, BI, observability | Planned for Phases 7-10 |
 
 ## Architecture principles
@@ -58,7 +58,7 @@ flowchart LR
     KAFKA --> CONSUMER["CDC consumer - implemented"]
     BATCH --> BRONZE["Shared MinIO Bronze - batch implemented"]
     CONSUMER --> BRONZE
-    BRONZE --> SILVER["Silver processing - Phase 6"]
+    BRONZE --> SILVER["Silver processing - implemented"]
     SILVER --> WH["Snowflake + dbt - Phase 8"]
     WH --> OPS["Operations analytics - Phase 10"]
     WH --> RECON["Reconciliation product - Phase 9"]

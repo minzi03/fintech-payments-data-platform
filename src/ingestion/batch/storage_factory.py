@@ -26,6 +26,9 @@ class MinioSdkClient:
     def get_object(self, bucket_name: str, object_name: str) -> Any:
         return self._client.get_object(bucket_name, object_name)
 
+    def list_objects(self, bucket_name: str, *, prefix: str, recursive: bool) -> Any:
+        return self._client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
+
     def put_object_if_absent(
         self,
         *,
@@ -87,6 +90,7 @@ def create_storage_backend(
             {
                 settings.bronze_bucket: settings.local_bronze_root,
                 settings.quarantine_bucket: settings.local_quarantine_root,
+                settings.silver_bucket: settings.local_silver_root,
             }
         )
     if settings.minio is None:  # pragma: no cover - protected by StorageSettings

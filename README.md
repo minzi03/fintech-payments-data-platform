@@ -10,7 +10,7 @@ Long-term business use cases:
 
 ## Project status
 
-**Current phase: Phase 5 - Reliable Kafka CDC Consumer to MinIO Bronze**
+**Current phase: Phase 6 - Bronze-to-Silver Processing Foundation**
 
 Implemented:
 
@@ -32,9 +32,12 @@ Implemented:
   micro-batches, explicit-schema ZSTD Parquet, deterministic event/batch/object identity, SQLite
   batch manifest, upload-before-commit recovery, and private MinIO poison quarantine.
 - Docker-independent unit/local batch tests and opt-in integration tests against real Kafka/MinIO.
+- A Python/PyArrow Bronze-to-Silver CLI with incremental discovery, explicit entity schemas,
+  Decimal/UTC normalization, CDC history/latest/current, contract-based settlement projection,
+  quality outputs, immutable Silver publication, and processing lineage.
 
-Silver processing, Airflow, Spark/Flink, executable dbt models, Snowflake, dashboards,
-reconciliation, and an observability platform are not implemented.
+Airflow, Spark/Flink, executable dbt models, Snowflake, dashboards, Gold reconciliation, and an
+observability platform are not implemented.
 
 ## Implemented data flow
 
@@ -51,6 +54,9 @@ Payment generator --------------------------> PostgreSQL OLTP
                                          SQLite batch manifest   MinIO Bronze
                                                                   |
                                              poison record -------+--> MinIO quarantine
+                                                                  |
+                                                                  v
+                                         PyArrow Silver processing -> MinIO Silver
 
 Partner settlement CSV
         |
@@ -75,6 +81,7 @@ filename + SHA-256 + settlement-v1 validation
 | `infrastructure/debezium/` | Versioned connector config and pinned bootstrap image. |
 | `scripts/cdc/` | Least-privilege PostgreSQL bootstrap, connector lifecycle, and safe topic inspection. |
 | `src/ingestion/cdc_consumer/` | Envelope parsing, batching, Parquet, manifest, storage, DLQ, recovery, Kafka loop, and CLI. |
+| `src/processing/silver/` | Bronze read, normalization, state/quality, Parquet, lineage manifest, and CLI. |
 | `infrastructure/cdc-consumer/` | Profile-gated pinned Python consumer image. |
 | `tests/unit/` | Docker-independent unit tests. |
 | `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
@@ -204,6 +211,26 @@ not automatically start a long-running consumer. See [CDC Bronze architecture](d
 the [Bronze schema](docs/data-model/cdc-bronze-schema.md), and the
 [consumer runbook](docs/runbooks/cdc-consumer.md).
 
+## Bronze to Silver
+
+Process bounded CDC or settlement Bronze objects with local or MinIO storage:
+
+```bash
+python -m processing.silver.cli process-cdc \
+  --storage-backend minio --input-prefix cdc/ --max-objects 10
+python -m processing.silver.cli process-settlements \
+  --storage-backend minio --input-prefix settlements/
+```
+
+CDC produces immutable history, latest-all (including deletes), active current, append-only
+transaction events, rejections, and unresolved-reference evidence. Settlement processing applies
+`settlement-v1` and retains Decimal/UTC types; it does not reconcile. Completed inputs are skipped
+unless `--force-reprocess`; dry-run writes no manifest or object.
+
+See [Silver architecture](docs/architecture/silver-processing.md), the
+[Silver data model](docs/data-model/silver-data-model.md), and the
+[Silver runbook](docs/runbooks/silver-processing.md).
+
 ## Quality checks
 
 ```bash
@@ -214,6 +241,7 @@ pytest -m batch_integration
 RUN_MINIO_INTEGRATION=1 pytest -m minio_integration
 RUN_CDC_INTEGRATION=1 pytest -m cdc_integration
 RUN_CDC_CONSUMER_INTEGRATION=1 pytest -m cdc_consumer_integration
+RUN_SILVER_INTEGRATION=1 pytest -m silver_integration
 python -m yamllint .
 docker compose --env-file .env.example config --quiet
 ```
@@ -237,6 +265,11 @@ infrastructure suites have dedicated targets.
 - [CDC Bronze Parquet schema](docs/data-model/cdc-bronze-schema.md)
 - [CDC consumer runbook](docs/runbooks/cdc-consumer.md)
 - [CDC recovery runbook](docs/runbooks/cdc-recovery.md)
+- [Silver processing architecture](docs/architecture/silver-processing.md)
+- [Silver data model](docs/data-model/silver-data-model.md)
+- [Silver quality rules](docs/data-model/silver-quality-rules.md)
+- [Silver processing runbook](docs/runbooks/silver-processing.md)
+- [Silver recovery runbook](docs/runbooks/silver-recovery.md)
 - [Local Kafka and Debezium runbook](docs/runbooks/local-kafka-debezium.md)
 - [Local MinIO runbook](docs/runbooks/local-minio.md)
 - [Roadmap](docs/roadmap.md)
@@ -254,6 +287,8 @@ infrastructure suites have dedicated targets.
   settlement contract.
 - Rejected-record evidence contains source financial references and must be treated as confidential.
 - CDC Parquet and poison evidence are confidential; logs/inspection omit keys and row payloads.
+- Silver and rejection Parquet are private/confidential; inspection exposes only schema, counts,
+  state flags, lineage, and checksums.
 - Buckets are private; anonymous access is explicitly disabled by bootstrap.
 - Local Kafka/Connect traffic is plaintext. TLS/SASL, external secret management, ACLs, retention
   locking, and distributed deployment are future hardening work.
