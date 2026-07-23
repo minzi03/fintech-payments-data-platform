@@ -1,6 +1,6 @@
 # Current State
 
-## Status through Phase 6
+## Status through Phase 7
 
 The repository now has independently executable batch and CDC intake foundations:
 
@@ -23,6 +23,11 @@ Payment generator -> PostgreSQL 16 payments OLTP
                          | settlements/quality
                          v
                     private MinIO Silver
+                              |
+                              v
+                   Airflow 3 orchestration
+                   | metadata PostgreSQL
+                   ` control schema
 
 Partner settlement CSV -> contract validation -> SQLite manifest
                               |
@@ -54,15 +59,19 @@ Implemented:
   normalization, event history, latest-all/current/delete semantics, append-only transaction events,
   confidential quality and unresolved-reference outputs, immutable Silver Parquet, SQLite lineage,
   skip/force/dry-run controls, and real MinIO integration tests.
+- Phase 7 Airflow 3 LocalExecutor with dedicated PostgreSQL metadata, required API/scheduler/DAG
+  processor services, four bounded DAGs, centralized pipeline/task/quality/backfill state,
+  aggregate quality gates, safe retries, validated dry-run backfill, and redacted failure handling.
 
-Compose contains those six Phase 1-4 services plus one profile-gated `cdc-consumer`; it opens no host
-port. Local storage remains available for lightweight tests. SQLite owns mutable settlement/CDC
-manifest state; MinIO owns immutable artifacts; Kafka owns the CDC log and Connect state.
+Compose retains the Phase 1-6 services and adds Airflow metadata PostgreSQL, init, loopback API/UI,
+scheduler, and Airflow 3 DAG processor. Local storage remains available for lightweight tests.
+Component SQLite manifests own file/batch/object state; PostgreSQL `control` owns cross-pipeline
+state; Airflow metadata owns scheduling; MinIO owns immutable artifacts.
 
 ## Runtime boundaries
 
-- Phase 6 ends at immutable Silver Parquet and completed processing lineage. No Gold/reconciliation
-  classification, warehouse load, schedule, or BI publication runs.
+- Phase 7 ends at orchestration and centralized operational state. No Gold/reconciliation
+  classification, warehouse load, dbt execution, or BI publication runs.
 - Source rows are unchanged by the CDC implementation. Only PostgreSQL runtime WAL settings, a
   connector role, grants, and an explicit publication are added.
 - Kafka uses three partitions per CDC topic locally, replication factor one, seven-day retention,
@@ -75,7 +84,7 @@ manifest state; MinIO owns immutable artifacts; Kafka owns the CDC log and Conne
 - Distributed/table-format Silver compaction, registry-driven schema evolution, or derived business
   event topics.
 - Business event topics such as `payment_completed`; Phase 4 contains database CDC topics only.
-- Reconciliation classification, table formats, Airflow, Spark/Flink, Snowflake, executable
+- Reconciliation classification, table formats, Spark/Flink, Snowflake, executable
   dbt models, dashboards, catalog, lineage, metrics, or alerting.
 - TLS/SASL/ACLs, external secrets, distributed Kafka/Connect/PostgreSQL, replication factor greater
   than one, backups, disaster recovery, production retention sizing, or capacity benchmarks.

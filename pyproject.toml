@@ -25,6 +25,9 @@ dev = [
   "ruff>=0.12,<1.0",
   "yamllint>=1.35,<2.0",
 ]
+airflow = [
+  "apache-airflow==3.3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -44,7 +47,7 @@ extend-exclude = [
 select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-config --strict-markers"
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
 cache_dir = ".pytest_cache"
 testpaths = ["tests", "airflow/tests"]
 pythonpath = ["src"]
@@ -55,6 +58,7 @@ markers = [
   "integration: tests that require one or more infrastructure dependencies",
   "minio_integration: tests that require the local MinIO service",
   "silver_integration: tests that require MinIO Bronze and Silver buckets",
+  "airflow_integration: tests that require Airflow and its PostgreSQL metadata/control database",
   "end_to_end: tests that exercise a complete business data flow",
 ]
 

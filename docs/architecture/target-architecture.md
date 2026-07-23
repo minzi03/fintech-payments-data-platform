@@ -3,9 +3,9 @@
 ## Purpose and truthful status
 
 The target supports near-real-time payment operations and daily settlement reconciliation. Through
-Phase 6, the source/generator, settlement batch intake, selectable local/MinIO raw storage,
+Phase 7, the source/generator, settlement batch intake, selectable local/MinIO raw storage,
 PostgreSQL-to-Kafka transport, reliable CDC-to-Bronze consumption, and Bronze-to-Silver processing
-are implemented. Orchestration and analytics remain planned.
+plus Airflow orchestration/control are implemented. Warehouse analytics remain planned.
 
 | Component | Status |
 | --- | --- |
@@ -15,7 +15,8 @@ are implemented. Orchestration and analytics remain planned.
 | PostgreSQL logical replication, Debezium, Kafka CDC topics | Implemented in Phase 4 |
 | Reliable CDC consumer to immutable Bronze Parquet | Implemented in Phase 5 |
 | Silver processing and data quality | Implemented in Phase 6 |
-| Airflow, Snowflake, executable dbt models, BI, observability | Planned for Phases 7-10 |
+| Airflow orchestration and central control schema | Implemented in Phase 7 |
+| Snowflake, executable dbt models, BI, observability | Planned for Phases 8-10 |
 
 ## Architecture principles
 
@@ -62,7 +63,7 @@ flowchart LR
     SILVER --> WH["Snowflake + dbt - Phase 8"]
     WH --> OPS["Operations analytics - Phase 10"]
     WH --> RECON["Reconciliation product - Phase 9"]
-    AIRFLOW["Airflow - Phase 7"] -. orchestrates .-> BATCH
+    AIRFLOW["Airflow - implemented Phase 7"] -. orchestrates .-> BATCH
     AIRFLOW -. orchestrates .-> SILVER
 ```
 
@@ -74,10 +75,10 @@ flowchart LR
 | CDC transport | Schema-aware row changes, source offsets, restart continuity | Implemented to Kafka |
 | Batch ingestion | Contract validation and idempotent partner-file intake | Implemented |
 | Bronze/quarantine | Immutable raw bytes/envelopes and rejected evidence | Batch raw + CDC Parquet in MinIO |
-| Control | Transactional lifecycle and coordination | SQLite manifests; Connect internal topics |
-| Silver | Normalize, deduplicate, apply CDC, quality gates | Planned |
+| Control | Transactional lifecycle and coordination | Component SQLite manifests + PostgreSQL control schema + Airflow metadata |
+| Silver | Normalize, deduplicate, apply CDC, quality gates | Implemented |
 | Warehouse/dbt | Dimensions, facts, SCD2, reconciliation marts | Planned |
-| Orchestration/consumption | Scheduling, signals, governed analytics | Planned |
+| Orchestration | Scheduling, bounded health signals, retries, backfill | Implemented locally |
 
 ## Deferred decisions
 

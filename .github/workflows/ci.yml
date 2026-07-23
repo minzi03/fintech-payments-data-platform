@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Phase 6 quality gates
+    name: Phase 7 quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -94,3 +94,68 @@ jobs:
       - name: Stop MinIO
         if: always()
         run: docker compose --env-file .env.example down --volumes --remove-orphans
+
+  airflow-control-plane:
+    name: Airflow DAG and control-plane integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.4-bookworm
+        env:
+          POSTGRES_DB: airflow_metadata
+          POSTGRES_USER: airflow_metadata
+          POSTGRES_PASSWORD: ci_placeholder_airflow_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U airflow_metadata -d airflow_metadata"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/tmp/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # yamllint disable-line rule:line-length
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow_metadata:ci_placeholder_airflow_password@localhost:5432/airflow_metadata
+      AIRFLOW_DATABASE_HOST: localhost
+      AIRFLOW_DATABASE_PORT: "5432"
+      AIRFLOW_DATABASE_NAME: airflow_metadata
+      AIRFLOW_DATABASE_USER: airflow_metadata
+      AIRFLOW_DATABASE_PASSWORD: ci_placeholder_airflow_password
+      CONTROL_DATABASE_USER: pipeline_control
+      CONTROL_DATABASE_PASSWORD: ci_placeholder_control_password
+      # yamllint disable-line rule:line-length
+      AIRFLOW_CONN_CONTROL_DB: postgresql://pipeline_control:ci_placeholder_control_password@localhost:5432/airflow_metadata
+      RUN_AIRFLOW_INTEGRATION: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pinned Airflow and project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "apache-airflow==3.3.0" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.0/constraints-3.11.txt"
+          python -m pip install -e ".[dev]"
+
+      - name: Initialize Airflow metadata and control schema
+        run: |
+          airflow db migrate
+          python scripts/airflow/bootstrap_control.py
+
+      - name: Parse and validate DAGs
+        run: python -m pytest airflow/tests tests/unit/orchestration
+
+      - name: Run control-plane integration tests
+        run: python -m pytest -m airflow_integration

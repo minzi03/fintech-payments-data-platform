@@ -24,7 +24,7 @@ def test_project_metadata() -> None:
     assert PROJECT_NAME == "Fintech Payments Data Platform"
     assert PROJECT_SLUG == "fintech-payments-data-platform"
     assert FOUNDATION_PHASE == 0
-    assert CURRENT_PHASE == 6
+    assert CURRENT_PHASE == 7
     assert MINIMUM_PYTHON >= (3, 11)
 
 
@@ -60,11 +60,20 @@ def test_required_foundation_files_exist() -> None:
         "docs/data-model/silver-quality-rules.md",
         "docs/runbooks/silver-processing.md",
         "docs/runbooks/silver-recovery.md",
+        "docs/architecture/orchestration.md",
+        "docs/architecture/control-plane.md",
+        "docs/data-model/control-schema.md",
+        "docs/runbooks/airflow-local.md",
+        "docs/runbooks/pipeline-operations.md",
+        "docs/runbooks/backfill.md",
+        "docs/runbooks/orchestration-recovery.md",
         "contracts/batch/settlement_v1.yml",
         "infrastructure/postgres/init/001_create_database_objects.sql",
         "infrastructure/postgres/init/002_create_reference_data.sql",
         "infrastructure/postgres/init/003_create_indexes.sql",
         "infrastructure/debezium/connectors/payments-postgres.json",
+        "infrastructure/airflow/Dockerfile",
+        "infrastructure/airflow/init/001_create_control_schema.sql",
         "pyproject.toml",
         "src/__init__.py",
     )
@@ -97,11 +106,15 @@ def test_sensitive_example_values_are_safe_placeholders() -> None:
     assert values["POSTGRES_PASSWORD"] == "change_me"
     assert values["DEBEZIUM_DATABASE_USER"] == "payments_cdc"
     assert values["DEBEZIUM_DATABASE_PASSWORD"].startswith("change_me")
+    assert values["AIRFLOW_DATABASE_PASSWORD"].startswith("change_me")
+    assert values["CONTROL_DATABASE_PASSWORD"].startswith("change_me")
+    assert values["AIRFLOW_FERNET_KEY"].startswith("replace_with")
+    assert values["AIRFLOW_SECRET_KEY"].startswith("replace_with")
     assert "change_me" in values["DATABASE_URL"]
 
 
-def test_compose_file_has_only_phase_six_services() -> None:
-    """Phase 6 adds a private bucket, not a processing service or host port."""
+def test_compose_file_has_only_phase_seven_services() -> None:
+    """Phase 7 adds only its PostgreSQL-backed Airflow control plane."""
     compose_text = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "  postgres:" in compose_text
     assert "  minio:" in compose_text
@@ -110,7 +123,12 @@ def test_compose_file_has_only_phase_six_services() -> None:
     assert "  kafka-connect:" in compose_text
     assert "  connector-init:" in compose_text
     assert "  cdc-consumer:" in compose_text
-    for forbidden_service in ("airflow:", "spark:", "flink:", "snowflake:"):
+    assert "  airflow-postgres:" in compose_text
+    assert "  airflow-init:" in compose_text
+    assert "  airflow-webserver:" in compose_text
+    assert "  airflow-scheduler:" in compose_text
+    assert "  airflow-dag-processor:" in compose_text
+    for forbidden_service in ("spark:", "flink:", "snowflake:", "dbt-runner:"):
         assert forbidden_service not in compose_text.lower()
 
 
@@ -167,5 +185,44 @@ def test_makefile_exposes_phase_zero_validation_targets() -> None:
         "test-silver-unit:",
         "test-silver-integration:",
         "reset-silver-state:",
+        "airflow-build:",
+        "airflow-init:",
+        "airflow-up:",
+        "airflow-down:",
+        "airflow-logs:",
+        "airflow-shell:",
+        "airflow-demo-login-info:",
+        "airflow-show-demo-password:",
+        "airflow-dags-list:",
+        "airflow-dag-test:",
+        "test-airflow-unit:",
+        "test-airflow-integration:",
+        "trigger-settlement-pipeline:",
+        "trigger-cdc-silver-pipeline:",
+        "trigger-backfill:",
+        "reset-airflow-metadata:",
     )
     assert all(target in makefile for target in required_targets)
+    login_info_target = makefile.split("airflow-demo-login-info:", maxsplit=1)[1].split(
+        "airflow-show-demo-password:", maxsplit=1
+    )[0]
+    assert "AIRFLOW_WEB_PORT" in login_info_target
+    assert "AIRFLOW_ADMIN_USER" in login_info_target
+    for forbidden_value in (
+        "AIRFLOW_DATABASE_PASSWORD",
+        "AIRFLOW_FERNET_KEY",
+        "AIRFLOW_SECRET_KEY",
+        "AIRFLOW_CONN_CONTROL_DB",
+    ):
+        assert forbidden_value not in login_info_target
+    password_target = makefile.split("airflow-show-demo-password:", maxsplit=1)[1].split(
+        "airflow-dags-list:", maxsplit=1
+    )[0]
+    assert '@test "$(CONFIRM)" = "1"' in password_target
+    assert "SIMPLE_AUTH_MANAGER_PASSWORDS_FILE" in password_target
+    assert "logs --tail" not in password_target
+    backfill_target = makefile.split("trigger-backfill:", maxsplit=1)[1].split(
+        "reset-airflow-metadata:", maxsplit=1
+    )[0]
+    assert '@test -n "$(BACKFILL_CONF)"' in backfill_target
+    assert "provide a unique request_id" in backfill_target

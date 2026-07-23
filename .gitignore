@@ -37,6 +37,8 @@ tmp/
 airflow/logs/
 airflow/airflow.db
 airflow/airflow.cfg
+airflow/simple_auth_passwords.json
+airflow/config/
 
 # dbt generated and local files
 dbt/target/

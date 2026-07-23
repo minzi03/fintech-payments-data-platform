@@ -10,7 +10,7 @@ Long-term business use cases:
 
 ## Project status
 
-**Current phase: Phase 6 - Bronze-to-Silver Processing Foundation**
+**Current phase: Phase 7 - Airflow Orchestration and Central Control Plane**
 
 Implemented:
 
@@ -35,8 +35,11 @@ Implemented:
 - A Python/PyArrow Bronze-to-Silver CLI with incremental discovery, explicit entity schemas,
   Decimal/UTC normalization, CDC history/latest/current, contract-based settlement projection,
   quality outputs, immutable Silver publication, and processing lineage.
+- Apache Airflow 3.3 with LocalExecutor, dedicated metadata PostgreSQL, a least-privilege `control`
+  schema, four bounded DAGs, retries/timeouts, aggregate quality gates, manual backfill, and
+  idempotent orchestration of the existing batch/CDC/Silver applications.
 
-Airflow, Spark/Flink, executable dbt models, Snowflake, dashboards, Gold reconciliation, and an
+Spark/Flink, executable dbt models, Snowflake, dashboards, Gold reconciliation, and a full
 observability platform are not implemented.
 
 ## Implemented data flow
@@ -57,6 +60,9 @@ Payment generator --------------------------> PostgreSQL OLTP
                                                                   |
                                                                   v
                                          PyArrow Silver processing -> MinIO Silver
+                                                                  |
+                                                                  v
+                                              Airflow schedules/control + PostgreSQL control schema
 
 Partner settlement CSV
         |
@@ -82,6 +88,9 @@ filename + SHA-256 + settlement-v1 validation
 | `scripts/cdc/` | Least-privilege PostgreSQL bootstrap, connector lifecycle, and safe topic inspection. |
 | `src/ingestion/cdc_consumer/` | Envelope parsing, batching, Parquet, manifest, storage, DLQ, recovery, Kafka loop, and CLI. |
 | `src/processing/silver/` | Bronze read, normalization, state/quality, Parquet, lineage manifest, and CLI. |
+| `src/orchestration/` | Airflow-neutral control store, health checks, quality gates, and application adapters. |
+| `airflow/dags/` | Four Phase 7 DAG definitions; no business transformation logic. |
+| `infrastructure/airflow/` | Pinned Airflow image and versioned control-schema DDL. |
 | `infrastructure/cdc-consumer/` | Profile-gated pinned Python consumer image. |
 | `tests/unit/` | Docker-independent unit tests. |
 | `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
@@ -230,6 +239,26 @@ unless `--force-reprocess`; dry-run writes no manifest or object.
 See [Silver architecture](docs/architecture/silver-processing.md), the
 [Silver data model](docs/data-model/silver-data-model.md), and the
 [Silver runbook](docs/runbooks/silver-processing.md).
+
+## Airflow orchestration
+
+After replacing Airflow secret placeholders in ignored `.env`:
+
+```bash
+make airflow-build
+make airflow-init
+make airflow-up
+make airflow-dags-list
+```
+
+Airflow runs the settlement pipeline, a bounded CDC health/control DAG, dependency-aware CDC Silver
+processing, and a manual validated backfill. The long-running CDC consumer remains outside Airflow.
+Central PostgreSQL control state tracks pipeline/task aggregates and quality results while the
+three existing SQLite manifests remain fine-grained sources of truth.
+
+See [orchestration architecture](docs/architecture/orchestration.md), the
+[control-plane boundary](docs/architecture/control-plane.md), and the
+[local Airflow runbook](docs/runbooks/airflow-local.md).
 
 ## Quality checks
 

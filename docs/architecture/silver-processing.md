@@ -5,8 +5,9 @@
 Implemented in Phase 6 as a Python 3.11+/PyArrow CLI. It reads immutable Bronze objects through the
 shared local/MinIO storage boundary, validates their contracts, writes immutable explicit-schema
 Parquet to the private `fintech-silver` bucket, and tracks each input in a SQLite processing
-manifest. DuckDB is not required for the current object-local volume; Spark, Flink, Airflow, Gold,
-reconciliation, warehouse loading, and dashboards remain out of scope.
+manifest. DuckDB is not required for the current object-local volume. Phase 7 now orchestrates this
+unchanged processor; Spark, Flink, Gold, reconciliation, warehouse loading, and dashboards remain
+out of scope.
 
 ```text
 CDC Bronze Parquet -> validation -> normalize/deduplicate -> history
@@ -77,4 +78,5 @@ same key/same checksum is idempotent and different content is a collision.
 - Cross-partition keys are rejected; no global sequence service exists.
 - Schema evolution is explicit-version rejection, not a registry/compatibility service.
 - Reference checks use completed Silver snapshots and may remain unresolved until a later run.
-- No compaction, retention, metrics/alerts, distributed compute, or orchestrated scheduling.
+- No compaction, retention, distributed compute, or record-level observability. Phase 7 adds
+  scheduling and aggregate gates without changing Silver semantics.

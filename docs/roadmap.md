@@ -11,7 +11,7 @@ Phase 0 Foundation                                      [implemented]
               -> Phase 4 PostgreSQL CDC + Kafka         [implemented]
                   -> Phase 5 CDC consumer to Bronze     [implemented]
                       -> Phase 6 Silver + data quality  [implemented]
-                          -> Phase 7 Airflow             [planned]
+                          -> Phase 7 Airflow             [implemented]
                               -> Phase 8 Snowflake/dbt  [planned]
                                   -> Phase 9 Reconciliation product
                                       -> Phase 10 Operations analytics/hardening
@@ -96,12 +96,22 @@ deduplication/order guards, unresolved references, quality outputs, immutable Si
 incremental SQLite lineage, force/dry-run controls, and real MinIO tests. No distributed engine was
 needed at the current scale.
 
+### Phase 7 - Airflow Orchestration and Central Control Plane
+
+**Implemented:** Airflow 3.3/LocalExecutor, separate metadata PostgreSQL, versioned `control` schema,
+settlement/CDC-health/CDC-Silver/backfill DAGs, explicit schedules/timezone/catchup, bounded retries
+and timeouts, aggregate PASS/WARN/FAIL quality gates, deterministic run tracking, safe backfill
+parameters, redacted failure callbacks, and source-of-truth boundaries that retain existing
+component manifests.
+
+**Independent acceptance:** DAG parsing requires no external service; the streaming consumer is not
+an Airflow task; XCom contains operational metadata only; retries reuse Phase 2–6 idempotency;
+dry-run writes no output; central pipeline/task/quality rows are transactional and queryable.
+
+**Deliberately deferred:** warehouse/dbt, Gold/reconciliation, distributed executors, full metrics
+and alert delivery, production auth/secrets/HA, and migration of component manifests.
+
 ## Planned phases
-
-### Phase 7 - Airflow Orchestration
-
-Schedules, dependencies, PostgreSQL control state, retries/backfills, runbooks, and failure signals
-around already executable pipelines.
 
 ### Phase 8 - Snowflake and dbt
 

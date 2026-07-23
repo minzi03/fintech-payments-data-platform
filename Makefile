@@ -13,6 +13,9 @@ CDC_CONSUMER_INSPECT_ARGS ?=
 SILVER_CDC_ARGS ?= --storage-backend minio --input-prefix cdc/
 SILVER_SETTLEMENT_ARGS ?= --storage-backend minio --input-prefix settlements/
 SILVER_INSPECT_ARGS ?= --storage-backend minio
+AIRFLOW_DAG_ID ?= settlement_batch_pipeline
+AIRFLOW_LOGICAL_DATE ?= 2026-07-23T00:00:00+00:00
+BACKFILL_CONF ?=
 
 -include $(COMPOSE_ENV)
 export APP_ENV LOG_LEVEL POSTGRES_HOST POSTGRES_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_URL
@@ -42,11 +45,21 @@ export CDC_CONSUMER_TEMP_DIR CDC_CONSUMER_SHUTDOWN_TIMEOUT_SECONDS
 export SILVER_LOCAL_ROOT SILVER_MANIFEST_DB SILVER_TEMP_DIR SILVER_CODE_VERSION
 export SILVER_SCHEMA_VERSION SILVER_SUPPORTED_CDC_SCHEMA SILVER_SETTLEMENT_CONTRACT
 export SILVER_MAX_OBJECTS
+export AIRFLOW_IMAGE_NAME AIRFLOW_UID AIRFLOW_WEB_PORT AIRFLOW_EXECUTOR
+export AIRFLOW_DATABASE_USER AIRFLOW_DATABASE_PASSWORD AIRFLOW_DATABASE_NAME
+export CONTROL_DATABASE_USER CONTROL_DATABASE_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_SECRET_KEY
+export AIRFLOW_ADMIN_USER AIRFLOW_TIMEZONE AIRFLOW_SETTLEMENT_SCHEDULE
+export AIRFLOW_CDC_HEALTH_SCHEDULE AIRFLOW_SILVER_SCHEDULE AIRFLOW_TASK_RETRIES
+export AIRFLOW_RETRY_DELAY_SECONDS AIRFLOW_TASK_TIMEOUT_SECONDS SETTLEMENT_PARTNER_ID
+export SETTLEMENT_REJECTION_WARN_RATE SETTLEMENT_REJECTION_FAIL_RATE
+export SILVER_REJECTION_WARN_RATE SILVER_REJECTION_FAIL_RATE
+export CDC_LAG_WARN_THRESHOLD CDC_LAG_FAIL_THRESHOLD
+export CDC_FRESHNESS_WARN_SECONDS CDC_FRESHNESS_FAIL_SECONDS
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
-	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration validate postgres-up minio-up kafka-up cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean"
+	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration validate postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata"
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -92,6 +105,12 @@ test-silver-unit:
 
 test-silver-integration:
 	RUN_SILVER_INTEGRATION=1 $(PYTHON) -m pytest -m silver_integration
+
+test-airflow-unit:
+	$(PYTHON) -m pytest airflow/tests tests/unit/orchestration
+
+test-airflow-integration:
+	RUN_AIRFLOW_INTEGRATION=1 $(PYTHON) -m pytest -m airflow_integration
 
 coverage:
 	$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=xml
@@ -215,6 +234,56 @@ reset-silver-state:
 	@echo "WARNING: this deletes only the local Silver processing SQLite manifest; Bronze and object data remain untouched."
 	@test "$(CONFIRM)" = "1" || (echo "Re-run with CONFIRM=1 to continue."; exit 1)
 	$(PYTHON) -m processing.silver.cli reset-state --confirm
+
+airflow-build:
+	docker compose --env-file $(COMPOSE_ENV) build airflow-init airflow-webserver airflow-scheduler airflow-dag-processor
+
+airflow-init:
+	docker compose --env-file $(COMPOSE_ENV) up --build airflow-init
+
+airflow-up:
+	docker compose --env-file $(COMPOSE_ENV) up -d --build --wait airflow-webserver airflow-scheduler airflow-dag-processor
+
+airflow-down:
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force airflow-webserver airflow-scheduler airflow-dag-processor airflow-init airflow-postgres
+
+airflow-logs:
+	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f airflow-webserver airflow-scheduler airflow-dag-processor
+
+airflow-shell:
+	docker compose --env-file $(COMPOSE_ENV) exec airflow-scheduler bash
+
+airflow-demo-login-info:
+	@echo "Airflow URL: http://localhost:$(AIRFLOW_WEB_PORT)"
+	@echo "Username: $(AIRFLOW_ADMIN_USER)"
+	@echo "Password retrieval: run 'make airflow-show-demo-password CONFIRM=1' privately."
+	@echo "WARNING: Never run the password target while sharing or recording the screen."
+
+airflow-show-demo-password:
+	@test "$(CONFIRM)" = "1" || (echo "Refusing to display password. Re-run with CONFIRM=1."; exit 1)
+	@docker compose --env-file $(COMPOSE_ENV) exec -T airflow-webserver python -c 'import json, os, sys; from pathlib import Path; configured_path=os.environ.get("AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE", ""); configured_path or sys.exit("Airflow password file is not configured"); path=Path(configured_path); path.is_file() or sys.exit("Airflow password file does not exist; start the API server first"); user_spec=os.environ.get("AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS", ""); username=user_spec.split(",", 1)[0].split(":", 1)[0].strip(); username or sys.exit("Airflow demo username is not configured"); passwords=json.loads(path.read_text(encoding="utf-8")); password=passwords.get(username); isinstance(password, str) and bool(password) or sys.exit("Airflow password is missing for the configured demo user"); print(password)'
+
+airflow-dags-list:
+	docker compose --env-file $(COMPOSE_ENV) exec airflow-scheduler airflow dags list
+
+airflow-dag-test:
+	docker compose --env-file $(COMPOSE_ENV) exec airflow-scheduler airflow dags test $(AIRFLOW_DAG_ID) $(AIRFLOW_LOGICAL_DATE)
+
+trigger-settlement-pipeline:
+	docker compose --env-file $(COMPOSE_ENV) exec airflow-scheduler airflow dags trigger settlement_batch_pipeline
+
+trigger-cdc-silver-pipeline:
+	docker compose --env-file $(COMPOSE_ENV) exec airflow-scheduler airflow dags trigger cdc_silver_processing_pipeline
+
+trigger-backfill:
+	@test -n "$(BACKFILL_CONF)" || (echo "BACKFILL_CONF is required; provide a unique request_id."; exit 1)
+	docker compose --env-file $(COMPOSE_ENV) exec airflow-scheduler airflow dags trigger data_platform_backfill --conf '$(BACKFILL_CONF)'
+
+reset-airflow-metadata:
+	@echo "WARNING: this deletes only Airflow metadata, control-plane rows, Airflow logs/config, and Airflow component SQLite manifests. OLTP, Kafka, Bronze, and Silver objects remain untouched."
+	@test "$(CONFIRM)" = "1" || (echo "Re-run with CONFIRM=1 to continue."; exit 1)
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force airflow-webserver airflow-scheduler airflow-dag-processor airflow-init airflow-postgres
+	docker volume rm fintech-payments-airflow-postgres-data fintech-payments-airflow-logs fintech-payments-airflow-component-state fintech-payments-airflow-tmp
 
 generate-data:
 	$(PYTHON) -m generators.cli $(GENERATOR_ARGS)
