@@ -128,6 +128,7 @@ jobs:
       AIRFLOW_DATABASE_PASSWORD: ci_placeholder_airflow_password
       CONTROL_DATABASE_USER: pipeline_control
       CONTROL_DATABASE_PASSWORD: ci_placeholder_control_password
+      CONTROL_SCHEMA_SQL: ${{ github.workspace }}/infrastructure/airflow/init/001_create_control_schema.sql
       # yamllint disable-line rule:line-length
       AIRFLOW_CONN_CONTROL_DB: postgresql://pipeline_control:ci_placeholder_control_password@localhost:5432/airflow_metadata
       RUN_AIRFLOW_INTEGRATION: "1"
