@@ -1,0 +1,17 @@
+{
+  "name": "fintech-payments-data-platform",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "portal:build": "pnpm --filter @fintech/portal-web build",
+    "portal:client": "pnpm --filter @fintech/portal-contracts generate",
+    "portal:format": "pnpm --filter @fintech/portal-web format",
+    "portal:format:check": "pnpm --filter @fintech/portal-web format:check",
+    "portal:lint": "pnpm --filter @fintech/portal-web lint",
+    "portal:test": "pnpm --filter @fintech/portal-web test",
+    "portal:typecheck": "pnpm --filter @fintech/portal-web typecheck"
+  }
+}
