@@ -50,7 +50,7 @@ def make_message(
     *,
     operation: str = "c",
     wrapper: bool = True,
-    value: bytes | None | object = ...,  # type: ignore[assignment]
+    value: bytes | object | None = ...,  # type: ignore[assignment]
     partition: int = 0,
 ) -> RawKafkaMessage:
     if value is ...:
