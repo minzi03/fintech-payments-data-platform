@@ -22,6 +22,15 @@ dist/
 build/
 *.egg-info/
 
+# Node and Portal build/test output
+node_modules/
+.pnpm-store/
+.next/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+
 # IDE and operating-system files
 .idea/
 .vscode/

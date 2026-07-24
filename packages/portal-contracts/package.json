@@ -1,0 +1,19 @@
+{
+  "name": "@fintech/portal-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/generated/index.ts",
+    "./client": "./src/generated/client/index.ts"
+  },
+  "scripts": {
+    "generate": "openapi-ts",
+    "check": "openapi-ts && git diff --exit-code -- openapi src/generated"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3"
+  }
+}
