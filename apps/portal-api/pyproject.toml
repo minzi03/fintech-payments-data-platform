@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=80.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fintech-portal-api"
+version = "0.1.0"
+description = "Backend for Frontend foundation for the Fintech Data Platform Portal."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.139.2",
+  "pydantic==2.13.4",
+  "pydantic-settings==2.14.2",
+  "uvicorn==0.51.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.3.0",
+  "ruff==0.14.14",
+]
+
+[tool.setuptools.packages.find]
+where = ["app"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["app"]
+markers = [
+  "integration: Portal API integration tests",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+packages = ["portal_api"]
+mypy_path = "app"

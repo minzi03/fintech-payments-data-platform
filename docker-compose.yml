@@ -81,6 +81,85 @@ x-airflow-common: &airflow-common
       condition: service_completed_successfully
 
 services:
+  portal-api:
+    build:
+      context: .
+      dockerfile: apps/portal-api/Dockerfile
+      args:
+        PORTAL_API_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
+        PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
+        PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
+    restart: unless-stopped
+    environment:
+      PORTAL_API_ENVIRONMENT: ${PORTAL_API_ENVIRONMENT:-local}
+      PORTAL_API_SERVICE_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
+      PORTAL_API_API_VERSION: ${PORTAL_API_API_VERSION:-v1}
+      PORTAL_API_CONTRACT_VERSION: ${PORTAL_API_CONTRACT_VERSION:-1.0.0}
+      PORTAL_API_DOCUMENTATION_VERSION: ${PORTAL_API_DOCUMENTATION_VERSION:-portal-foundation-v1}
+      PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
+      PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
+      PORTAL_API_LOG_LEVEL: ${PORTAL_API_LOG_LEVEL:-INFO}
+      PORTAL_API_LOG_FORMAT: ${PORTAL_API_LOG_FORMAT:-console}
+      PORTAL_API_HOST: 0.0.0.0
+      PORTAL_API_PORT: 8010
+      PORTAL_API_ALLOWED_ORIGINS: ${PORTAL_API_ALLOWED_ORIGINS:-http://localhost:3000}
+      PORTAL_API_TRUSTED_HOSTS: ${PORTAL_API_TRUSTED_HOSTS:-localhost,127.0.0.1,portal-api}
+      PORTAL_API_DEPENDENCY_TIMEOUT_SECONDS: ${PORTAL_API_DEPENDENCY_TIMEOUT_SECONDS:-2}
+      PORTAL_API_READINESS_TIMEOUT_SECONDS: ${PORTAL_API_READINESS_TIMEOUT_SECONDS:-5}
+      PORTAL_API_HEALTH_CACHE_TTL_SECONDS: ${PORTAL_API_HEALTH_CACHE_TTL_SECONDS:-2}
+      PORTAL_API_TELEMETRY_ENABLED: ${PORTAL_API_TELEMETRY_ENABLED:-false}
+      PORTAL_API_OPENAPI_ENABLED: ${PORTAL_API_OPENAPI_ENABLED:-true}
+      PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${PORTAL_API_PORT:-8010}:8010"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8010/health/live', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    mem_limit: 256m
+    cpus: 0.50
+
+  portal-web:
+    build:
+      context: .
+      dockerfile: apps/portal-web/Dockerfile
+      args:
+        PORTAL_WEB_VERSION: ${NEXT_PUBLIC_PORTAL_WEB_VERSION:-0.1.0-dev}
+        PORTAL_BUILD_SHA: ${NEXT_PUBLIC_PORTAL_BUILD_SHA:-local}
+        PORTAL_ENV: ${NEXT_PUBLIC_PORTAL_ENV:-local}
+        PORTAL_API_INTERNAL_URL: http://portal-api:8010
+    restart: unless-stopped
+    depends_on:
+      portal-api:
+        condition: service_healthy
+    environment:
+      PORTAL_API_INTERNAL_URL: http://portal-api:8010
+    ports:
+      - "127.0.0.1:${PORTAL_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/health')
+          .then(response => { if (!response.ok) process.exit(1) })
+          .catch(() => process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    mem_limit: 384m
+    cpus: 0.75
+
   postgres:
     image: postgres:16.4-bookworm
     restart: unless-stopped

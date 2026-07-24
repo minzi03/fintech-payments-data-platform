@@ -1,4 +1,5 @@
 PYTHON ?= python
+PNPM ?= pnpm
 COMPOSE_ENV ?= $(if $(wildcard .env),.env,.env.example)
 GENERATOR_ARGS ?= --once --seed 42 --customers 10 --merchants 5 --transactions 50
 SETTLEMENT_PARTNER ?= VCB
@@ -56,10 +57,10 @@ export SILVER_REJECTION_WARN_RATE SILVER_REJECTION_FAIL_RATE
 export CDC_LAG_WARN_THRESHOLD CDC_LAG_FAIL_THRESHOLD
 export CDC_FRESHNESS_WARN_SECONDS CDC_FRESHNESS_FAIL_SECONDS
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-web-test portal-test portal-build portal-config-check portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
-	@echo "Targets: install lint format-check test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration validate postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata"
+	@echo "Targets: install lint format-check test-unit test-integration portal-install portal-contracts portal-test portal-build portal-up portal-e2e portal-down postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down"
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -128,6 +129,54 @@ compose-config: compose-check
 validate: lint format-check test yaml-check compose-check
 
 quality: validate
+
+portal-install:
+	$(PYTHON) -m pip install -e "./apps/portal-api[dev]"
+	$(PNPM) install --frozen-lockfile
+
+portal-openapi:
+	PYTHONPATH=apps/portal-api/app $(PYTHON) apps/portal-api/scripts/generate_openapi.py --output packages/portal-contracts/openapi/portal-api-v1.json
+
+portal-client:
+	$(PNPM) --filter @fintech/portal-contracts generate
+
+portal-contracts: portal-openapi portal-client
+
+portal-contract-check: portal-contracts
+	git diff --exit-code -- packages/portal-contracts/openapi packages/portal-contracts/src/generated
+
+portal-api-test:
+	$(PYTHON) -m ruff check apps/portal-api
+	$(PYTHON) -m ruff format --check apps/portal-api
+	$(PYTHON) -m mypy --config-file apps/portal-api/pyproject.toml
+	$(PYTHON) -m pytest -c apps/portal-api/pyproject.toml apps/portal-api/tests
+
+portal-web-test:
+	$(PNPM) --filter @fintech/portal-web format:check
+	$(PNPM) --filter @fintech/portal-web lint
+	$(PNPM) --filter @fintech/portal-web typecheck
+	$(PNPM) --filter @fintech/portal-web test
+
+portal-test: portal-api-test portal-web-test
+
+portal-build:
+	$(PNPM) --filter @fintech/portal-web build
+	docker compose --env-file $(COMPOSE_ENV) build portal-api portal-web
+
+portal-config-check:
+	PYTHONPATH=apps/portal-api/app $(PYTHON) apps/portal-api/scripts/validate_config.py
+
+portal-up:
+	docker compose --env-file $(COMPOSE_ENV) up -d --build --wait portal-api portal-web
+
+portal-down:
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force portal-web portal-api
+
+portal-logs:
+	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f portal-web portal-api
+
+portal-e2e:
+	$(PNPM) --filter @fintech/portal-web e2e
 
 postgres-up:
 	docker compose --env-file $(COMPOSE_ENV) up -d --wait postgres
