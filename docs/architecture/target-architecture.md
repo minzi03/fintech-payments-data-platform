@@ -16,7 +16,9 @@ plus Airflow orchestration/control are implemented. Warehouse analytics remain p
 | Reliable CDC consumer to immutable Bronze Parquet | Implemented in Phase 5 |
 | Silver processing and data quality | Implemented in Phase 6 |
 | Airflow orchestration and central control schema | Implemented in Phase 7 |
+| Production-readiness blocker design | In progress; ADR-001 frozen, ADR-002 through ADR-005 proposed |
 | Snowflake, executable dbt models, BI, observability | Planned for Phases 8-10 |
+| Enterprise Data Platform Portal | Target product architecture only; no Portal runtime implemented |
 
 ## Architecture principles
 
@@ -63,6 +65,9 @@ flowchart LR
     SILVER --> WH["Snowflake + dbt - Phase 8"]
     WH --> OPS["Operations analytics - Phase 10"]
     WH --> RECON["Reconciliation product - Phase 9"]
+    PORTAL["Enterprise Portal - target design"] -. governed APIs .-> AIRFLOW
+    PORTAL -. governed APIs .-> CONSUMER
+    PORTAL -. metadata and publications .-> SILVER
     AIRFLOW["Airflow - implemented Phase 7"] -. orchestrates .-> BATCH
     AIRFLOW -. orchestrates .-> SILVER
 ```
@@ -79,6 +84,16 @@ flowchart LR
 | Silver | Normalize, deduplicate, apply CDC, quality gates | Implemented |
 | Warehouse/dbt | Dimensions, facts, SCD2, reconciliation marts | Planned |
 | Orchestration | Scheduling, bounded health signals, retries, backfill | Implemented locally |
+| Portal | Capability-aware discovery, operations, governance, and audit through supported APIs | Target design only |
+
+## Portal boundary
+
+The target [Enterprise Data Platform Portal](../product/enterprise-data-platform-portal.md) is a
+governed interface over application APIs. It is not an alternative source of truth and it must not
+connect browsers directly to PostgreSQL, Kafka, MinIO, Airflow metadata tables, or administration
+endpoints. The Portal exposes implemented capabilities only; Gold, warehouse, transformation,
+catalog, lineage, recovery, DLQ redrive, and enterprise IAM surfaces remain unavailable until their
+backends and production contracts exist.
 
 ## Deferred decisions
 

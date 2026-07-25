@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -92,7 +93,7 @@ def consumer_group_lag(
 def cdc_manifest_freshness(path: Path, *, now: datetime | None = None) -> dict[str, object]:
     if not path.is_file():
         raise RuntimeError("CDC consumer manifest is unavailable")
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         row = connection.execute(
             "SELECT max(committed_at), count(*) FROM cdc_batch_manifest WHERE status = 'COMMITTED'"
         ).fetchone()

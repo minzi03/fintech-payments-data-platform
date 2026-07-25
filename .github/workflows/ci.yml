@@ -15,6 +15,140 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  portal-quality:
+    name: Portal contract, API, and Web quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.20.0"
+          cache: pnpm
+
+      - name: Install Portal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./apps/portal-api[dev]"
+          pnpm install --frozen-lockfile
+
+      - name: Validate Portal API
+        run: |
+          python -m ruff check apps/portal-api
+          python -m ruff format --check apps/portal-api
+          python -m mypy --config-file apps/portal-api/pyproject.toml
+          python -m pytest -c apps/portal-api/pyproject.toml apps/portal-api/tests
+
+      - name: Detect generated contract drift
+        run: |
+          PYTHONPATH=apps/portal-api/app \
+            python apps/portal-api/scripts/generate_openapi.py \
+            --output packages/portal-contracts/openapi/portal-api-v1.json
+          pnpm --filter @fintech/portal-contracts generate
+          git diff --exit-code -- \
+            packages/portal-contracts/openapi \
+            packages/portal-contracts/src/generated
+
+      - name: Validate Portal Web
+        run: |
+          pnpm --filter @fintech/portal-web format:check
+          pnpm --filter @fintech/portal-web lint
+          pnpm --filter @fintech/portal-web typecheck
+          pnpm --filter @fintech/portal-web test
+          pnpm --filter @fintech/portal-web build
+
+  portal-containers:
+    name: Portal container security and health
+    needs: portal-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and start isolated Portal
+        run: docker compose --env-file .env.example up -d --build --wait portal-api portal-web
+
+      - name: Verify non-root users and health
+        run: |
+          test "$(docker compose exec -T portal-api id -u)" != "0"
+          test "$(docker compose exec -T portal-web id -u)" != "0"
+          curl --fail --silent http://127.0.0.1:8010/health/live
+          curl --fail --silent http://127.0.0.1:3000/health
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:3000/error-test)" = "404"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:3000/developer)" = "404"
+
+      - name: Capture safe Portal diagnostics
+        if: failure()
+        run: docker compose logs --tail=200 portal-api portal-web
+
+      - name: Stop Portal
+        if: always()
+        run: docker compose --env-file .env.example down --remove-orphans
+
+  portal-e2e:
+    name: Portal browser smoke test
+    needs: portal-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.20.0"
+          cache: pnpm
+
+      - name: Install Portal and browser dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./apps/portal-api[dev]"
+          pnpm install --frozen-lockfile
+          pnpm --filter @fintech/portal-web exec playwright install --with-deps chromium
+
+      - name: Run Portal smoke test
+        run: pnpm --filter @fintech/portal-web e2e
+
+      - name: Upload safe browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-playwright-report
+          path: apps/portal-web/playwright-report
+          retention-days: 7
+
   quality:
     name: Phase 7 quality gates
     runs-on: ubuntu-latest
