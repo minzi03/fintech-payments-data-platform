@@ -47,8 +47,8 @@ extend-exclude = [
 select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-config --strict-markers --import-mode=importlib --basetemp=tmp/pytest"
-cache_dir = "tmp/pytest_cache"
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+cache_dir = ".pytest_cache"
 testpaths = ["tests", "airflow/tests"]
 pythonpath = ["src"]
 markers = [
