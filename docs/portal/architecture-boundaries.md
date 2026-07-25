@@ -50,3 +50,13 @@ containers, tests, and local operations.
 Deferred: authentication, authorization, capability registry business logic, sources, datasets,
 pipelines, CDC administration, object browsing, previews, SQL, backfills, recovery, DLQ, approvals,
 and all platform mutations.
+
+## Frozen PR-PORTAL-002 security design
+
+The architecture contract for future authentication, server sessions, authorization, capability
+projection, environment/tenant context, and append-only security audit is accepted in
+[`pr-portal-002-design-freeze.md`](pr-portal-002-design-freeze.md). It is design evidence only:
+none of those runtime capabilities exists until PR-PORTAL-002 is implemented and its merge gates
+pass. Bounded implementation is authorized with conditions by
+[`GD-001`](../governance/decisions/GD-001-portal-002-implementation-exception.md); that decision
+grants no production deployment authority.

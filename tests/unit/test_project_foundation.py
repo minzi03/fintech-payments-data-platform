@@ -74,6 +74,15 @@ def test_required_foundation_files_exist() -> None:
         "infrastructure/debezium/connectors/payments-postgres.json",
         "infrastructure/airflow/Dockerfile",
         "infrastructure/airflow/init/001_create_control_schema.sql",
+        "apps/portal-api/pyproject.toml",
+        "apps/portal-web/package.json",
+        "packages/portal-contracts/openapi/portal-api-v1.json",
+        "docs/portal/architecture-boundaries.md",
+        "docs/portal/api-contract.md",
+        "docs/portal/configuration.md",
+        "docs/portal/local-development.md",
+        "docs/portal/testing.md",
+        "docs/portal/troubleshooting.md",
         "pyproject.toml",
         "src/__init__.py",
     )
@@ -84,11 +93,6 @@ def test_required_foundation_files_exist() -> None:
 
 def test_sensitive_example_values_are_safe_placeholders() -> None:
     """Keep local credentials explicit, recognizable, and non-production."""
-    empty_future_keys = {
-        "SNOWFLAKE_ACCOUNT",
-        "SNOWFLAKE_PASSWORD",
-        "SNOWFLAKE_USER",
-    }
     values = {}
 
     for raw_line in (REPOSITORY_ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
@@ -98,8 +102,6 @@ def test_sensitive_example_values_are_safe_placeholders() -> None:
         key, value = line.split("=", maxsplit=1)
         values[key] = value
 
-    assert empty_future_keys <= values.keys()
-    assert all(values[key] == "" for key in empty_future_keys)
     assert values["MINIO_ACCESS_KEY"].startswith("change_me")
     assert values["MINIO_SECRET_KEY"].startswith("change_me")
     assert values["POSTGRES_USER"] == "payments_app"
@@ -113,9 +115,26 @@ def test_sensitive_example_values_are_safe_placeholders() -> None:
     assert "change_me" in values["DATABASE_URL"]
 
 
-def test_compose_file_has_only_phase_seven_services() -> None:
-    """Phase 7 adds only its PostgreSQL-backed Airflow control plane."""
+def test_unimplemented_runtime_scaffolds_are_not_shipped() -> None:
+    """Keep planned phases in the roadmap until executable assets exist."""
+    premature_files = (
+        "dbt/dbt_project.yml",
+        "dbt/profiles.example.yml",
+        "src/ingestion/streaming/__init__.py",
+        "src/observability/__init__.py",
+        "src/quality/__init__.py",
+        "tests/end_to_end/__init__.py",
+    )
+
+    present = [path for path in premature_files if (REPOSITORY_ROOT / path).is_file()]
+    assert not present, f"Unimplemented runtime scaffolds must not be shipped: {present}"
+
+
+def test_compose_file_has_only_implemented_services() -> None:
+    """Compose exposes the implemented data plane and isolated Portal foundation."""
     compose_text = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "  portal-api:" in compose_text
+    assert "  portal-web:" in compose_text
     assert "  postgres:" in compose_text
     assert "  minio:" in compose_text
     assert "  minio-init:" in compose_text
@@ -201,6 +220,20 @@ def test_makefile_exposes_phase_zero_validation_targets() -> None:
         "trigger-cdc-silver-pipeline:",
         "trigger-backfill:",
         "reset-airflow-metadata:",
+        "portal-install:",
+        "portal-openapi:",
+        "portal-client:",
+        "portal-contracts:",
+        "portal-contract-check:",
+        "portal-api-test:",
+        "portal-web-test:",
+        "portal-test:",
+        "portal-build:",
+        "portal-config-check:",
+        "portal-up:",
+        "portal-down:",
+        "portal-logs:",
+        "portal-e2e:",
     )
     assert all(target in makefile for target in required_targets)
     login_info_target = makefile.split("airflow-demo-login-info:", maxsplit=1)[1].split(

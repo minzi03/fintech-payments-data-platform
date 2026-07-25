@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -96,7 +97,7 @@ def test_postgres_logical_replication_check(monkeypatch) -> None:
 def test_manifest_freshness_uses_committed_batches(tmp_path: Path) -> None:
     path = tmp_path / "manifest.sqlite3"
     committed_at = datetime(2026, 7, 23, tzinfo=UTC)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "CREATE TABLE cdc_batch_manifest (status TEXT NOT NULL, committed_at TEXT)"
         )

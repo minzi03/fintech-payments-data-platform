@@ -10,7 +10,20 @@ Long-term business use cases:
 
 ## Project status
 
-**Current phase: Phase 7 - Airflow Orchestration and Central Control Plane**
+**Implementation baseline: Phase 7 complete**
+
+**Production-readiness phase: Design Freeze in progress**
+
+The Phase 0-7 local platform is executable and tested. It is not approved for a production pilot.
+The first production blocker, dataset bootstrap and atomic activation, is frozen in ADR-001
+Revision 4. ADR-002 through ADR-005 still require architecture review before remediation code may
+start.
+
+- [Design Freeze status](docs/design-freeze.md)
+- [Production Readiness Backlog](docs/production-readiness-backlog.md)
+- [Accepted ADR-001](docs/adr/001-dataset-bootstrap-and-atomic-activation.md)
+- [ADR-001 final design review](docs/design-reviews/adr-001-design-freeze-review-v2.md)
+- [Enterprise Data Platform Portal target design](docs/product/enterprise-data-platform-portal.md)
 
 Implemented:
 
@@ -38,9 +51,16 @@ Implemented:
 - Apache Airflow 3.3 with LocalExecutor, dedicated metadata PostgreSQL, a least-privilege `control`
   schema, four bounded DAGs, retries/timeouts, aggregate quality gates, manual backfill, and
   idempotent orchestration of the existing batch/CDC/Silver applications.
+- PR-PORTAL-001 Enterprise Data Platform Portal foundation with an independently deployable
+  Next.js shell, FastAPI BFF, versioned OpenAPI contract, generated TypeScript client, truthful
+  health/readiness, correlation, Problem Details, and isolated Docker startup.
 
 Spark/Flink, executable dbt models, Snowflake, dashboards, Gold reconciliation, and a full
-observability platform are not implemented.
+observability platform are not implemented. Empty runtime/package scaffolds for those planned
+phases are intentionally not shipped; they will be introduced with executable behavior and tests.
+The Enterprise Data Platform Portal currently ships only its technical foundation. It is not yet a
+complete operational UI: authentication, authorization, inventories, infrastructure adapters, and
+mutations remain explicitly disabled and deferred.
 
 ## Implemented data flow
 
@@ -91,13 +111,20 @@ filename + SHA-256 + settlement-v1 validation
 | `src/orchestration/` | Airflow-neutral control store, health checks, quality gates, and application adapters. |
 | `airflow/dags/` | Four Phase 7 DAG definitions; no business transformation logic. |
 | `infrastructure/airflow/` | Pinned Airflow image and versioned control-schema DDL. |
+| `apps/portal-api/` | FastAPI Portal BFF foundation, health, adapters, errors, telemetry, and tests. |
+| `apps/portal-web/` | Next.js Portal shell, System Status, generated-client integration, and tests. |
+| `packages/portal-contracts/` | Checked-in OpenAPI and generated TypeScript API client. |
+| `docs/portal/` | Portal boundaries, contract, configuration, local development, testing, and troubleshooting. |
 | `infrastructure/cdc-consumer/` | Profile-gated pinned Python consumer image. |
 | `tests/unit/` | Docker-independent unit tests. |
 | `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
 | `tests/integration/minio/` | Opt-in real MinIO storage and ingestion integration tests. |
 | `tests/integration/cdc/` | Opt-in PostgreSQL/Kafka/Debezium end-to-topic acceptance tests. |
 | `tests/integration/cdc_consumer/` | Opt-in real Kafka-to-MinIO Parquet/recovery acceptance tests. |
-| `docs/` | Business context, contracts, architecture, roadmap, and runbooks. |
+| `docs/adr/` | Versioned production-readiness architecture decisions. |
+| `docs/design-reviews/` | Architecture-only freeze evidence and verdicts. |
+| `docs/product/` | Target product architecture; no Portal runtime implementation. |
+| `docs/` | Business context, contracts, architecture, roadmap, runbooks, and readiness backlog. |
 
 ## Setup
 
@@ -113,10 +140,39 @@ cp .env.example .env             # PowerShell: Copy-Item .env.example .env
 
 `.env` and the entire `data/` runtime tree are ignored by Git.
 
+## Enterprise Data Platform Portal foundation
+
+The Portal is a control-plane client with one guarded interaction path:
+
+```text
+Browser -> Next.js Portal Web -> FastAPI Portal API -> explicit versioned adapters
+```
+
+PR-PORTAL-001 exposes foundation health and safe build metadata only. It does not connect the
+browser to PostgreSQL, Kafka, Kafka Connect, MinIO, Airflow, or any control database, and it does
+not present planned operations as available.
+
+```bash
+make portal-install
+make portal-contracts
+make portal-up
+```
+
+Open:
+
+- Portal Web: <http://localhost:3000>
+- System Status: <http://localhost:3000/system-status>
+- Portal API health: <http://localhost:8010/health/live>
+- Development API documentation: <http://localhost:8010/docs>
+
+Validate with `make portal-test`, `make portal-contract-check`, and `make portal-e2e`; stop with
+`make portal-down`. See [Portal local development](docs/portal/local-development.md) and
+[architecture boundaries](docs/portal/architecture-boundaries.md).
+
 ## Generate settlement fixtures
 
 ```bash
-python -m src.ingestion.batch.cli generate-settlement-fixtures \
+python -m ingestion.batch.cli generate-settlement-fixtures \
   --output-dir data/inbound/settlements \
   --partner-id VCB \
   --settlement-date 2026-07-22 \
@@ -126,7 +182,7 @@ python -m src.ingestion.batch.cli generate-settlement-fixtures \
 ## Ingest settlements
 
 ```bash
-python -m src.ingestion.batch.cli ingest-settlements \
+python -m ingestion.batch.cli ingest-settlements \
   --input-dir data/inbound/settlements \
   --partner-id VCB \
   --contract contracts/batch/settlement_v1.yml
@@ -140,7 +196,7 @@ To use private MinIO buckets, put non-production local values in untracked `.env
 
 ```bash
 make minio-up
-python -m src.ingestion.batch.cli ingest-settlements \
+python -m ingestion.batch.cli ingest-settlements \
   --storage-backend minio \
   --input-dir data/inbound/settlements \
   --partner-id VCB \
@@ -301,6 +357,12 @@ infrastructure suites have dedicated targets.
 - [Silver recovery runbook](docs/runbooks/silver-recovery.md)
 - [Local Kafka and Debezium runbook](docs/runbooks/local-kafka-debezium.md)
 - [Local MinIO runbook](docs/runbooks/local-minio.md)
+- [Current architecture state](docs/architecture/current-state.md)
+- [Production Readiness Backlog](docs/production-readiness-backlog.md)
+- [Design Freeze status](docs/design-freeze.md)
+- [Architecture Decision Records](docs/adr/README.md)
+- [Design Review process and evidence](docs/design-reviews/)
+- [Enterprise Data Platform Portal](docs/product/enterprise-data-platform-portal.md)
 - [Roadmap](docs/roadmap.md)
 
 ## Security baseline

@@ -12,9 +12,13 @@ Phase 0 Foundation                                      [implemented]
                   -> Phase 5 CDC consumer to Bronze     [implemented]
                       -> Phase 6 Silver + data quality  [implemented]
                           -> Phase 7 Airflow             [implemented]
-                              -> Phase 8 Snowflake/dbt  [planned]
-                                  -> Phase 9 Reconciliation product
-                                      -> Phase 10 Operations analytics/hardening
+                              -> Production Design Freeze [in progress]
+                                  -> Five blocker slices  [blocked]
+                                      -> Controlled pilot [blocked]
+                                          -> Phase 8 Snowflake/dbt  [planned]
+                                              -> Phase 9 Reconciliation product
+                                                  -> Phase 10 Operations analytics/hardening
+                                                      -> Portal governed control actions [planned]
 ```
 
 ## Completed phases
@@ -111,6 +115,26 @@ dry-run writes no output; central pipeline/task/quality rows are transactional a
 **Deliberately deferred:** warehouse/dbt, Gold/reconciliation, distributed executors, full metrics
 and alert delivery, production auth/secrets/HA, and migration of component manifests.
 
+## Production-readiness gate
+
+Phase 7 is the executable local baseline, not production approval. Before Phase 8 or a controlled
+pilot, the repository is freezing and then implementing five blockers:
+
+1. Dataset bootstrap and atomic activation.
+2. Key-only CDC delete semantics.
+3. Cross-system recovery checkpoints.
+4. Least-privilege runtime identities.
+5. Versioned database migrations.
+
+ADR-001 is accepted at Frozen Revision 4. ADR-002 through ADR-005 remain proposed, so runtime
+remediation is intentionally blocked. Empty dbt, dashboard, observability, streaming and
+end-to-end-test scaffolds were removed; planned phases enter the repository only with executable
+assets and verification.
+
+The authoritative gate and status are maintained in
+[`design-freeze.md`](design-freeze.md) and
+[`production-readiness-backlog.md`](production-readiness-backlog.md).
+
 ## Planned phases
 
 ### Phase 8 - Snowflake and dbt
@@ -127,3 +151,21 @@ daily evidence. This is the first phase that labels mismatch candidates.
 
 Operations marts/dashboard, SLAs, metrics/alerts, lineage/catalog choices, security hardening,
 performance evidence, deployment/promotion controls, and end-to-end recovery tests.
+
+## Enterprise Portal product track
+
+The [Enterprise Data Platform Portal](product/enterprise-data-platform-portal.md) has a target
+product architecture but no implementation. It does not create a parallel shortcut around the
+production-readiness gate.
+
+1. **V1 truthful read plane:** after the five blockers, add OIDC, capability discovery, and
+   permission-filtered read views for sources, ingestion, runs, datasets, Bronze/Silver, quality,
+   and audit.
+2. **V2 governed control plane:** add durable operations, approvals, snapshot activation, backfill,
+   recovery, and redrive only after each backend API and state machine is production-ready.
+3. **V3 product/governance plane:** expose warehouse, dbt, catalog, lineage, Gold, and
+   reconciliation only after Phases 8-10 deliver executable, tested capabilities.
+
+No Portal page may use fabricated operational data or label a planned capability as available. The
+capability registry, authorization matrix, threat model, Portal API contract, and complete V1 state
+design are implementation entry criteria.

@@ -1,6 +1,6 @@
 # Current State
 
-## Status through Phase 7
+## Status through Phase 7 and Production Design Freeze
 
 The repository now has independently executable batch and CDC intake foundations:
 
@@ -68,6 +68,11 @@ scheduler, and Airflow 3 DAG processor. Local storage remains available for ligh
 Component SQLite manifests own file/batch/object state; PostgreSQL `control` owns cross-pipeline
 state; Airflow metadata owns scheduling; MinIO owns immutable artifacts.
 
+Phase 7 is now frozen as the implementation baseline. Production-readiness design is in progress:
+ADR-001 is accepted at Frozen Revision 4, while ADR-002 through ADR-005 remain proposed. No
+production-remediation implementation has started, and the platform is not approved for a
+production pilot.
+
 ## Runtime boundaries
 
 - Phase 7 ends at orchestration and centralized operational state. No Gold/reconciliation
@@ -86,8 +91,12 @@ state; Airflow metadata owns scheduling; MinIO owns immutable artifacts.
 - Business event topics such as `payment_completed`; Phase 4 contains database CDC topics only.
 - Reconciliation classification, table formats, Spark/Flink, Snowflake, executable
   dbt models, dashboards, catalog, lineage, metrics, or alerting.
+- Enterprise Portal frontend, Portal API/BFF, capability registry, OIDC integration, and governed
+  control actions. The Portal currently exists only as a target product architecture.
 - TLS/SASL/ACLs, external secrets, distributed Kafka/Connect/PostgreSQL, replication factor greater
   than one, backups, disaster recovery, production retention sizing, or capacity benchmarks.
+- The five production blockers tracked in `docs/production-readiness-backlog.md`.
 
-The target architecture and roadmap label all later components as planned; their mention is not an
-implementation claim.
+The target architecture, roadmap, and
+[Portal product design](../product/enterprise-data-platform-portal.md) label all later components
+as planned; their mention is not an implementation claim.
