@@ -96,7 +96,10 @@ class TransactionBoundaryProvider:
         assert redirect_uri == "http://portal.test/portal-api/v1/auth/callback"
         with self._inspection_engine.begin() as connection:
             status = connection.execute(
-                text("SELECT status FROM portal_control.oidc_login_transactions FOR UPDATE NOWAIT")
+                text(
+                    "SELECT status FROM portal_control.oidc_login_transactions "
+                    "WHERE status = 'CLAIMED' FOR UPDATE NOWAIT"
+                )
             ).scalar_one()
         assert status == "CLAIMED"
         self.calls += 1
@@ -225,6 +228,16 @@ def _begin_login(client: TestClient) -> str:
     )
     assert response.status_code == 303
     return parse_qs(urlsplit(response.headers["location"]).query)["state"][0]
+
+
+def _complete_login(client: TestClient) -> object:
+    state = _begin_login(client)
+    response = client.get(
+        "/v1/auth/callback",
+        params={"state": state, "code": "provider-code"},
+    )
+    assert response.status_code == 303
+    return response
 
 
 @pytest.mark.integration
@@ -571,3 +584,180 @@ def test_browser_binding_cleanup_failure_cannot_undo_committed_success(
             ).scalar_one()
             == 2
         )
+
+
+@pytest.mark.integration
+def test_session_csrf_environment_rotation_and_logout_lifecycle(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        callback = _complete_login(client)
+        original_secret = callback.cookies.get("fintech_portal_session_v1")
+        assert original_secret
+
+        session_response = client.get("/v1/session")
+        csrf_response = client.get("/v1/session/csrf")
+        csrf_token = csrf_response.json()["csrf_token"]
+        missing_csrf = client.post(
+            "/v1/session/environment",
+            headers={"Origin": "http://portal.test"},
+            json={"environment_id": "local"},
+        )
+        wrong_origin = client.post(
+            "/v1/session/environment",
+            headers={
+                "Origin": "http://attacker.test",
+                "X-CSRF-Token": csrf_token,
+            },
+            json={"environment_id": "local"},
+        )
+        selected = client.post(
+            "/v1/session/environment",
+            headers={
+                "Origin": "http://portal.test",
+                "X-CSRF-Token": csrf_token,
+            },
+            json={"environment_id": "local"},
+        )
+        capabilities = client.get("/v1/capabilities?environment_id=local")
+        navigation = client.get("/v1/navigation?environment_id=local")
+        dependencies = client.get("/v1/system/dependencies?environment_id=local")
+        unauthorized_environment = client.get("/v1/capabilities?environment_id=development")
+        refreshed = client.post(
+            "/v1/session/refresh",
+            headers={
+                "Origin": "http://portal.test",
+                "X-CSRF-Token": csrf_token,
+            },
+        )
+        successor_secret = refreshed.cookies.get("fintech_portal_session_v1")
+        assert successor_secret and successor_secret != original_secret
+
+        refreshed_csrf = client.get("/v1/session/csrf").json()["csrf_token"]
+        stale_csrf = client.post(
+            "/v1/auth/logout",
+            headers={
+                "Origin": "http://portal.test",
+                "X-CSRF-Token": csrf_token,
+            },
+        )
+        logout = client.post(
+            "/v1/auth/logout",
+            headers={
+                "Origin": "http://portal.test",
+                "X-CSRF-Token": refreshed_csrf,
+            },
+        )
+        after_logout = client.get("/v1/session")
+
+    assert session_response.status_code == 200
+    assert csrf_response.status_code == 200
+    assert missing_csrf.status_code == 403
+    assert wrong_origin.status_code == 403
+    assert selected.status_code == 200
+    assert capabilities.status_code == 200
+    assert navigation.status_code == 200
+    assert dependencies.status_code == 200
+    assert unauthorized_environment.status_code == 403
+    assert refreshed.status_code == 200
+    assert stale_csrf.status_code == 403
+    assert logout.status_code == 200
+    assert logout.json()["revoked_session_count"] == 1
+    assert after_logout.status_code == 401
+    with migration_engine.connect() as connection:
+        sessions = connection.execute(
+            text(
+                "SELECT session_id, predecessor_session_id, status, "
+                "absolute_expires_at, csrf_generation "
+                "FROM portal_control.portal_sessions ORDER BY created_at"
+            )
+        ).all()
+        csrf_denials = connection.execute(
+            text(
+                "SELECT count(*) FROM portal_control.security_audit_events "
+                "WHERE event_type = 'auth.csrf_rejected.v1'"
+            )
+        ).scalar_one()
+        token_envelope_count = connection.execute(
+            text("SELECT count(*) FROM portal_control.portal_token_envelopes")
+        ).scalar_one()
+    assert len(sessions) == 2
+    assert sessions[0].status == "TERMINATED"
+    assert sessions[1].status == "TERMINATED"
+    assert sessions[1].predecessor_session_id == sessions[0].session_id
+    assert sessions[1].absolute_expires_at == sessions[0].absolute_expires_at
+    assert sessions[1].csrf_generation == sessions[0].csrf_generation + 1
+    assert csrf_denials >= 3
+    assert token_envelope_count == 0
+
+
+@pytest.mark.integration
+def test_security_epoch_mismatch_invalidates_session(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_sessions SET security_epoch = security_epoch + 1"
+                )
+            )
+        response = client.get("/v1/session")
+
+    assert response.status_code == 401
+    with migration_engine.connect() as connection:
+        session = connection.execute(
+            text("SELECT status, revoked_reason FROM portal_control.portal_sessions")
+        ).one()
+    assert session.status == "INVALID"
+    assert session.revoked_reason == "SESSION_SECURITY_EPOCH_INVALID"
+
+
+@pytest.mark.integration
+def test_sixth_login_revokes_oldest_and_preserves_five_active_sessions(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    provider = _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        for _ in range(6):
+            _complete_login(client)
+
+    assert provider.calls == 6
+    with migration_engine.connect() as connection:
+        status_counts = dict(
+            connection.execute(
+                text("SELECT status, count(*) FROM portal_control.portal_sessions GROUP BY status")
+            ).all()
+        )
+        revocation_reason = connection.execute(
+            text(
+                "SELECT revoked_reason FROM portal_control.portal_sessions "
+                "WHERE status = 'TERMINATED'"
+            )
+        ).scalar_one()
+    assert status_counts == {"ACTIVE": 5, "TERMINATED": 1}
+    assert revocation_reason == "MAXIMUM_ACTIVE_SESSIONS"

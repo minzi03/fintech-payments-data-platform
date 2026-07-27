@@ -158,12 +158,15 @@ portal_sessions = Table(
         "client_signal_classification", JSONB, nullable=False, server_default=text("'{}'::jsonb")
     ),
     Column("audit_correlation_id", String(128), nullable=False),
+    Column("csrf_token_hash", LargeBinary, nullable=False),
+    Column("csrf_generation", Integer, nullable=False),
     CheckConstraint(
         "status IN ('ACTIVE', 'REFRESH_REQUIRED', 'EXPIRED_IDLE', 'EXPIRED_ABSOLUTE', "
         "'REVOKED', 'PROVIDER_REVOKED', 'INVALID', 'TERMINATED')",
         name="session_status",
     ),
     CheckConstraint("version > 0", name="session_version"),
+    CheckConstraint("csrf_generation > 0", name="session_csrf_generation"),
     CheckConstraint("idle_expires_at <= absolute_expires_at", name="session_idle_before_absolute"),
 )
 Index(

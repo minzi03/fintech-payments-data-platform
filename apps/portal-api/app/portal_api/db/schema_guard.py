@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-SUPPORTED_SCHEMA_VERSION = "003_callback_runtime_privileges"
+SUPPORTED_SCHEMA_VERSION = "005_token_disposal_privilege"
 
 
 class SchemaCompatibilityError(RuntimeError):

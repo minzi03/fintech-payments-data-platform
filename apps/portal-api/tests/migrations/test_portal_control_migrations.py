@@ -73,6 +73,8 @@ def test_upgrade_downgrade_and_authoritative_history() -> None:
                 "001_initial_portal_control",
                 "002_login_intent_and_initiation",
                 "003_callback_runtime_privileges",
+                "004_session_csrf_authority",
+                "005_token_disposal_privilege",
             ]
             assert all(len(record.checksum) == 64 for record in records)
             assert all(record.application_compat == ">=0.1.0,<1.0.0" for record in records)

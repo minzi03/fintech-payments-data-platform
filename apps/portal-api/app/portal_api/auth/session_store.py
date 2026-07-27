@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.engine import Connection, Engine
 
 from portal_api.audit.ledger import AuditLedger
 from portal_api.audit.models import AuditEvent, AuditEventType
+from portal_api.auth.csrf import csrf_token_hash, derive_csrf_token
 from portal_api.auth.ports import (
     CallbackPolicyDecision,
     PolicyOutcome,
@@ -83,6 +84,15 @@ class CallbackSessionStore:
         session_lookup_hash = self._security_material.protect(
             session_secret,
             purpose=ProtectedPurpose.SESSION,
+        )
+        csrf_generation = 1
+        csrf_hash = csrf_token_hash(
+            security_material=self._security_material,
+            token=derive_csrf_token(
+                security_material=self._security_material,
+                session_secret=session_secret,
+                generation=csrf_generation,
+            ),
         )
         absolute_expires_at = now + timedelta(seconds=self._settings.session_absolute_ttl_seconds)
         idle_expires_at = min(
@@ -186,7 +196,17 @@ class CallbackSessionStore:
                     identity_verified_until=identity_verified_until,
                     client_signal_classification={},
                     audit_correlation_id=correlation_id,
+                    csrf_token_hash=csrf_hash,
+                    csrf_generation=csrf_generation,
                 )
+            )
+            self._enforce_session_limit(
+                connection=connection,
+                principal_id=principal.principal_id,
+                new_session_id=session_id,
+                now=now,
+                correlation_id=correlation_id,
+                request_id=request_id,
             )
             self._persist_required_tokens(
                 connection=connection,
@@ -243,6 +263,76 @@ class CallbackSessionStore:
             return_path=str(transaction["return_path"]),
             absolute_expires_at=absolute_expires_at,
         )
+
+    def _enforce_session_limit(
+        self,
+        *,
+        connection: Connection,
+        principal_id: UUID,
+        new_session_id: UUID,
+        now: datetime,
+        correlation_id: str,
+        request_id: str,
+    ) -> None:
+        active = (
+            connection.execute(
+                select(portal_sessions)
+                .where(
+                    portal_sessions.c.principal_id == principal_id,
+                    portal_sessions.c.status.in_(("ACTIVE", "REFRESH_REQUIRED")),
+                    portal_sessions.c.session_id != new_session_id,
+                )
+                .order_by(portal_sessions.c.created_at)
+                .with_for_update()
+            )
+            .mappings()
+            .all()
+        )
+        excess = max(
+            0,
+            len(active) + 1 - self._settings.maximum_active_sessions,
+        )
+        for predecessor in active[:excess]:
+            connection.execute(
+                update(portal_sessions)
+                .where(
+                    portal_sessions.c.session_id == predecessor["session_id"],
+                    portal_sessions.c.status.in_(("ACTIVE", "REFRESH_REQUIRED")),
+                )
+                .values(
+                    status="REVOKED",
+                    revoked_at=now,
+                    revoked_reason="MAXIMUM_ACTIVE_SESSIONS",
+                    version=predecessor["version"] + 1,
+                )
+            )
+            self._audit.append(
+                connection,
+                AuditEvent(
+                    event_type=AuditEventType.SESSION_REVOKED,
+                    actor_type="SYSTEM",
+                    principal_id=principal_id,
+                    session_reference=str(predecessor["session_id"]),
+                    action="portal.session.limit",
+                    reason_code="MAXIMUM_ACTIVE_SESSIONS",
+                    correlation_id=correlation_id,
+                    request_id=request_id,
+                    outcome="REVOKED",
+                ),
+            )
+            connection.execute(
+                delete(portal_token_envelopes).where(
+                    portal_token_envelopes.c.session_family_id == predecessor["session_family_id"]
+                )
+            )
+            connection.execute(
+                update(portal_sessions)
+                .where(
+                    portal_sessions.c.session_family_id == predecessor["session_family_id"],
+                    portal_sessions.c.status == "REVOKED",
+                )
+                .values(status="TERMINATED")
+            )
 
     def _persist_required_tokens(
         self,

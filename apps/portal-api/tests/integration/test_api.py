@@ -69,7 +69,7 @@ def test_liveness_is_safe_and_correlation_aware(client: TestClient) -> None:
     }
 
 
-def test_readiness_and_dependencies_are_truthful_with_no_adapters(
+def test_readiness_is_public_but_dependency_detail_requires_security_runtime(
     client: TestClient,
 ) -> None:
     ready = client.get("/health/ready")
@@ -78,8 +78,8 @@ def test_readiness_and_dependencies_are_truthful_with_no_adapters(
     assert ready.status_code == 200
     assert ready.json()["status"] == "READY"
     assert ready.json()["dependencies"] == []
-    assert dependencies.status_code == 200
-    assert dependencies.json()["dependencies"] == []
+    assert dependencies.status_code == 503
+    assert dependencies.json()["error_code"] == "SERVICE_NOT_READY"
 
 
 def test_optional_dependency_failure_is_isolated(settings: PortalApiSettings) -> None:
@@ -140,11 +140,15 @@ def test_not_found_and_method_not_allowed_use_problem_details(client: TestClient
 
 
 def test_validation_error_is_problem_details(client: TestClient) -> None:
-    response = client.get("/v1/system/dependencies?force=not-a-boolean")
+    response = client.post(
+        "/v1/auth/login",
+        headers={"Origin": "http://portal.test"},
+        json={"intent_token": 123},
+    )
 
     assert response.status_code == 422
     assert response.json()["error_code"] == "INVALID_REQUEST"
-    assert response.json()["field_errors"][0]["field"] == "force"
+    assert response.json()["field_errors"][0]["field"] == "intent_token"
 
 
 def test_unknown_error_is_sanitized(settings: PortalApiSettings) -> None:

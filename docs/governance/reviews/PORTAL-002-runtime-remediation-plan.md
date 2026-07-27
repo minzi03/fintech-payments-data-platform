@@ -13,7 +13,7 @@
 | 2 — Login context and login initiation | COMPLETE |
 | 3 — Model C callback orchestration | COMPLETE |
 | 4 — Failure, replay, and crash recovery | COMPLETE |
-| 5 — Session lifecycle and authorization enforcement | PENDING |
+| 5 — Session lifecycle and authorization enforcement | COMPLETE |
 | 6 — Contract-driven frontend integration | PENDING |
 | 7 — Integrated verification and local development proof | PENDING |
 

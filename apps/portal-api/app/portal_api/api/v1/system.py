@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 
+from portal_api.auth.dependencies import authenticated_session, require_action
+from portal_api.auth.session import AuthenticatedSession
 from portal_api.core.correlation import get_correlation_id
 from portal_api.core.errors import PROBLEM_RESPONSES
 from portal_api.health.models import DependencyListResponse, SystemInfoResponse
@@ -43,8 +46,16 @@ async def system_info(request: Request) -> SystemInfoResponse:
 )
 async def system_dependencies(
     request: Request,
+    session: Annotated[AuthenticatedSession, Depends(authenticated_session)],
     force: bool = Query(default=False, description="Bypass the short-lived health cache."),
+    environment_id: str | None = Query(default=None),
 ) -> DependencyListResponse:
+    require_action(
+        request,
+        session=session,
+        action="portal.system_status.read",
+        environment_id=environment_id,
+    )
     dependencies = await request.app.state.health_service.dependency_summaries(force=force)
     return DependencyListResponse(
         observed_at=datetime.now(UTC),

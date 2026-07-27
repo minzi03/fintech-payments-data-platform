@@ -76,7 +76,7 @@ class PortalApiSettings(BaseSettings):
         "security_auditor_viewer,portal_admin_viewer"
     )
     allowed_environment_ids: str = "local,development"
-    portal_tenant_id: str = "local-development"
+    portal_tenant_id: str = "fintech-platform-primary"
     identity_mapping_revision: str = "local-mapping-v1"
     callback_policy_revision: str = "local-callback-policy-v1"
     capability_revision: str = "local-capability-v1"
@@ -84,6 +84,8 @@ class PortalApiSettings(BaseSettings):
     session_idle_ttl_seconds: int = Field(default=1800, gt=0, le=1800)
     session_absolute_ttl_seconds: int = Field(default=28800, gt=0, le=28800)
     identity_freshness_seconds: int = Field(default=900, gt=0, le=900)
+    session_activity_write_interval_seconds: int = Field(default=60, gt=0, le=60)
+    maximum_active_sessions: int = Field(default=5, gt=0, le=5)
     oidc_http_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     allowed_return_paths: str = "/,/system-status"
     login_intent_ttl_seconds: int = Field(default=300, gt=0, le=300)

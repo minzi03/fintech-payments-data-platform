@@ -5,6 +5,56 @@ export type ClientOptions = {
 };
 
 /**
+ * CapabilityListView
+ */
+export type CapabilityListView = {
+  /**
+   * Capabilities
+   */
+  capabilities: Array<CapabilityView>;
+  /**
+   * Capability Revision
+   */
+  capability_revision: string;
+};
+
+/**
+ * CapabilityView
+ */
+export type CapabilityView = {
+  /**
+   * Capability Id
+   */
+  capability_id: string;
+  /**
+   * Environment Id
+   */
+  environment_id: string;
+  /**
+   * Mode
+   */
+  mode: string;
+  /**
+   * State
+   */
+  state: string;
+};
+
+/**
+ * CsrfView
+ */
+export type CsrfView = {
+  /**
+   * Csrf Token
+   */
+  csrf_token: string;
+  /**
+   * Generation
+   */
+  generation: number;
+};
+
+/**
  * DependencyListResponse
  */
 export type DependencyListResponse = {
@@ -69,6 +119,70 @@ export type DependencySummary = {
    */
   runbook_url?: string | null;
   status: DependencyStatus;
+};
+
+/**
+ * EnvironmentListView
+ */
+export type EnvironmentListView = {
+  /**
+   * Capability Revision
+   */
+  capability_revision: string;
+  /**
+   * Environments
+   */
+  environments: Array<EnvironmentView>;
+  /**
+   * Policy Revision
+   */
+  policy_revision: string;
+};
+
+/**
+ * EnvironmentSelectionRequest
+ */
+export type EnvironmentSelectionRequest = {
+  /**
+   * Environment Id
+   */
+  environment_id: string;
+};
+
+/**
+ * EnvironmentSelectionView
+ */
+export type EnvironmentSelectionView = {
+  /**
+   * Capability Revision
+   */
+  capability_revision: string;
+  /**
+   * Environment Id
+   */
+  environment_id: string;
+  /**
+   * Policy Revision
+   */
+  policy_revision: string;
+};
+
+/**
+ * EnvironmentView
+ */
+export type EnvironmentView = {
+  /**
+   * Display Name
+   */
+  display_name: string;
+  /**
+   * Environment Id
+   */
+  environment_id: string;
+  /**
+   * Selected
+   */
+  selected?: boolean;
 };
 
 /**
@@ -151,6 +265,56 @@ export type LoginRequest = {
    * Return To
    */
   return_to?: string | null;
+};
+
+/**
+ * LogoutResult
+ */
+export type LogoutResult = {
+  /**
+   * Revoked Session Count
+   */
+  revoked_session_count: number;
+};
+
+/**
+ * NavigationItem
+ */
+export type NavigationItem = {
+  /**
+   * Capability Id
+   */
+  capability_id: string;
+  /**
+   * Label
+   */
+  label: string;
+  /**
+   * Path
+   */
+  path: string;
+};
+
+/**
+ * NavigationView
+ */
+export type NavigationView = {
+  /**
+   * Capability Revision
+   */
+  capability_revision: string;
+  /**
+   * Environment Id
+   */
+  environment_id: string;
+  /**
+   * Items
+   */
+  items: Array<NavigationItem>;
+  /**
+   * Policy Revision
+   */
+  policy_revision: string;
 };
 
 /**
@@ -252,6 +416,60 @@ export type ReadinessResponse = {
  * ReadinessStatus
  */
 export type ReadinessStatus = "READY" | "DEGRADED" | "NOT_READY";
+
+/**
+ * SessionView
+ */
+export type SessionView = {
+  /**
+   * Absolute Expires At
+   */
+  absolute_expires_at: string;
+  /**
+   * Assurance
+   */
+  assurance: string;
+  /**
+   * Authenticated At
+   */
+  authenticated_at: string;
+  /**
+   * Capability Revision
+   */
+  capability_revision: string;
+  /**
+   * Environment Ids
+   */
+  environment_ids: Array<string>;
+  /**
+   * Idle Expires At
+   */
+  idle_expires_at: string;
+  /**
+   * Policy Revision
+   */
+  policy_revision: string;
+  /**
+   * Principal Reference
+   */
+  principal_reference: string;
+  /**
+   * Roles
+   */
+  roles: Array<string>;
+  /**
+   * Session Reference
+   */
+  session_reference: string;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Tenant Id
+   */
+  tenant_id: string;
+};
 
 /**
  * SystemInfoResponse
@@ -480,6 +698,360 @@ export type GetLoginContextResponses = {
 export type GetLoginContextResponse =
   GetLoginContextResponses[keyof GetLoginContextResponses];
 
+export type LogoutData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/auth/logout";
+};
+
+export type LogoutErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type LogoutError = LogoutErrors[keyof LogoutErrors];
+
+export type LogoutResponses = {
+  /**
+   * Successful Response
+   */
+  200: LogoutResult;
+};
+
+export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+
+export type LogoutAllData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/auth/logout-all";
+};
+
+export type LogoutAllErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type LogoutAllError = LogoutAllErrors[keyof LogoutAllErrors];
+
+export type LogoutAllResponses = {
+  /**
+   * Successful Response
+   */
+  200: LogoutResult;
+};
+
+export type LogoutAllResponse = LogoutAllResponses[keyof LogoutAllResponses];
+
+export type ListCapabilitiesData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Environment Id
+     */
+    environment_id: string;
+  };
+  url: "/v1/capabilities";
+};
+
+export type ListCapabilitiesErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type ListCapabilitiesError =
+  ListCapabilitiesErrors[keyof ListCapabilitiesErrors];
+
+export type ListCapabilitiesResponses = {
+  /**
+   * Successful Response
+   */
+  200: CapabilityListView;
+};
+
+export type ListCapabilitiesResponse =
+  ListCapabilitiesResponses[keyof ListCapabilitiesResponses];
+
+export type ListEnvironmentsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/environments";
+};
+
+export type ListEnvironmentsErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type ListEnvironmentsError =
+  ListEnvironmentsErrors[keyof ListEnvironmentsErrors];
+
+export type ListEnvironmentsResponses = {
+  /**
+   * Successful Response
+   */
+  200: EnvironmentListView;
+};
+
+export type ListEnvironmentsResponse =
+  ListEnvironmentsResponses[keyof ListEnvironmentsResponses];
+
+export type GetNavigationData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Environment Id
+     */
+    environment_id: string;
+  };
+  url: "/v1/navigation";
+};
+
+export type GetNavigationErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type GetNavigationError = GetNavigationErrors[keyof GetNavigationErrors];
+
+export type GetNavigationResponses = {
+  /**
+   * Successful Response
+   */
+  200: NavigationView;
+};
+
+export type GetNavigationResponse =
+  GetNavigationResponses[keyof GetNavigationResponses];
+
+export type GetSessionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/session";
+};
+
+export type GetSessionErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type GetSessionError = GetSessionErrors[keyof GetSessionErrors];
+
+export type GetSessionResponses = {
+  /**
+   * Successful Response
+   */
+  200: SessionView;
+};
+
+export type GetSessionResponse = GetSessionResponses[keyof GetSessionResponses];
+
+export type GetSessionCsrfData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/session/csrf";
+};
+
+export type GetSessionCsrfErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type GetSessionCsrfError =
+  GetSessionCsrfErrors[keyof GetSessionCsrfErrors];
+
+export type GetSessionCsrfResponses = {
+  /**
+   * Successful Response
+   */
+  200: CsrfView;
+};
+
+export type GetSessionCsrfResponse =
+  GetSessionCsrfResponses[keyof GetSessionCsrfResponses];
+
+export type SelectEnvironmentData = {
+  body: EnvironmentSelectionRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/session/environment";
+};
+
+export type SelectEnvironmentErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type SelectEnvironmentError =
+  SelectEnvironmentErrors[keyof SelectEnvironmentErrors];
+
+export type SelectEnvironmentResponses = {
+  /**
+   * Successful Response
+   */
+  200: EnvironmentSelectionView;
+};
+
+export type SelectEnvironmentResponse =
+  SelectEnvironmentResponses[keyof SelectEnvironmentResponses];
+
+export type RefreshSessionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/session/refresh";
+};
+
+export type RefreshSessionErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type RefreshSessionError =
+  RefreshSessionErrors[keyof RefreshSessionErrors];
+
+export type RefreshSessionResponses = {
+  /**
+   * Successful Response
+   */
+  200: SessionView;
+};
+
+export type RefreshSessionResponse =
+  RefreshSessionResponses[keyof RefreshSessionResponses];
+
 export type GetSystemDependenciesData = {
   body?: never;
   path?: never;
@@ -490,6 +1062,10 @@ export type GetSystemDependenciesData = {
      * Bypass the short-lived health cache.
      */
     force?: boolean;
+    /**
+     * Environment Id
+     */
+    environment_id?: string | null;
   };
   url: "/v1/system/dependencies";
 };

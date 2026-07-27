@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 
 from portal_api.auth.callback import (
@@ -14,11 +16,20 @@ from portal_api.auth.callback import (
 from portal_api.auth.cookies import (
     browser_binding_cookie,
     clear_browser_binding_cookie,
+    clear_session_cookie,
     set_browser_binding_cookie,
     set_session_cookie,
 )
+from portal_api.auth.dependencies import (
+    authenticated_session,
+    require_action,
+    require_csrf,
+    session_service,
+)
 from portal_api.auth.http_models import LoginContextView, LoginRequest
 from portal_api.auth.login_intent import LoginInitiationError, LoginInitiationService
+from portal_api.auth.session import AuthenticatedSession
+from portal_api.auth.session_models import LogoutResult
 from portal_api.core.correlation import get_correlation_id, get_request_id
 from portal_api.core.errors import PROBLEM_RESPONSES, ErrorCode, PortalError
 
@@ -177,3 +188,47 @@ def _bounded_callback_values(request: Request) -> dict[str, str]:
     if "error" in grouped and len(grouped["error"][0]) > MAX_PROVIDER_ERROR_LENGTH:
         raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
     return {key: values[0] for key, values in grouped.items()}
+
+
+@router.post(
+    "/logout",
+    response_model=LogoutResult,
+    operation_id="logout",
+    responses=PROBLEM_RESPONSES,
+)
+def logout(
+    request: Request,
+    response: Response,
+    session: Annotated[AuthenticatedSession, Depends(authenticated_session)],
+) -> LogoutResult:
+    require_csrf(request, session)
+    require_action(request, session=session, action="portal.logout")
+    revoked = session_service(request).revoke_current(
+        session=session,
+        correlation_id=get_correlation_id(),
+        request_id=get_request_id(),
+    )
+    clear_session_cookie(response, settings=request.app.state.settings)
+    return LogoutResult(revoked_session_count=revoked)
+
+
+@router.post(
+    "/logout-all",
+    response_model=LogoutResult,
+    operation_id="logoutAll",
+    responses=PROBLEM_RESPONSES,
+)
+def logout_all(
+    request: Request,
+    response: Response,
+    session: Annotated[AuthenticatedSession, Depends(authenticated_session)],
+) -> LogoutResult:
+    require_csrf(request, session)
+    require_action(request, session=session, action="portal.logout")
+    revoked = session_service(request).revoke_all(
+        session=session,
+        correlation_id=get_correlation_id(),
+        request_id=get_request_id(),
+    )
+    clear_session_cookie(response, settings=request.app.state.settings)
+    return LogoutResult(revoked_session_count=revoked)

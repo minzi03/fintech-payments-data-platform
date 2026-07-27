@@ -12,8 +12,11 @@ from starlette.concurrency import run_in_threadpool
 
 from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
+from portal_api.api.v1.access import router as access_router
 from portal_api.api.v1.auth import router as auth_router
+from portal_api.api.v1.session import router as session_router
 from portal_api.api.v1.system import router as system_router
+from portal_api.auth.authorization import AuthorizationService
 from portal_api.auth.callback import CallbackOrchestrator
 from portal_api.auth.login_intent import LoginInitiationService
 from portal_api.auth.oidc_provider import HttpxOidcProvider
@@ -22,6 +25,7 @@ from portal_api.auth.principal import ConfiguredPrincipalResolver
 from portal_api.auth.protected_value import EphemeralEnvelopeCipher
 from portal_api.auth.recovery import CallbackRecovery
 from portal_api.auth.security_material import EphemeralSecurityMaterial
+from portal_api.auth.session import SessionService
 from portal_api.auth.session_store import CallbackSessionStore
 from portal_api.auth.token_validation import PyJwtTokenValidator
 from portal_api.core.config import PortalApiSettings, get_settings
@@ -78,6 +82,8 @@ def create_app(
     )
     callback_orchestrator: CallbackOrchestrator | None = None
     callback_recovery: CallbackRecovery | None = None
+    session_service: SessionService | None = None
+    authorization_service: AuthorizationService | None = None
     if (
         resolved_settings.security_runtime_enabled
         and resolved_database_engine is not None
@@ -109,6 +115,15 @@ def create_app(
             ),
         )
         callback_recovery = CallbackRecovery(engine=resolved_database_engine)
+        session_service = SessionService(
+            engine=resolved_database_engine,
+            settings=resolved_settings,
+            security_material=security_material,
+        )
+        authorization_service = AuthorizationService(
+            engine=resolved_database_engine,
+            settings=resolved_settings,
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -164,12 +179,16 @@ def create_app(
     app.state.login_initiation_service = login_initiation_service
     app.state.callback_orchestrator = callback_orchestrator
     app.state.callback_recovery = callback_recovery
+    app.state.session_service = session_service
+    app.state.authorization_service = authorization_service
     app.state.security_material = security_material
     app.state.protected_value_cipher = protected_value_cipher
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(system_router)
     app.include_router(auth_router)
+    app.include_router(session_router)
+    app.include_router(access_router)
     configure_security_middleware(app, resolved_settings)
     app.add_middleware(RequestContextMiddleware, telemetry=resolved_telemetry)
     return app

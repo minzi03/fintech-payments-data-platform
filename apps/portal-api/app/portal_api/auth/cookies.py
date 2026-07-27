@@ -89,3 +89,29 @@ def set_session_cookie(
         httponly=True,
         samesite="lax",
     )
+
+
+def session_cookie_name(settings: PortalApiSettings) -> str:
+    local_exception = settings.environment in {
+        PortalEnvironment.LOCAL,
+        PortalEnvironment.TEST,
+    }
+    return LOCAL_SESSION_COOKIE if local_exception else SECURE_SESSION_COOKIE
+
+
+def clear_session_cookie(
+    response: Response,
+    *,
+    settings: PortalApiSettings,
+) -> None:
+    local_exception = settings.environment in {
+        PortalEnvironment.LOCAL,
+        PortalEnvironment.TEST,
+    }
+    response.delete_cookie(
+        key=session_cookie_name(settings),
+        path="/",
+        secure=not local_exception,
+        httponly=True,
+        samesite="lax",
+    )
