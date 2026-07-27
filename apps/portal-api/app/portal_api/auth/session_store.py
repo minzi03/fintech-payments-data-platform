@@ -158,6 +158,14 @@ class CallbackSessionStore:
                 or durable_principal["status"] != "ACTIVE"
             ):
                 raise FinalizationRejected("Principal authority changed before finalization")
+            sessions_valid_after = durable_principal["sessions_valid_after"]
+            if (
+                sessions_valid_after is not None
+                and transaction["created_at"] <= sessions_valid_after
+            ):
+                raise FinalizationRejected(
+                    "Login transaction predates the principal session revocation fence"
+                )
             connection.execute(
                 update(portal_principals)
                 .where(portal_principals.c.principal_id == principal.principal_id)

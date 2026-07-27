@@ -155,24 +155,31 @@ class LoginInitiationService:
             )
             raise LoginInitiationError("LOGIN_INTENT_MISSING")
 
-        intent_hash = self._security_material.protect(
-            intent_token,
-            purpose=ProtectedPurpose.LOGIN_INTENT,
-        )
         now = datetime.now(UTC)
+        intent_hashes = tuple(
+            protected
+            for _, protected in self._security_material.protect_candidates(
+                intent_token,
+                purpose=ProtectedPurpose.LOGIN_INTENT,
+                at=now,
+            )
+        )
         redirect: LoginRedirect | None = None
         failure: str | None = None
         with local_transaction(self._engine) as connection:
             intent = (
                 connection.execute(
                     select(portal_login_intents)
-                    .where(portal_login_intents.c.intent_lookup_hash == intent_hash)
+                    .where(portal_login_intents.c.intent_lookup_hash.in_(intent_hashes))
                     .with_for_update()
                 )
                 .mappings()
                 .one_or_none()
             )
-            if intent is None:
+            if intent is None or not any(
+                hmac.compare_digest(intent["intent_lookup_hash"], candidate)
+                for candidate in intent_hashes
+            ):
                 failure = "LOGIN_INTENT_INVALID"
             elif intent["status"] == "CONSUMED":
                 failure = "LOGIN_INTENT_REPLAYED"

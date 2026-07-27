@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -27,12 +29,16 @@ from portal_api.auth.ports import (
 from portal_api.auth.principal import ConfiguredPrincipalResolver
 from portal_api.auth.recovery import CallbackRecovery
 from portal_api.auth.security_material import EphemeralSecurityMaterial
-from portal_api.auth.session_store import CallbackSessionStore
+from portal_api.auth.session import SessionAuthenticationError, SessionService
+from portal_api.auth.session_store import CallbackSessionStore, FinalizationRejected
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
 from portal_api.main import create_app
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 from starlette.responses import Response
+
+TEST_SECURITY_MASTER_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+TEST_ROTATED_SECURITY_MASTER_KEY = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8="
 
 
 @pytest.fixture
@@ -59,7 +65,16 @@ def _clear_callback_state(engine: Engine) -> None:
         connection.execute(text("DELETE FROM portal_control.portal_login_intents"))
 
 
-def _settings(runtime_url: str) -> PortalApiSettings:
+def _settings(
+    runtime_url: str,
+    *,
+    security_master_key: str = TEST_SECURITY_MASTER_KEY,
+    security_key_version: str = "test-restart-v1",
+    security_previous_master_key: str | None = None,
+    security_previous_key_version: str | None = None,
+    transition_started_at: datetime | None = None,
+    transition_expires_at: datetime | None = None,
+) -> PortalApiSettings:
     return PortalApiSettings(
         environment=PortalEnvironment.TEST,
         service_version="0.1.0-test",
@@ -71,6 +86,12 @@ def _settings(runtime_url: str) -> PortalApiSettings:
         trusted_hosts="testserver,portal.test",
         security_runtime_enabled=True,
         database_url=runtime_url,
+        security_master_key=security_master_key,
+        security_key_version=security_key_version,
+        security_previous_master_key=security_previous_master_key,
+        security_previous_key_version=security_previous_key_version,
+        security_key_transition_started_at=transition_started_at,
+        security_key_transition_expires_at=transition_expires_at,
         oidc_issuer="http://identity.test/realms/portal",
         oidc_authorization_endpoint="http://identity.test/authorize",
         oidc_token_endpoint="http://identity.test/token",
@@ -226,7 +247,7 @@ def _begin_login(client: TestClient) -> str:
         headers={"Origin": "http://portal.test"},
         json={"intent_token": context["intent_token"]},
     )
-    assert response.status_code == 303
+    assert response.status_code == 303, response.text
     return parse_qs(urlsplit(response.headers["location"]).query)["state"][0]
 
 
@@ -236,8 +257,203 @@ def _complete_login(client: TestClient) -> object:
         "/v1/auth/callback",
         params={"state": state, "code": "provider-code"},
     )
-    assert response.status_code == 303
+    assert response.status_code == 303, response.text
     return response
+
+
+@pytest.mark.integration
+def test_session_and_pending_callback_survive_process_restart(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    first_app = create_app(settings=settings)
+    _replace_orchestrator(
+        first_app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(first_app, follow_redirects=False) as first_client:
+        authenticated = _complete_login(first_client)
+        session_secret = authenticated.cookies.get("fintech_portal_session_v1")
+        pending_state = _begin_login(first_client)
+        binding_secret = first_client.cookies.get("fintech_portal_oidc_binding_v1")
+        assert session_secret
+        assert binding_secret
+
+    restarted_app = create_app(settings=settings)
+    _replace_orchestrator(
+        restarted_app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(restarted_app, follow_redirects=False) as restarted_client:
+        restarted_client.cookies.set("fintech_portal_session_v1", session_secret)
+        restored_session = restarted_client.get("/v1/session")
+        restarted_client.cookies.set(
+            "fintech_portal_oidc_binding_v1",
+            binding_secret,
+        )
+        restored_callback = restarted_client.get(
+            "/v1/auth/callback",
+            params={"state": pending_state, "code": "provider-code"},
+        )
+
+    assert restored_session.status_code == 200
+    assert restored_callback.status_code == 303
+
+
+@pytest.mark.integration
+def test_restart_during_and_after_controlled_key_transition_is_deterministic(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    original_settings = _settings(runtime_url)
+    original_app = create_app(settings=original_settings)
+    _replace_orchestrator(
+        original_app,
+        settings=original_settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(original_app, follow_redirects=False) as original_client:
+        authenticated = _complete_login(original_client)
+        original_session = authenticated.cookies.get("fintech_portal_session_v1")
+        transition_intent = original_client.get("/v1/auth/login-context").json()["intent_token"]
+        expired_intent = original_client.get("/v1/auth/login-context").json()["intent_token"]
+        transition_state = _begin_login(original_client)
+        transition_binding = original_client.cookies.get("fintech_portal_oidc_binding_v1")
+        expired_state = _begin_login(original_client)
+        expired_binding = original_client.cookies.get("fintech_portal_oidc_binding_v1")
+        assert original_session
+        assert transition_binding
+        assert expired_binding
+
+    now = datetime.now(UTC)
+    transition_started_at = now - timedelta(minutes=1)
+    transition_expires_at = now + timedelta(minutes=5)
+    transition_settings = _settings(
+        runtime_url,
+        security_master_key=TEST_ROTATED_SECURITY_MASTER_KEY,
+        security_key_version="test-restart-v2",
+        security_previous_master_key=TEST_SECURITY_MASTER_KEY,
+        security_previous_key_version="test-restart-v1",
+        transition_started_at=transition_started_at,
+        transition_expires_at=transition_expires_at,
+    )
+    transition_app = create_app(settings=transition_settings)
+    _replace_orchestrator(
+        transition_app,
+        settings=transition_settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(transition_app, follow_redirects=False) as transition_client:
+        restored_intent = transition_client.post(
+            "/v1/auth/login",
+            headers={"Origin": "http://portal.test"},
+            json={"intent_token": transition_intent},
+        )
+        transition_client.cookies.set("fintech_portal_session_v1", original_session)
+        restored_session = transition_client.get("/v1/session")
+        restored_csrf = transition_client.get("/v1/session/csrf")
+        previous_key_csrf = transition_client.post(
+            "/v1/session/environment",
+            headers={
+                "Origin": "http://portal.test",
+                "X-CSRF-Token": restored_csrf.json()["csrf_token"],
+            },
+            json={"environment_id": "local"},
+        )
+        transition_client.cookies.set(
+            "fintech_portal_oidc_binding_v1",
+            transition_binding,
+        )
+        restored_callback = transition_client.get(
+            "/v1/auth/callback",
+            params={"state": transition_state, "code": "provider-code"},
+        )
+        transition_client.cookies.clear()
+        rotated_state = _begin_login(transition_client)
+        rotated_login = transition_client.get(
+            "/v1/auth/callback",
+            params={"state": rotated_state, "code": "provider-code"},
+        )
+        rotated_session = rotated_login.cookies.get("fintech_portal_session_v1")
+
+    assert restored_intent.status_code == 303
+    assert restored_session.status_code == 200
+    assert restored_csrf.status_code == 200
+    assert previous_key_csrf.status_code == 200
+    assert restored_callback.status_code == 303
+    if rotated_login.status_code != 303:
+        with migration_engine.connect() as connection:
+            failure_reason = connection.execute(
+                text(
+                    "SELECT reason_code FROM portal_control.security_audit_events "
+                    "WHERE correlation_id = :correlation_id "
+                    "AND outcome = 'DENIED' ORDER BY ledger_sequence DESC LIMIT 1"
+                ),
+                {"correlation_id": rotated_login.headers["X-Correlation-ID"]},
+            ).scalar_one_or_none()
+        pytest.fail(f"Rotated-key login failed: {failure_reason}")
+    assert rotated_session
+
+    rollback_settings = _settings(
+        runtime_url,
+        security_master_key=TEST_SECURITY_MASTER_KEY,
+        security_key_version="test-restart-v1",
+        security_previous_master_key=TEST_ROTATED_SECURITY_MASTER_KEY,
+        security_previous_key_version="test-restart-v2",
+        transition_started_at=transition_started_at,
+        transition_expires_at=transition_expires_at,
+    )
+    rollback_app = create_app(settings=rollback_settings)
+    _replace_orchestrator(
+        rollback_app,
+        settings=rollback_settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(rollback_app, follow_redirects=False) as rollback_client:
+        rollback_client.cookies.set("fintech_portal_session_v1", rotated_session)
+        rollback_session = rollback_client.get("/v1/session")
+    assert rollback_session.status_code == 200
+
+    expired_started_at = now - timedelta(minutes=10)
+    expired_at = now - timedelta(minutes=5)
+    expired_settings = _settings(
+        runtime_url,
+        security_master_key=TEST_ROTATED_SECURITY_MASTER_KEY,
+        security_key_version="test-restart-v2",
+        security_previous_master_key=TEST_SECURITY_MASTER_KEY,
+        security_previous_key_version="test-restart-v1",
+        transition_started_at=expired_started_at,
+        transition_expires_at=expired_at,
+    )
+    expired_app = create_app(settings=expired_settings)
+    _replace_orchestrator(
+        expired_app,
+        settings=expired_settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(expired_app, follow_redirects=False) as expired_client:
+        rejected_intent = expired_client.post(
+            "/v1/auth/login",
+            headers={"Origin": "http://portal.test"},
+            json={"intent_token": expired_intent},
+        )
+        expired_client.cookies.set("fintech_portal_session_v1", original_session)
+        rejected_session = expired_client.get("/v1/session")
+        expired_client.cookies.set(
+            "fintech_portal_oidc_binding_v1",
+            expired_binding,
+        )
+        rejected_callback = expired_client.get(
+            "/v1/auth/callback",
+            params={"state": expired_state, "code": "provider-code"},
+        )
+
+    assert rejected_intent.status_code == 400
+    assert rejected_session.status_code == 401
+    assert rejected_callback.status_code == 401
 
 
 @pytest.mark.integration
@@ -731,6 +947,29 @@ def test_security_epoch_mismatch_invalidates_session(
 
 
 @pytest.mark.integration
+def test_unknown_session_key_version_fails_closed(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text("UPDATE portal_control.portal_sessions SET lookup_key_version = 'unknown-v9'")
+            )
+        response = client.get("/v1/session")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.integration
 def test_sixth_login_revokes_oldest_and_preserves_five_active_sessions(
     callback_database: tuple[Engine, str],
 ) -> None:
@@ -761,3 +1000,213 @@ def test_sixth_login_revokes_oldest_and_preserves_five_active_sessions(
         ).scalar_one()
     assert status_counts == {"ACTIVE": 5, "TERMINATED": 1}
     assert revocation_reason == "MAXIMUM_ACTIVE_SESSIONS"
+
+
+@pytest.mark.integration
+def test_concurrent_rotation_and_current_logout_leave_no_active_family_member(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    service = app.state.session_service
+    assert isinstance(service, SessionService)
+
+    with TestClient(app, follow_redirects=False) as client:
+        login = _complete_login(client)
+        session_secret = login.cookies.get("fintech_portal_session_v1")
+        assert session_secret
+        session = service.authenticate(
+            session_secret=session_secret,
+            correlation_id="rotation-logout-auth",
+            request_id="rotation-logout-auth",
+        )
+
+        start = threading.Barrier(2)
+
+        def rotate() -> str:
+            start.wait()
+            try:
+                service.rotate(
+                    session=session,
+                    correlation_id="rotation-race",
+                    request_id="rotation-race",
+                )
+            except SessionAuthenticationError:
+                return "CONFLICT"
+            return "ROTATED"
+
+        def logout() -> int:
+            start.wait()
+            return service.revoke_current(
+                session=session,
+                correlation_id="logout-race",
+                request_id="logout-race",
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            rotation_future = executor.submit(rotate)
+            logout_future = executor.submit(logout)
+            rotation_result = rotation_future.result(timeout=10)
+            revoked = logout_future.result(timeout=10)
+
+    assert rotation_result in {"ROTATED", "CONFLICT"}
+    assert revoked == 1
+    with migration_engine.connect() as connection:
+        active = connection.execute(
+            text(
+                "SELECT count(*) FROM portal_control.portal_sessions "
+                "WHERE session_family_id = :family_id "
+                "AND status IN ('ACTIVE', 'REFRESH_REQUIRED')"
+            ),
+            {"family_id": session.session_family_id},
+        ).scalar_one()
+    assert active == 0
+
+
+@pytest.mark.integration
+def test_logout_all_fence_rejects_or_revokes_concurrent_callback_session(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    service = app.state.session_service
+    runtime_engine = app.state.database_engine
+    material = app.state.security_material
+    cipher = app.state.protected_value_cipher
+    assert isinstance(service, SessionService)
+    assert isinstance(runtime_engine, Engine)
+    assert isinstance(material, EphemeralSecurityMaterial)
+    assert cipher is not None
+
+    with TestClient(app, follow_redirects=False) as client:
+        login = _complete_login(client)
+        session_secret = login.cookies.get("fintech_portal_session_v1")
+        assert session_secret
+        session = service.authenticate(
+            session_secret=session_secret,
+            correlation_id="callback-logout-auth",
+            request_id="callback-logout-auth",
+        )
+        _begin_login(client)
+
+        claim_id = uuid4()
+        with migration_engine.begin() as connection:
+            transaction_id = connection.execute(
+                text(
+                    "UPDATE portal_control.oidc_login_transactions "
+                    "SET status = 'CLAIMED', claimed_by = :claim_id, "
+                    "claimed_at = CURRENT_TIMESTAMP, version = version + 1 "
+                    "WHERE status = 'PENDING' RETURNING transaction_id"
+                ),
+                {"claim_id": claim_id},
+            ).scalar_one()
+            principal_row = connection.execute(
+                text(
+                    "SELECT issuer, subject_reference "
+                    "FROM portal_control.portal_principals "
+                    "WHERE principal_id = :principal_id"
+                ),
+                {"principal_id": session.principal_id},
+            ).one()
+
+        now = datetime.now(UTC)
+        principal = ResolvedPrincipal(
+            principal_id=session.principal_id,
+            issuer=principal_row.issuer,
+            subject_reference=principal_row.subject_reference,
+            display_attributes={"display_name": "Portal User"},
+            status="ACTIVE",
+            roles=session.roles,
+            environment_ids=session.environment_ids,
+            tenant_id=session.tenant_id,
+            mapping_revision=session.mapping_revision,
+            assurance=session.assurance,
+            authenticated_at=now,
+            token_expires_at=now + timedelta(minutes=5),
+        )
+        decision = CallbackPolicyDecision(
+            outcome=PolicyOutcome.ALLOW,
+            reason_code="TEST_ALLOW",
+            policy_revision=session.policy_revision,
+            capability_revision=session.capability_revision,
+        )
+        session_store = CallbackSessionStore(
+            engine=runtime_engine,
+            settings=settings,
+            security_material=material,
+            protected_value_cipher=cipher,
+        )
+        start = threading.Barrier(2)
+
+        def finalize() -> str:
+            start.wait()
+            try:
+                session_store.finalize(
+                    transaction_id=transaction_id,
+                    claim_id=claim_id,
+                    principal=principal,
+                    decision=decision,
+                    token_set=ProviderTokenSet(
+                        id_token="server-only-id-token",
+                        access_token="server-only-access-token",
+                        refresh_token="server-only-refresh-token",
+                        token_type="Bearer",
+                        expires_in=300,
+                    ),
+                    correlation_id="callback-race",
+                    request_id="callback-race",
+                )
+            except FinalizationRejected:
+                return "REJECTED"
+            return "FINALIZED"
+
+        def logout_all() -> int:
+            start.wait()
+            return service.revoke_all(
+                session=session,
+                correlation_id="logout-all-race",
+                request_id="logout-all-race",
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            callback_future = executor.submit(finalize)
+            logout_future = executor.submit(logout_all)
+            callback_result = callback_future.result(timeout=10)
+            revoked = logout_future.result(timeout=10)
+
+    assert callback_result in {"FINALIZED", "REJECTED"}
+    assert revoked >= 1
+    with migration_engine.connect() as connection:
+        active = connection.execute(
+            text(
+                "SELECT count(*) FROM portal_control.portal_sessions "
+                "WHERE principal_id = :principal_id "
+                "AND status IN ('ACTIVE', 'REFRESH_REQUIRED')"
+            ),
+            {"principal_id": session.principal_id},
+        ).scalar_one()
+        fence = connection.execute(
+            text(
+                "SELECT sessions_valid_after FROM portal_control.portal_principals "
+                "WHERE principal_id = :principal_id"
+            ),
+            {"principal_id": session.principal_id},
+        ).scalar_one()
+        envelopes = connection.execute(
+            text("SELECT count(*) FROM portal_control.portal_token_envelopes")
+        ).scalar_one()
+    assert active == 0
+    assert fence is not None
+    assert envelopes == 0

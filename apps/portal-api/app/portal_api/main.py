@@ -22,9 +22,16 @@ from portal_api.auth.login_intent import LoginInitiationService
 from portal_api.auth.oidc_provider import HttpxOidcProvider
 from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
 from portal_api.auth.principal import ConfiguredPrincipalResolver
-from portal_api.auth.protected_value import EphemeralEnvelopeCipher
+from portal_api.auth.protected_value import (
+    AesGcmEnvelopeCipher,
+    EphemeralEnvelopeCipher,
+    ProtectedValueCipher,
+)
 from portal_api.auth.recovery import CallbackRecovery
-from portal_api.auth.security_material import EphemeralSecurityMaterial
+from portal_api.auth.security_material import (
+    EphemeralSecurityMaterial,
+    derive_security_key,
+)
 from portal_api.auth.session import SessionService
 from portal_api.auth.session_store import CallbackSessionStore
 from portal_api.auth.token_validation import PyJwtTokenValidator
@@ -39,6 +46,65 @@ from portal_api.health.service import HealthService
 from portal_api.telemetry.metrics import NoopTelemetry, TelemetryRecorder
 
 LOGGER = logging.getLogger("portal_api.lifecycle")
+
+
+def _security_components(
+    settings: PortalApiSettings,
+) -> tuple[EphemeralSecurityMaterial | None, ProtectedValueCipher | None]:
+    if not settings.security_runtime_enabled:
+        return None, None
+    master_key = settings.security_master_key_bytes
+    if master_key is None:
+        return EphemeralSecurityMaterial.generate(), EphemeralEnvelopeCipher()
+    key_version = settings.security_key_version
+    security_material = EphemeralSecurityMaterial.from_master_key(
+        master_key,
+        key_version=key_version,
+    )
+    previous_master_key = settings.security_previous_master_key_bytes
+    previous_wrapping_key: bytes | None = None
+    if previous_master_key is not None:
+        previous_version = settings.security_previous_key_version
+        transition_started_at = settings.security_key_transition_started_at
+        transition_expires_at = settings.security_key_transition_expires_at
+        if (
+            previous_version is None
+            or transition_started_at is None
+            or transition_expires_at is None
+        ):
+            raise RuntimeError("Validated security key transition is incomplete")
+        security_material = security_material.with_previous(
+            EphemeralSecurityMaterial.from_master_key(
+                previous_master_key,
+                key_version=previous_version,
+            ),
+            transition_started_at=transition_started_at,
+            transition_expires_at=transition_expires_at,
+        )
+        previous_wrapping_key = derive_security_key(
+            previous_master_key,
+            key_version=previous_version,
+            purpose="protected-value-envelope",
+        )
+    else:
+        previous_version = None
+        transition_started_at = None
+        transition_expires_at = None
+    return (
+        security_material,
+        AesGcmEnvelopeCipher(
+            derive_security_key(
+                master_key,
+                key_version=key_version,
+                purpose="protected-value-envelope",
+            ),
+            key_reference=key_version,
+            previous_wrapping_key=previous_wrapping_key,
+            previous_key_reference=previous_version,
+            transition_started_at=transition_started_at,
+            transition_expires_at=transition_expires_at,
+        ),
+    )
 
 
 def create_app(
@@ -59,12 +125,7 @@ def create_app(
         else None
     )
     resolved_database_engine = database_engine or owned_database_engine
-    security_material = (
-        EphemeralSecurityMaterial.generate() if resolved_settings.security_runtime_enabled else None
-    )
-    protected_value_cipher = (
-        EphemeralEnvelopeCipher() if resolved_settings.security_runtime_enabled else None
-    )
+    security_material, protected_value_cipher = _security_components(resolved_settings)
     login_initiation_service = (
         LoginInitiationService(
             engine=resolved_database_engine,

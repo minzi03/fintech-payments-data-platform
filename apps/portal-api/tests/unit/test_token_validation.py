@@ -171,3 +171,44 @@ async def test_unknown_signing_key_refreshes_once_then_fails_closed() -> None:
         )
 
     assert provider.refreshes == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_nonce_from_previous_key_is_accepted_only_during_transition() -> None:
+    private_key, jwk = _key_material()
+    provider = JwksOnlyProvider(jwk)
+    now = datetime.now(UTC)
+    previous = EphemeralSecurityMaterial.from_master_key(
+        bytes(range(32)),
+        key_version="local-v1",
+    )
+    current = EphemeralSecurityMaterial.from_master_key(
+        bytes(range(32, 64)),
+        key_version="local-v2",
+    ).with_previous(
+        previous,
+        transition_started_at=now - timedelta(minutes=1),
+        transition_expires_at=now + timedelta(minutes=5),
+    )
+    nonce = "previous-key-nonce"
+    token = jwt.encode(
+        _claims(nonce=nonce),
+        private_key,
+        algorithm="RS256",
+        headers={"kid": "test-key", "typ": "JWT"},
+    )
+    validator = PyJwtTokenValidator(
+        settings=_settings(),
+        provider=provider,
+        security_material=current,
+    )
+
+    identity = await validator.validate(
+        id_token=token,
+        expected_nonce_hash=previous.protect(
+            nonce,
+            purpose=ProtectedPurpose.OIDC_NONCE,
+        ),
+    )
+
+    assert identity.nonce == nonce

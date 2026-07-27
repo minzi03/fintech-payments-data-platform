@@ -50,6 +50,7 @@ portal_principals = Table(
     Column("subject_reference", String(512), nullable=False),
     Column("display_attributes", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("status", String(32), nullable=False),
+    Column("sessions_valid_after", DateTime(timezone=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
     UniqueConstraint("issuer", "subject_reference"),

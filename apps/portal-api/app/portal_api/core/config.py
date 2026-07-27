@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import re
+from datetime import datetime
 from enum import StrEnum
 from functools import lru_cache
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +26,19 @@ class PortalEnvironment(StrEnum):
 
 def _csv_values(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _decode_master_key(value: SecretStr | None, *, variable_name: str) -> bytes | None:
+    if value is None:
+        return None
+    try:
+        encoded = value.get_secret_value().encode("ascii")
+        decoded = base64.b64decode(encoded, altchars=b"-_", validate=True)
+    except (UnicodeEncodeError, binascii.Error, ValueError) as error:
+        raise ValueError(f"{variable_name} must be valid base64url") from error
+    if len(decoded) != 32:
+        raise ValueError(f"{variable_name} must decode to 256 bits")
+    return decoded
 
 
 class PortalApiSettings(BaseSettings):
@@ -55,6 +72,12 @@ class PortalApiSettings(BaseSettings):
     development_identity_enabled: bool = False
     security_runtime_enabled: bool = False
     database_url: SecretStr | None = None
+    security_master_key: SecretStr | None = None
+    security_key_version: str = "local-development-v1"
+    security_previous_master_key: SecretStr | None = None
+    security_previous_key_version: str | None = None
+    security_key_transition_started_at: datetime | None = None
+    security_key_transition_expires_at: datetime | None = None
     oidc_provider_id: str = "local-keycloak"
     oidc_issuer: str = "http://localhost:8081/realms/fintech-portal"
     oidc_client_id: str = "fintech-portal"
@@ -125,6 +148,31 @@ class PortalApiSettings(BaseSettings):
     def allowed_environment_id_values(self) -> tuple[str, ...]:
         return _csv_values(self.allowed_environment_ids)
 
+    @property
+    def security_master_key_bytes(self) -> bytes | None:
+        return _decode_master_key(
+            self.security_master_key,
+            variable_name="PORTAL_API_SECURITY_MASTER_KEY",
+        )
+
+    @property
+    def security_previous_master_key_bytes(self) -> bytes | None:
+        return _decode_master_key(
+            self.security_previous_master_key,
+            variable_name="PORTAL_API_SECURITY_PREVIOUS_MASTER_KEY",
+        )
+
+    @field_validator(
+        "security_previous_master_key",
+        "security_previous_key_version",
+        "security_key_transition_started_at",
+        "security_key_transition_expires_at",
+        mode="before",
+    )
+    @classmethod
+    def empty_transition_value_is_unset(cls, value: object) -> object:
+        return None if value == "" else value
+
     @model_validator(mode="after")
     def validate_safety(self) -> PortalApiSettings:
         if self.api_version != "v1":
@@ -154,6 +202,18 @@ class PortalApiSettings(BaseSettings):
                     "Portal security runtime is authorized only for local/development environments"
                 )
             self._validate_oidc_configuration()
+            if self.environment is not PortalEnvironment.TEST and self.security_master_key is None:
+                raise ValueError(
+                    "PORTAL_API_SECURITY_MASTER_KEY is required for restart-safe "
+                    "local/development security runtime"
+                )
+            if self.security_master_key is not None:
+                _ = self.security_master_key_bytes
+            if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", self.security_key_version) is None:
+                raise ValueError(
+                    "PORTAL_API_SECURITY_KEY_VERSION must be a bounded safe identifier"
+                )
+            self._validate_key_transition()
         if self.is_production:
             if self.log_format != "json":
                 raise ValueError("Production requires PORTAL_API_LOG_FORMAT=json")
@@ -170,6 +230,46 @@ class PortalApiSettings(BaseSettings):
             if self.build_sha == "local" or self.build_time == "local":
                 raise ValueError("Production requires immutable build SHA and build time")
         return self
+
+    def _validate_key_transition(self) -> None:
+        transition_values = (
+            self.security_previous_master_key,
+            self.security_previous_key_version,
+            self.security_key_transition_started_at,
+            self.security_key_transition_expires_at,
+        )
+        if not any(value is not None for value in transition_values):
+            return
+        if not all(value is not None for value in transition_values):
+            raise ValueError(
+                "Previous security key configuration requires key, version, start, and expiry"
+            )
+        previous_key = self.security_previous_master_key_bytes
+        previous_version = self.security_previous_key_version
+        started_at = self.security_key_transition_started_at
+        expires_at = self.security_key_transition_expires_at
+        if (
+            previous_key is None
+            or previous_version is None
+            or started_at is None
+            or expires_at is None
+        ):
+            raise ValueError("Previous security key transition is incomplete")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", previous_version) is None:
+            raise ValueError(
+                "PORTAL_API_SECURITY_PREVIOUS_KEY_VERSION must be a bounded safe identifier"
+            )
+        if previous_version == self.security_key_version:
+            raise ValueError("Current and previous security key versions must differ")
+        if started_at.utcoffset() is None or expires_at.utcoffset() is None:
+            raise ValueError("Security key transition timestamps must include a timezone")
+        transition_seconds = (expires_at - started_at).total_seconds()
+        if transition_seconds <= 0:
+            raise ValueError("Security key transition expiry must follow its start")
+        if transition_seconds > self.session_absolute_ttl_seconds:
+            raise ValueError(
+                "Security key transition window cannot exceed the absolute session lifetime"
+            )
 
     def _validate_oidc_configuration(self) -> None:
         if not self.allowed_return_path_values or any(

@@ -22,7 +22,7 @@ from portal_api.auth.csrf import (
 )
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
 from portal_api.core.config import PortalApiSettings
-from portal_api.db.metadata import portal_sessions, portal_token_envelopes
+from portal_api.db.metadata import portal_principals, portal_sessions, portal_token_envelopes
 from portal_api.db.unit_of_work import local_transaction
 
 
@@ -58,6 +58,7 @@ class AuthenticatedSession:
     identity_verified_until: datetime
     csrf_token_hash: bytes
     csrf_generation: int
+    lookup_key_version: str = ""
 
 
 @dataclass(frozen=True)
@@ -89,26 +90,41 @@ class SessionService:
     ) -> AuthenticatedSession:
         if not session_secret or len(session_secret) > 512:
             raise SessionAuthenticationError("SESSION_MISSING")
-        lookup_hash = self._security_material.protect(
+        now = datetime.now(UTC)
+        lookup_candidates = self._security_material.protect_candidates(
             session_secret,
             purpose=ProtectedPurpose.SESSION,
+            at=now,
         )
-        now = datetime.now(UTC)
+        lookup_hashes = tuple(protected for _, protected in lookup_candidates)
         failure: str | None = None
         row: dict[str, object] | None = None
         with local_transaction(self._engine) as connection:
             durable = (
                 connection.execute(
                     select(portal_sessions)
-                    .where(portal_sessions.c.session_lookup_hash == lookup_hash)
+                    .where(portal_sessions.c.session_lookup_hash.in_(lookup_hashes))
                     .with_for_update()
                 )
                 .mappings()
                 .one_or_none()
             )
-            if durable is None or not hmac.compare_digest(
-                durable["session_lookup_hash"],
-                lookup_hash,
+            matched_key_version = (
+                next(
+                    (
+                        version
+                        for version, candidate in lookup_candidates
+                        if hmac.compare_digest(durable["session_lookup_hash"], candidate)
+                    ),
+                    None,
+                )
+                if durable is not None
+                else None
+            )
+            if (
+                durable is None
+                or matched_key_version is None
+                or durable["lookup_key_version"] != matched_key_version
             ):
                 failure = "SESSION_INVALID"
             elif durable["status"] not in {"ACTIVE", "REFRESH_REQUIRED"}:
@@ -196,13 +212,16 @@ class SessionService:
         return self._context(row=row, session_secret=session_secret)
 
     def csrf_token(self, session: AuthenticatedSession) -> str:
+        material = self._security_material.material_for_version(session.lookup_key_version)
+        if material is None:
+            raise SessionAuthenticationError("SESSION_KEY_VERSION_UNAVAILABLE")
         token = derive_csrf_token(
-            security_material=self._security_material,
+            security_material=material,
             session_secret=session.session_secret,
             generation=session.csrf_generation,
         )
         if not csrf_token_matches(
-            security_material=self._security_material,
+            security_material=material,
             token=token,
             expected_hash=session.csrf_token_hash,
         ):
@@ -218,14 +237,16 @@ class SessionService:
         correlation_id: str,
         request_id: str,
     ) -> None:
+        material = self._security_material.material_for_version(session.lookup_key_version)
         origin_valid = origin is not None and any(
             hmac.compare_digest(origin, allowed) for allowed in self._settings.allowed_origin_values
         )
         token_valid = (
-            presented_token is not None
+            material is not None
+            and presented_token is not None
             and len(presented_token) <= 256
             and csrf_token_matches(
-                security_material=self._security_material,
+                security_material=material,
                 token=presented_token,
                 expected_hash=session.csrf_token_hash,
             )
@@ -277,6 +298,13 @@ class SessionService:
         )
         successor: dict[str, object]
         with local_transaction(self._engine) as connection:
+            principal_status = connection.execute(
+                select(portal_principals.c.status)
+                .where(portal_principals.c.principal_id == session.principal_id)
+                .with_for_update()
+            ).scalar_one_or_none()
+            if principal_status != "ACTIVE":
+                raise SessionAuthenticationError("SESSION_ROTATION_CONFLICT")
             current = (
                 connection.execute(
                     select(portal_sessions)
@@ -417,12 +445,31 @@ class SessionService:
         revoked = 0
         affected_families: set[UUID] = set()
         with local_transaction(self._engine) as connection:
+            principal = (
+                connection.execute(
+                    select(portal_principals)
+                    .where(portal_principals.c.principal_id == session.principal_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if principal is None:
+                raise SessionAuthenticationError("SESSION_PRINCIPAL_INVALID")
+            if all_for_principal:
+                connection.execute(
+                    update(portal_principals)
+                    .where(portal_principals.c.principal_id == session.principal_id)
+                    .values(sessions_valid_after=now, updated_at=now)
+                )
             query = select(portal_sessions).where(
                 portal_sessions.c.principal_id == session.principal_id,
                 portal_sessions.c.status.in_(("ACTIVE", "REFRESH_REQUIRED")),
             )
             if not all_for_principal:
-                query = query.where(portal_sessions.c.session_id == session.session_id)
+                query = query.where(
+                    portal_sessions.c.session_family_id == session.session_family_id
+                )
             sessions = (
                 connection.execute(query.order_by(portal_sessions.c.created_at).with_for_update())
                 .mappings()
@@ -600,4 +647,5 @@ class SessionService:
             identity_verified_until=row["identity_verified_until"],
             csrf_token_hash=row["csrf_token_hash"],
             csrf_generation=int(row["csrf_generation"]),
+            lookup_key_version=str(row["lookup_key_version"]),
         )

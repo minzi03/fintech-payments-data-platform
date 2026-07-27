@@ -28,6 +28,25 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_TELEMETRY_ENABLED` | `false` | no | no | Uses the no-op recorder until a safe exporter is configured |
 | `PORTAL_API_OPENAPI_ENABLED` | `true` | no | no | Must be false in production |
 | `PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED` | `false` | no | no | Forbidden in production; no identity behavior exists yet |
+| `PORTAL_API_SECURITY_MASTER_KEY` | none | when local/development security runtime is enabled | yes | Base64url-encoded 256-bit key; keep stable across normal restart |
+| `PORTAL_API_SECURITY_KEY_VERSION` | `local-development-v1` | with security master key | no | Bounded identifier attached to derived lookup keys and protected envelopes |
+| `PORTAL_API_SECURITY_PREVIOUS_MASTER_KEY` | none | during a controlled key transition | yes | Previous 256-bit key; accepted only inside the declared transition window |
+| `PORTAL_API_SECURITY_PREVIOUS_KEY_VERSION` | none | with previous key | no | Explicit version of the previous key; must differ from the current version |
+| `PORTAL_API_SECURITY_KEY_TRANSITION_STARTED_AT` | none | with previous key | no | Timezone-aware start of previous-key acceptance |
+| `PORTAL_API_SECURITY_KEY_TRANSITION_EXPIRES_AT` | none | with previous key | no | Exclusive deterministic expiry; the window cannot exceed one absolute session lifetime |
+
+The test environment may omit the master key to obtain isolated ephemeral authority. Local and
+development security runtimes require an explicit key so valid sessions and pending authentication
+state remain recoverable across normal process restart. The root `.env.example` value is disposable
+local-only material and must be replaced in an ignored `.env` before shared development.
+
+A rotation selects the new key and version as current, while the old key and version may be
+configured as previous with an explicit start and exclusive expiry. All four previous-key
+settings are required together. During that bounded window, existing login intents, callbacks,
+sessions, CSRF authority, and protected values may be validated with the previous key; all newly
+created state uses the current key. At or after expiry, previous and unknown versions fail closed.
+Rollback during the window requires an explicit configuration reversal: select the former key as
+current and retain the other version as previous for the remainder of the same bounded window.
 
 Validate without starting the server:
 

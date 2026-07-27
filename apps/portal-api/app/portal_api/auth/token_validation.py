@@ -94,11 +94,15 @@ class PyJwtTokenValidator(TokenValidatorPort):
         issuer = claims["iss"]
         if not all(isinstance(value, str) and value for value in (nonce, subject, issuer)):
             raise TokenValidationError("Required identity claims are invalid")
-        presented_nonce_hash = self._security_material.protect(
+        presented_nonce_hashes = self._security_material.protect_candidates(
             nonce,
             purpose=ProtectedPurpose.OIDC_NONCE,
+            at=datetime.now(UTC),
         )
-        if not hmac.compare_digest(presented_nonce_hash, expected_nonce_hash):
+        if not any(
+            hmac.compare_digest(presented, expected_nonce_hash)
+            for _, presented in presented_nonce_hashes
+        ):
             raise TokenValidationError("Nonce is invalid")
 
         raw_groups = self._claim_at_path(claims, self._settings.oidc_group_claim_path)

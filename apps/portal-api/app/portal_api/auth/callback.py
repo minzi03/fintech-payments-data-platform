@@ -248,108 +248,121 @@ class CallbackOrchestrator:
         correlation_id: str,
         request_id: str,
     ) -> ClaimedLoginTransaction:
-        state_hash = self._security_material.protect(
-            command.state,
-            purpose=ProtectedPurpose.OIDC_STATE,
-        )
-        binding_hash = (
-            self._security_material.protect(
-                command.browser_binding,
-                purpose=ProtectedPurpose.BROWSER_BINDING,
-            )
-            if command.browser_binding is not None
-            else None
-        )
         now = datetime.now(UTC)
+        state_hashes = tuple(
+            protected
+            for _, protected in self._security_material.protect_candidates(
+                command.state,
+                purpose=ProtectedPurpose.OIDC_STATE,
+                at=now,
+            )
+        )
         failure: str | None = None
         claim: ClaimedLoginTransaction | None = None
+        binding_hash: bytes | None = None
         with local_transaction(self._engine) as connection:
             transaction = (
                 connection.execute(
                     select(oidc_login_transactions)
-                    .where(oidc_login_transactions.c.state_hash == state_hash)
+                    .where(oidc_login_transactions.c.state_hash.in_(state_hashes))
                     .with_for_update()
                 )
                 .mappings()
                 .one_or_none()
             )
-            if transaction is None or not hmac.compare_digest(
-                transaction["state_hash"], state_hash
+            if transaction is None or not any(
+                hmac.compare_digest(transaction["state_hash"], candidate)
+                for candidate in state_hashes
             ):
                 failure = "OIDC_STATE_INVALID"
-            elif transaction["status"] != "PENDING":
-                failure = f"OIDC_TRANSACTION_{transaction['status']}"
-            elif transaction["expires_at"] <= now:
-                failure = "OIDC_TRANSACTION_EXPIRED"
-                self._terminal_update(
-                    connection,
-                    transaction_id=transaction["transaction_id"],
-                    from_status="PENDING",
-                    to_status="EXPIRED",
-                    now=now,
-                    version=transaction["version"],
-                )
-            elif binding_hash is None or not hmac.compare_digest(
-                transaction["browser_binding_hash"],
-                binding_hash,
-            ):
-                failure = "OIDC_BROWSER_BINDING_INVALID"
-                self._terminal_update(
-                    connection,
-                    transaction_id=transaction["transaction_id"],
-                    from_status="PENDING",
-                    to_status="INVALIDATED",
-                    now=now,
-                    version=transaction["version"],
-                )
-            elif (
-                transaction["provider_id"] != self._provider_config.provider_id
-                or transaction["redirect_uri"] != self._provider_config.redirect_uri
-            ):
-                failure = "OIDC_PROVIDER_BINDING_INVALID"
-                self._terminal_update(
-                    connection,
-                    transaction_id=transaction["transaction_id"],
-                    from_status="PENDING",
-                    to_status="INVALIDATED",
-                    now=now,
-                    version=transaction["version"],
-                )
             else:
-                claim_id = uuid4()
-                claimed = connection.execute(
-                    update(oidc_login_transactions)
-                    .where(
-                        oidc_login_transactions.c.transaction_id == transaction["transaction_id"],
-                        oidc_login_transactions.c.status == "PENDING",
-                        oidc_login_transactions.c.version == transaction["version"],
+                if transaction["status"] != "PENDING":
+                    failure = f"OIDC_TRANSACTION_{transaction['status']}"
+                elif transaction["expires_at"] <= now:
+                    failure = "OIDC_TRANSACTION_EXPIRED"
+                    self._terminal_update(
+                        connection,
+                        transaction_id=transaction["transaction_id"],
+                        from_status="PENDING",
+                        to_status="EXPIRED",
+                        now=now,
+                        version=transaction["version"],
                     )
-                    .values(
-                        status="CLAIMED",
-                        claimed_by=claim_id,
-                        claimed_at=now,
-                        updated_at=now,
-                        version=transaction["version"] + 1,
+                else:
+                    binding_material = self._security_material.material_for_version(
+                        str(transaction["browser_binding_key_version"]),
+                        at=now,
                     )
-                )
-                if claimed.rowcount != 1:
-                    raise RuntimeError("Callback claim lost its authoritative transition")
-                self._append_audit(
-                    connection,
-                    event_type=AuditEventType.LOGIN_STARTED,
-                    outcome="CLAIMED",
-                    reason_code=None,
-                    transaction_id=transaction["transaction_id"],
-                    correlation_id=correlation_id,
-                    request_id=request_id,
-                )
-                claim = ClaimedLoginTransaction(
-                    transaction_id=transaction["transaction_id"],
-                    claim_id=claim_id,
-                    expected_nonce_hash=transaction["nonce_hash"],
-                    encrypted_verifier=dict(transaction["pkce_verifier_encrypted"]),
-                    redirect_uri=str(transaction["redirect_uri"]),
-                )
+                    binding_hash = (
+                        binding_material.protect(
+                            command.browser_binding,
+                            purpose=ProtectedPurpose.BROWSER_BINDING,
+                        )
+                        if binding_material is not None and command.browser_binding is not None
+                        else None
+                    )
+                    if binding_hash is None or not hmac.compare_digest(
+                        transaction["browser_binding_hash"],
+                        binding_hash,
+                    ):
+                        failure = "OIDC_BROWSER_BINDING_INVALID"
+                        self._terminal_update(
+                            connection,
+                            transaction_id=transaction["transaction_id"],
+                            from_status="PENDING",
+                            to_status="INVALIDATED",
+                            now=now,
+                            version=transaction["version"],
+                        )
+                    elif (
+                        transaction["provider_id"] != self._provider_config.provider_id
+                        or transaction["redirect_uri"] != self._provider_config.redirect_uri
+                    ):
+                        failure = "OIDC_PROVIDER_BINDING_INVALID"
+                        self._terminal_update(
+                            connection,
+                            transaction_id=transaction["transaction_id"],
+                            from_status="PENDING",
+                            to_status="INVALIDATED",
+                            now=now,
+                            version=transaction["version"],
+                        )
+                    else:
+                        claim_id = uuid4()
+                        claimed = connection.execute(
+                            update(oidc_login_transactions)
+                            .where(
+                                oidc_login_transactions.c.transaction_id
+                                == transaction["transaction_id"],
+                                oidc_login_transactions.c.status == "PENDING",
+                                oidc_login_transactions.c.version == transaction["version"],
+                            )
+                            .values(
+                                status="CLAIMED",
+                                claimed_by=claim_id,
+                                claimed_at=now,
+                                updated_at=now,
+                                version=transaction["version"] + 1,
+                            )
+                        )
+                        if claimed.rowcount != 1:
+                            raise RuntimeError("Callback claim lost its authoritative transition")
+                        self._append_audit(
+                            connection,
+                            event_type=AuditEventType.LOGIN_STARTED,
+                            outcome="CLAIMED",
+                            reason_code=None,
+                            transaction_id=transaction["transaction_id"],
+                            correlation_id=correlation_id,
+                            request_id=request_id,
+                        )
+                        claim = ClaimedLoginTransaction(
+                            transaction_id=transaction["transaction_id"],
+                            claim_id=claim_id,
+                            expected_nonce_hash=transaction["nonce_hash"],
+                            encrypted_verifier=dict(transaction["pkce_verifier_encrypted"]),
+                            redirect_uri=str(transaction["redirect_uri"]),
+                        )
             if failure is not None:
                 self._append_audit(
                     connection,

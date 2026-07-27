@@ -1,8 +1,13 @@
 """Portal API configuration safety tests."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
 from pydantic import ValidationError
+
+TEST_SECURITY_MASTER_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+TEST_PREVIOUS_SECURITY_MASTER_KEY = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8="
 
 
 def test_local_defaults_are_explicit_and_safe() -> None:
@@ -88,6 +93,7 @@ def test_security_runtime_is_bounded_to_local_and_development() -> None:
         environment=PortalEnvironment.DEVELOPMENT,
         security_runtime_enabled=True,
         database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        security_master_key=TEST_SECURITY_MASTER_KEY,
         oidc_issuer="https://identity.dev.example/realms/portal",
         oidc_authorization_endpoint="https://identity.dev.example/authorize",
         oidc_token_endpoint="https://identity.dev.example/token",
@@ -95,6 +101,7 @@ def test_security_runtime_is_bounded_to_local_and_development() -> None:
         oidc_redirect_uri="https://portal.dev.example/portal-api/v1/auth/callback",
     )
     assert settings.security_runtime_enabled
+    assert settings.security_master_key_bytes == bytes(range(32))
     assert "secret" not in repr(settings)
 
     with pytest.raises(ValidationError, match="authorized only for local/development"):
@@ -102,6 +109,70 @@ def test_security_runtime_is_bounded_to_local_and_development() -> None:
             environment=PortalEnvironment.STAGING,
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        )
+
+
+def test_restart_safe_security_runtime_requires_valid_master_key() -> None:
+    with pytest.raises(ValidationError, match="SECURITY_MASTER_KEY is required"):
+        PortalApiSettings(
+            environment=PortalEnvironment.DEVELOPMENT,
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            oidc_issuer="https://identity.dev.example/realms/portal",
+            oidc_authorization_endpoint="https://identity.dev.example/authorize",
+            oidc_token_endpoint="https://identity.dev.example/token",
+            oidc_jwks_uri="https://identity.dev.example/jwks",
+            oidc_redirect_uri="https://portal.dev.example/portal-api/v1/auth/callback",
+        )
+
+    with pytest.raises(ValidationError, match="decode to 256 bits"):
+        PortalApiSettings(
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            security_master_key="dG9vLXNob3J0",
+        )
+
+
+def test_security_key_transition_is_complete_explicit_and_bounded() -> None:
+    started_at = datetime(2026, 7, 27, 1, tzinfo=UTC)
+    expires_at = started_at + timedelta(hours=1)
+    settings = PortalApiSettings(
+        environment=PortalEnvironment.TEST,
+        security_runtime_enabled=True,
+        database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        security_master_key=TEST_SECURITY_MASTER_KEY,
+        security_key_version="local-v2",
+        security_previous_master_key=TEST_PREVIOUS_SECURITY_MASTER_KEY,
+        security_previous_key_version="local-v1",
+        security_key_transition_started_at=started_at,
+        security_key_transition_expires_at=expires_at,
+    )
+
+    assert settings.security_previous_master_key_bytes == bytes(range(32, 64))
+    assert settings.security_key_transition_started_at == started_at
+    assert settings.security_key_transition_expires_at == expires_at
+
+    with pytest.raises(ValidationError, match="requires key, version, start, and expiry"):
+        PortalApiSettings(
+            environment=PortalEnvironment.TEST,
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            security_master_key=TEST_SECURITY_MASTER_KEY,
+            security_key_version="local-v2",
+            security_previous_key_version="local-v1",
+        )
+
+    with pytest.raises(ValidationError, match="cannot exceed the absolute session lifetime"):
+        PortalApiSettings(
+            environment=PortalEnvironment.TEST,
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            security_master_key=TEST_SECURITY_MASTER_KEY,
+            security_key_version="local-v2",
+            security_previous_master_key=TEST_PREVIOUS_SECURITY_MASTER_KEY,
+            security_previous_key_version="local-v1",
+            security_key_transition_started_at=started_at,
+            security_key_transition_expires_at=started_at + timedelta(hours=9),
         )
 
 
