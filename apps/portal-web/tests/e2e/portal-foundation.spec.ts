@@ -15,7 +15,7 @@ test("foundation connects through the BFF boundary", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "System Status" })).toBeVisible();
   await expect(page.getByText("Liveness", { exact: true })).toBeVisible();
   await expect(page.getByText("Readiness", { exact: true })).toBeVisible();
-  await expect(page.getByText("No infrastructure adapters are enabled.")).toBeVisible();
+  await expect(page.getByText("Sign in to inspect protected dependencies.")).toBeVisible();
 
   const problem = await page.evaluate(async () => {
     const response = await fetch("/portal-api/not-a-real-route", {

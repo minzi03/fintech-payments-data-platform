@@ -50,6 +50,7 @@ describe("server-side login initiation", () => {
     const loginRequest = fetchMock.mock.calls[1]?.[0] as Request;
     expect(new URL(contextRequest.url).pathname).toBe("/v1/auth/login-context");
     expect(new URL(contextRequest.url).searchParams.get("return_to")).toBe("/system-status");
+    expect(loginRequest.headers.get("Origin")).toBe("http://localhost:3000");
     expect(await loginRequest.clone().json()).toEqual({
       intent_token: "server-only-intent",
       return_to: "/system-status",

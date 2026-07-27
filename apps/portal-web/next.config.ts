@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 
 const production = process.env.NODE_ENV === "production";
 const apiTarget = process.env.PORTAL_API_INTERNAL_URL ?? "http://127.0.0.1:8010";
+const portalEnvironment = process.env.NEXT_PUBLIC_PORTAL_ENV ?? "local";
+
+function identityProviderOrigin(): string {
+  const configured = process.env.PORTAL_IDP_PUBLIC_URL ?? "http://localhost:8081";
+  const url = new URL(configured);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && portalEnvironment === "local")) {
+    throw new Error("The identity-provider form action must use HTTPS outside local development.");
+  }
+  return url.origin;
+}
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -14,7 +24,7 @@ const contentSecurityPolicy = [
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  `form-action 'self' ${identityProviderOrigin()}`,
   "frame-ancestors 'none'",
 ].join("; ");
 

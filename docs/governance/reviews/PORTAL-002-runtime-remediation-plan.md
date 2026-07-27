@@ -15,7 +15,7 @@
 | 4 — Failure, replay, and crash recovery | COMPLETE |
 | 5 — Session lifecycle and authorization enforcement | COMPLETE |
 | 6 — Contract-driven frontend integration | COMPLETE |
-| 7 — Integrated verification and local development proof | PENDING |
+| 7 — Integrated verification and local development proof | COMPLETE |
 
 ## 1. Planning principles
 
@@ -527,6 +527,25 @@ Modify:
 - A final read-only conformance rereview closes findings with file/line/test evidence.
 - Result may support a separate local/development runtime authorization decision; it does not grant
   production deployment.
+
+### Completion evidence
+
+- A pinned local Keycloak realm provides a disposable PKCE client, local identity, and only
+  local/development entitlements.
+- The browser suite completes a real authorization-code flow and proves an opaque HttpOnly Portal
+  session, empty browser storage, callback replay denial, and CSRF denial.
+- API database tests run against the disposable PostgreSQL control database in CI rather than
+  silently skipping integration coverage.
+- The migration suite proves base-to-head upgrade, downgrade, supported-state upgrade, checksums,
+  schema compatibility, runtime privileges, and append-only audit enforcement.
+- Backend lint, format, type checking, 126 tests, migration drift, generated-contract drift,
+  frontend format/lint/type checking, 25 tests, optimized build, three browser tests, Compose
+  validation, non-root containers, and health checks pass.
+- The final re-review is recorded in
+  `docs/governance/reviews/PORTAL-002-runtime-conformance-rereview.md`. It reports no blocking,
+  `NON-CONFORMANT`, or `NOT IMPLEMENTED` item for the authorized local/development scope and keeps
+  the remaining production/operational gaps visible as partial conformance.
+- Production deployment remains **NOT GRANTED**.
 
 ## 10. Batch commit policy
 

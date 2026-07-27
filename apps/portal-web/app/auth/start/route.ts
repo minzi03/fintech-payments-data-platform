@@ -49,13 +49,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const sdk = new Sdk({ client });
     const form = await request.formData();
     const returnTo = safeReturnPath(form.get("return_to"));
-    const headers = new Headers({
+    const headers: Record<string, string> = {
       Origin: publicOrigin,
       "X-Correlation-ID": randomUUID(),
-    });
+    };
     const incomingCookies = request.headers.get("cookie");
     if (incomingCookies) {
-      headers.set("Cookie", incomingCookies);
+      headers.Cookie = incomingCookies;
     }
 
     const contextResult = await sdk.getLoginContext({

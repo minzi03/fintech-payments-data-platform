@@ -129,6 +129,37 @@ services:
       - upgrade
       - head
 
+  portal-keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${PORTAL_IDP_ADMIN_USER:-portal-local-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${PORTAL_IDP_ADMIN_PASSWORD:-local-admin-change-me}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: ${PORTAL_IDP_PUBLIC_URL:-http://localhost:8081}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${PORTAL_IDP_PORT:-8081}:8080"
+    volumes:
+      - ./infrastructure/keycloak/realm-export.json:/opt/keycloak/data/import/fintech-portal-realm.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '200 OK' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    mem_limit: 768m
+    cpus: 1.0
+
   portal-api:
     image: fintech-portal-api:local
     build:
@@ -140,6 +171,8 @@ services:
         PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
     restart: unless-stopped
     depends_on:
+      portal-keycloak:
+        condition: service_healthy
       portal-migrate:
         condition: service_completed_successfully
     environment:
@@ -168,14 +201,18 @@ services:
       PORTAL_API_OIDC_PROVIDER_ID: ${PORTAL_API_OIDC_PROVIDER_ID:-local-keycloak}
       PORTAL_API_OIDC_ISSUER: ${PORTAL_API_OIDC_ISSUER:-http://localhost:8081/realms/fintech-portal}
       PORTAL_API_OIDC_CLIENT_ID: ${PORTAL_API_OIDC_CLIENT_ID:-fintech-portal}
-      PORTAL_API_OIDC_AUTHORIZATION_ENDPOINT: ${PORTAL_API_OIDC_AUTHORIZATION_ENDPOINT:-http://localhost:8081/realms/fintech-portal/protocol/openid-connect/auth}
-      PORTAL_API_OIDC_TOKEN_ENDPOINT: ${PORTAL_API_OIDC_TOKEN_ENDPOINT:-http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/token}
-      PORTAL_API_OIDC_JWKS_URI: ${PORTAL_API_OIDC_JWKS_URI:-http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/certs}
+      PORTAL_API_OIDC_AUTHORIZATION_ENDPOINT: >-
+        ${PORTAL_API_OIDC_AUTHORIZATION_ENDPOINT:-http://localhost:8081/realms/fintech-portal/protocol/openid-connect/auth}
+      PORTAL_API_OIDC_TOKEN_ENDPOINT: >-
+        ${PORTAL_API_OIDC_TOKEN_ENDPOINT:-http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/token}
+      PORTAL_API_OIDC_JWKS_URI: >-
+        ${PORTAL_API_OIDC_JWKS_URI:-http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/certs}
       PORTAL_API_OIDC_REDIRECT_URI: ${PORTAL_API_OIDC_REDIRECT_URI:-http://localhost:3000/portal-api/v1/auth/callback}
       PORTAL_API_OIDC_SCOPES: ${PORTAL_API_OIDC_SCOPES:-openid profile}
       PORTAL_API_OIDC_ALLOWED_ALGORITHMS: ${PORTAL_API_OIDC_ALLOWED_ALGORITHMS:-RS256}
       PORTAL_API_OIDC_GROUP_CLAIM_PATH: ${PORTAL_API_OIDC_GROUP_CLAIM_PATH:-groups}
-      PORTAL_API_OIDC_ALLOWED_ROLES: ${PORTAL_API_OIDC_ALLOWED_ROLES:-portal_viewer,data_engineer_viewer,platform_operator_viewer,security_auditor_viewer,portal_admin_viewer}
+      PORTAL_API_OIDC_ALLOWED_ROLES: >-
+        ${PORTAL_API_OIDC_ALLOWED_ROLES:-portal_viewer,data_engineer_viewer,platform_operator_viewer,security_auditor_viewer,portal_admin_viewer}
       PORTAL_API_ALLOWED_RETURN_PATHS: ${PORTAL_API_ALLOWED_RETURN_PATHS:-/,/system-status}
       PORTAL_API_ALLOWED_ENVIRONMENT_IDS: ${PORTAL_API_ALLOWED_ENVIRONMENT_IDS:-local,development}
       PORTAL_API_PORTAL_TENANT_ID: ${PORTAL_API_PORTAL_TENANT_ID:-fintech-platform-primary}
@@ -217,12 +254,14 @@ services:
         PORTAL_BUILD_SHA: ${NEXT_PUBLIC_PORTAL_BUILD_SHA:-local}
         PORTAL_ENV: ${NEXT_PUBLIC_PORTAL_ENV:-local}
         PORTAL_API_INTERNAL_URL: http://portal-api:8010
+        PORTAL_IDP_PUBLIC_URL: ${PORTAL_IDP_PUBLIC_URL:-http://localhost:8081}
     restart: unless-stopped
     depends_on:
       portal-api:
         condition: service_healthy
     environment:
       PORTAL_API_INTERNAL_URL: http://portal-api:8010
+      PORTAL_PUBLIC_ORIGIN: ${PORTAL_PUBLIC_ORIGIN:-http://localhost:3000}
     ports:
       - "127.0.0.1:${PORTAL_WEB_PORT:-3000}:3000"
     healthcheck:

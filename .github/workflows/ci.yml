@@ -47,7 +47,15 @@ jobs:
           python -m pip install -e "./apps/portal-api[dev]"
           pnpm install --frozen-lockfile
 
+      - name: Start disposable Portal control database
+        run: docker compose --env-file .env.example up -d --wait portal-postgres
+
       - name: Validate Portal API
+        env:
+          PORTAL_TEST_MIGRATION_DATABASE_URL: >-
+            postgresql+psycopg://portal_migration:change_me@127.0.0.1:55432/portal_control
+          PORTAL_TEST_RUNTIME_DATABASE_URL: >-
+            postgresql+psycopg://portal_runtime:change_me@127.0.0.1:55432/portal_control
         run: |
           python -m ruff check apps/portal-api
           python -m ruff format --check apps/portal-api
@@ -71,6 +79,10 @@ jobs:
           pnpm --filter @fintech/portal-web typecheck
           pnpm --filter @fintech/portal-web test
           pnpm --filter @fintech/portal-web build
+
+      - name: Stop disposable Portal control database
+        if: always()
+        run: docker compose --env-file .env.example down --remove-orphans
 
   portal-containers:
     name: Portal container security and health
@@ -105,10 +117,10 @@ jobs:
         run: docker compose --env-file .env.example down --remove-orphans
 
   portal-e2e:
-    name: Portal browser smoke test
+    name: Portal browser and local OIDC security tests
     needs: portal-quality
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -138,8 +150,19 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter @fintech/portal-web exec playwright install --with-deps chromium
 
-      - name: Run Portal smoke test
+      - name: Start disposable Portal and identity stack
+        run: docker compose --env-file .env.example up -d --build --wait portal-api portal-web
+
+      - name: Run Portal browser and authentication tests
+        env:
+          PORTAL_E2E_AUTH: "1"
+          PORTAL_E2E_EXTERNAL: "1"
+          PORTAL_WEB_URL: http://localhost:3000
         run: pnpm --filter @fintech/portal-web e2e
+
+      - name: Capture safe local-stack diagnostics
+        if: failure()
+        run: docker compose logs --tail=200 portal-keycloak portal-api portal-web
 
       - name: Upload safe browser diagnostics
         if: failure()
@@ -148,6 +171,10 @@ jobs:
           name: portal-playwright-report
           path: apps/portal-web/playwright-report
           retention-days: 7
+
+      - name: Stop disposable Portal stack
+        if: always()
+        run: docker compose --env-file .env.example down --remove-orphans
 
   quality:
     name: Phase 7 quality gates

@@ -186,13 +186,16 @@ portal-up:
 	docker compose --env-file $(COMPOSE_ENV) up -d --build --wait portal-api portal-web
 
 portal-down:
-	docker compose --env-file $(COMPOSE_ENV) rm --stop --force portal-web portal-api
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force portal-web portal-api portal-keycloak
 
 portal-logs:
-	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f portal-web portal-api
+	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f portal-keycloak portal-web portal-api
 
 portal-e2e:
 	$(PNPM) --filter @fintech/portal-web e2e
+
+portal-e2e-auth: portal-up
+	PORTAL_E2E_EXTERNAL=1 PORTAL_E2E_AUTH=1 PORTAL_WEB_URL=http://localhost:3000 $(PNPM) --filter @fintech/portal-web e2e
 
 postgres-up:
 	docker compose --env-file $(COMPOSE_ENV) up -d --wait postgres
