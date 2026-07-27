@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-SUPPORTED_SCHEMA_VERSION = "002_login_intent_and_initiation"
+SUPPORTED_SCHEMA_VERSION = "003_callback_runtime_privileges"
 
 
 class SchemaCompatibilityError(RuntimeError):

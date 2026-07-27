@@ -69,6 +69,22 @@ class PortalApiSettings(BaseSettings):
     )
     oidc_redirect_uri: str = "http://localhost:3000/portal-api/v1/auth/callback"
     oidc_scopes: str = "openid profile"
+    oidc_allowed_algorithms: str = "RS256"
+    oidc_group_claim_path: str = "groups"
+    oidc_allowed_roles: str = (
+        "portal_viewer,data_engineer_viewer,platform_operator_viewer,"
+        "security_auditor_viewer,portal_admin_viewer"
+    )
+    allowed_environment_ids: str = "local,development"
+    portal_tenant_id: str = "local-development"
+    identity_mapping_revision: str = "local-mapping-v1"
+    callback_policy_revision: str = "local-callback-policy-v1"
+    capability_revision: str = "local-capability-v1"
+    session_security_epoch: int = Field(default=1, gt=0)
+    session_idle_ttl_seconds: int = Field(default=1800, gt=0, le=1800)
+    session_absolute_ttl_seconds: int = Field(default=28800, gt=0, le=28800)
+    identity_freshness_seconds: int = Field(default=900, gt=0, le=900)
+    oidc_http_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     allowed_return_paths: str = "/,/system-status"
     login_intent_ttl_seconds: int = Field(default=300, gt=0, le=300)
     login_transaction_ttl_seconds: int = Field(default=300, gt=0, le=300)
@@ -94,6 +110,18 @@ class PortalApiSettings(BaseSettings):
     @property
     def oidc_scope_values(self) -> tuple[str, ...]:
         return tuple(scope for scope in self.oidc_scopes.split() if scope)
+
+    @property
+    def oidc_allowed_algorithm_values(self) -> tuple[str, ...]:
+        return _csv_values(self.oidc_allowed_algorithms)
+
+    @property
+    def oidc_allowed_role_values(self) -> tuple[str, ...]:
+        return _csv_values(self.oidc_allowed_roles)
+
+    @property
+    def allowed_environment_id_values(self) -> tuple[str, ...]:
+        return _csv_values(self.allowed_environment_ids)
 
     @model_validator(mode="after")
     def validate_safety(self) -> PortalApiSettings:
@@ -149,6 +177,14 @@ class PortalApiSettings(BaseSettings):
             raise ValueError("PORTAL_API_ALLOWED_RETURN_PATHS must contain local absolute paths")
         if "openid" not in self.oidc_scope_values:
             raise ValueError("PORTAL_API_OIDC_SCOPES must include openid")
+        if not self.oidc_allowed_algorithm_values:
+            raise ValueError("PORTAL_API_OIDC_ALLOWED_ALGORITHMS must not be empty")
+        if not self.oidc_allowed_role_values:
+            raise ValueError("PORTAL_API_OIDC_ALLOWED_ROLES must not be empty")
+        if not self.allowed_environment_id_values:
+            raise ValueError("PORTAL_API_ALLOWED_ENVIRONMENT_IDS must not be empty")
+        if self.session_idle_ttl_seconds > self.session_absolute_ttl_seconds:
+            raise ValueError("Portal session idle lifetime cannot exceed absolute lifetime")
         for field_name in (
             "oidc_issuer",
             "oidc_authorization_endpoint",

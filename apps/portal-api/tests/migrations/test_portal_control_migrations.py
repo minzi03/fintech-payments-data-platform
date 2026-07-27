@@ -72,6 +72,7 @@ def test_upgrade_downgrade_and_authoritative_history() -> None:
             assert [record.version for record in records] == [
                 "001_initial_portal_control",
                 "002_login_intent_and_initiation",
+                "003_callback_runtime_privileges",
             ]
             assert all(len(record.checksum) == 64 for record in records)
             assert all(record.application_compat == ">=0.1.0,<1.0.0" for record in records)

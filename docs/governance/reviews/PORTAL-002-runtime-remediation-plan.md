@@ -11,7 +11,7 @@
 |---|---|
 | 1 — Database, persistence, encryption, and audit foundations | COMPLETE |
 | 2 — Login context and login initiation | COMPLETE |
-| 3 — Model C callback orchestration | PENDING |
+| 3 — Model C callback orchestration | COMPLETE |
 | 4 — Failure, replay, and crash recovery | PENDING |
 | 5 — Session lifecycle and authorization enforcement | PENDING |
 | 6 — Contract-driven frontend integration | PENDING |

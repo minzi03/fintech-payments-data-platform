@@ -5,7 +5,18 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
 
-from portal_api.auth.cookies import set_browser_binding_cookie
+from portal_api.auth.callback import (
+    MAX_PROVIDER_ERROR_LENGTH,
+    CallbackCommand,
+    CallbackFailure,
+    CallbackOrchestrator,
+)
+from portal_api.auth.cookies import (
+    browser_binding_cookie,
+    clear_browser_binding_cookie,
+    set_browser_binding_cookie,
+    set_session_cookie,
+)
 from portal_api.auth.http_models import LoginContextView, LoginRequest
 from portal_api.auth.login_intent import LoginInitiationError, LoginInitiationService
 from portal_api.core.correlation import get_correlation_id, get_request_id
@@ -25,6 +36,19 @@ def _login_service(request: Request) -> LoginInitiationService:
             retryable=True,
         )
     return service
+
+
+def _callback_orchestrator(request: Request) -> CallbackOrchestrator:
+    orchestrator = request.app.state.callback_orchestrator
+    if not isinstance(orchestrator, CallbackOrchestrator):
+        raise PortalError(
+            status_code=503,
+            error_code=ErrorCode.SERVICE_NOT_READY,
+            title="Authentication unavailable",
+            detail="The authentication service is not ready.",
+            retryable=True,
+        )
+    return orchestrator
 
 
 @router.get(
@@ -92,3 +116,64 @@ def start_login(request: Request, body: LoginRequest) -> RedirectResponse:
         binding_secret=redirect.browser_binding_secret,
     )
     return response
+
+
+@router.get(
+    "/callback",
+    operation_id="completeLoginCallback",
+    status_code=303,
+    responses={**PROBLEM_RESPONSES, 303: {"description": "Committed session redirect"}},
+)
+async def complete_login_callback(request: Request) -> RedirectResponse:
+    request.state.clear_browser_binding = True
+    try:
+        values = _bounded_callback_values(request)
+        binding_name = browser_binding_cookie(request.app.state.settings).name
+        session = await _callback_orchestrator(request).process(
+            CallbackCommand(
+                state=values["state"],
+                code=values.get("code"),
+                provider_error=values.get("error"),
+                browser_binding=request.cookies.get(binding_name),
+                provider_issuer_hint=values.get("iss"),
+            ),
+            correlation_id=get_correlation_id(),
+            request_id=get_request_id(),
+        )
+    except CallbackFailure as error:
+        raise PortalError(
+            status_code=error.status_code,
+            error_code=ErrorCode.INVALID_REQUEST,
+            title="Authentication callback rejected",
+            detail="The authentication callback could not be accepted.",
+            retryable=error.retryable,
+        ) from error
+
+    response = RedirectResponse(url=session.return_path, status_code=303)
+    set_session_cookie(
+        response,
+        settings=request.app.state.settings,
+        session_secret=session.session_secret,
+        absolute_expires_at=session.absolute_expires_at,
+    )
+    clear_browser_binding_cookie(response, settings=request.app.state.settings)
+    request.state.clear_browser_binding = False
+    return response
+
+
+def _bounded_callback_values(request: Request) -> dict[str, str]:
+    allowed = {"code", "state", "error", "error_description", "iss", "session_state"}
+    grouped: dict[str, list[str]] = {}
+    for key, value in request.query_params.multi_items():
+        if key not in allowed:
+            raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
+        grouped.setdefault(key, []).append(value)
+    if any(len(values) != 1 for values in grouped.values()):
+        raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
+    if "state" not in grouped:
+        raise CallbackFailure("OIDC_STATE_INVALID")
+    if "error_description" in grouped and len(grouped["error_description"][0]) > 512:
+        raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
+    if "error" in grouped and len(grouped["error"][0]) > MAX_PROVIDER_ERROR_LENGTH:
+        raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
+    return {key: values[0] for key, values in grouped.items()}

@@ -3,6 +3,9 @@
 export { type Options, Sdk } from "./sdk.gen";
 export type {
   ClientOptions,
+  CompleteLoginCallbackData,
+  CompleteLoginCallbackError,
+  CompleteLoginCallbackErrors,
   DependencyListResponse,
   DependencyStatus,
   DependencySummary,

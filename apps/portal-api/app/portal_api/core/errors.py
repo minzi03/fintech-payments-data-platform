@@ -104,10 +104,15 @@ def _problem_response(
         retryable=retryable,
         dependency=dependency,
     )
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status,
         content=problem.model_dump(mode="json", exclude_none=True),
     )
+    if getattr(request.state, "clear_browser_binding", False):
+        from portal_api.auth.cookies import clear_browser_binding_cookie
+
+        clear_browser_binding_cookie(response, settings=request.app.state.settings)
+    return response
 
 
 def register_error_handlers(app: FastAPI) -> None:

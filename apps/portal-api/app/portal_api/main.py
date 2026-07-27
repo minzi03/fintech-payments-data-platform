@@ -13,9 +13,15 @@ from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
 from portal_api.api.v1.auth import router as auth_router
 from portal_api.api.v1.system import router as system_router
+from portal_api.auth.callback import CallbackOrchestrator
 from portal_api.auth.login_intent import LoginInitiationService
+from portal_api.auth.oidc_provider import HttpxOidcProvider
+from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
+from portal_api.auth.principal import ConfiguredPrincipalResolver
 from portal_api.auth.protected_value import EphemeralEnvelopeCipher
 from portal_api.auth.security_material import EphemeralSecurityMaterial
+from portal_api.auth.session_store import CallbackSessionStore
+from portal_api.auth.token_validation import PyJwtTokenValidator
 from portal_api.core.config import PortalApiSettings, get_settings
 from portal_api.core.errors import register_error_handlers
 from portal_api.core.logging import configure_logging
@@ -47,16 +53,58 @@ def create_app(
         else None
     )
     resolved_database_engine = database_engine or owned_database_engine
+    security_material = (
+        EphemeralSecurityMaterial.generate() if resolved_settings.security_runtime_enabled else None
+    )
+    protected_value_cipher = (
+        EphemeralEnvelopeCipher() if resolved_settings.security_runtime_enabled else None
+    )
     login_initiation_service = (
         LoginInitiationService(
             engine=resolved_database_engine,
             settings=resolved_settings,
-            security_material=EphemeralSecurityMaterial.generate(),
-            protected_value_cipher=EphemeralEnvelopeCipher(),
+            security_material=security_material,
+            protected_value_cipher=protected_value_cipher,
         )
-        if resolved_settings.security_runtime_enabled and resolved_database_engine is not None
+        if (
+            resolved_settings.security_runtime_enabled
+            and resolved_database_engine is not None
+            and security_material is not None
+            and protected_value_cipher is not None
+        )
         else None
     )
+    callback_orchestrator: CallbackOrchestrator | None = None
+    if (
+        resolved_settings.security_runtime_enabled
+        and resolved_database_engine is not None
+        and security_material is not None
+        and protected_value_cipher is not None
+    ):
+        provider = HttpxOidcProvider(resolved_settings)
+        callback_orchestrator = CallbackOrchestrator(
+            engine=resolved_database_engine,
+            settings=resolved_settings,
+            security_material=security_material,
+            protected_value_cipher=protected_value_cipher,
+            provider=provider,
+            token_validator=PyJwtTokenValidator(
+                settings=resolved_settings,
+                provider=provider,
+                security_material=security_material,
+            ),
+            principal_resolver=ConfiguredPrincipalResolver(
+                engine=resolved_database_engine,
+                settings=resolved_settings,
+            ),
+            policy=LocalDevelopmentCallbackPolicy(resolved_settings),
+            session_store=CallbackSessionStore(
+                engine=resolved_database_engine,
+                settings=resolved_settings,
+                security_material=security_material,
+                protected_value_cipher=protected_value_cipher,
+            ),
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -107,6 +155,9 @@ def create_app(
     )
     app.state.database_engine = resolved_database_engine
     app.state.login_initiation_service = login_initiation_service
+    app.state.callback_orchestrator = callback_orchestrator
+    app.state.security_material = security_material
+    app.state.protected_value_cipher = protected_value_cipher
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(system_router)

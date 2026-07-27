@@ -379,6 +379,35 @@ export type GetReadinessResponses = {
 export type GetReadinessResponse =
   GetReadinessResponses[keyof GetReadinessResponses];
 
+export type CompleteLoginCallbackData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/auth/callback";
+};
+
+export type CompleteLoginCallbackErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type CompleteLoginCallbackError =
+  CompleteLoginCallbackErrors[keyof CompleteLoginCallbackErrors];
+
 export type StartLoginData = {
   body: LoginRequest;
   path?: never;

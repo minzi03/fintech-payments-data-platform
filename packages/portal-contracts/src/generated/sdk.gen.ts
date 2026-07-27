@@ -9,6 +9,8 @@ import type {
 } from "./client";
 import { client } from "./client.gen";
 import type {
+  CompleteLoginCallbackData,
+  CompleteLoginCallbackErrors,
   GetLivenessData,
   GetLivenessErrors,
   GetLivenessResponses,
@@ -107,6 +109,19 @@ export class Sdk extends HeyApiClient {
       GetReadinessErrors,
       ThrowOnError
     >({ url: "/health/ready", ...options });
+  }
+
+  /**
+   * Complete Login Callback
+   */
+  public completeLoginCallback<ThrowOnError extends boolean = false>(
+    options?: Options<CompleteLoginCallbackData, ThrowOnError>,
+  ): RequestResult<unknown, CompleteLoginCallbackErrors, ThrowOnError> {
+    return (options?.client ?? this.client).get<
+      unknown,
+      CompleteLoginCallbackErrors,
+      ThrowOnError
+    >({ url: "/v1/auth/callback", ...options });
   }
 
   /**
