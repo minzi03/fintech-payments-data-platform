@@ -490,3 +490,236 @@ This activity:
 - performed no merge;
 - granted no Milestone 2A authorization;
 - granted no production authorization.
+
+## Follow-up remediation — default issuer authority
+
+### Follow-up status
+
+| Field | Value |
+|---|---|
+| Trigger | Failed independent F-002 targeted re-review |
+| Reviewed target | `59fafc363dcfe9837f933f6c7ac8cea2bf411185` |
+| Remaining criterion at review | Discovery metadata is retrieved and validated against the configured issuer |
+| Follow-up remediation | COMPLETED |
+| Engineering verification | IMPLEMENTATION-VERIFIED |
+| Review readiness | READY FOR TARGETED RE-REVIEW |
+| Finding status | OPEN / NOT REVIEW-VERIFIED |
+| Transient issuer override used | **NO** |
+| Repository state | Local uncommitted changes |
+
+This section appends follow-up evidence. It does not rewrite the historical verification above or
+represent the failed targeted re-review as having passed.
+
+### Failed re-review result
+
+The independent targeted re-review left F-002 `OPEN / NOT REVIEW-VERIFIED` and Workstream B
+`NOT ACCEPTED`.
+
+Ten acceptance criteria were satisfied. The remaining criterion was:
+
+> Discovery metadata is retrieved and validated against the configured issuer.
+
+The re-review found that the frozen `.env.example` contained two
+`PORTAL_IDP_PUBLIC_URL` definitions:
+
+```text
+PORTAL_IDP_PUBLIC_URL=http://portal-idp.localhost:8081
+PORTAL_IDP_PUBLIC_URL=http://localhost:8081
+```
+
+With `PORTAL_IDP_PUBLIC_URL` absent from the shell environment, Compose used the later definition:
+
+```text
+Keycloak KC_HOSTNAME:
+http://localhost:8081
+
+Portal configured issuer:
+http://portal-idp.localhost:8081/realms/fintech-portal
+
+Portal discovery URL:
+http://portal-idp.localhost:8081/realms/fintech-portal/.well-known/openid-configuration
+```
+
+The exact-issuer validator therefore correctly rejected the default integrated provider authority.
+The earlier positive-path evidence had used a transient shell override and did not prove the
+tracked default configuration.
+
+### Root cause and exact change
+
+Root cause: an obsolete duplicate `PORTAL_IDP_PUBLIC_URL=http://localhost:8081` remained later in
+`.env.example` and silently overrode the canonical value.
+
+Remediation: remove only the obsolete duplicate. The tracked configuration now contains exactly
+one definition:
+
+```text
+PORTAL_IDP_PUBLIC_URL=http://portal-idp.localhost:8081
+```
+
+No discovery, JWKS, confidential-client, browser-isolation, F-001, or F-003 implementation was
+changed.
+
+### Follow-up changed-file manifest
+
+- `.env.example`
+- `docs/governance/reviews/PORTAL-002-workstream-b-completion-report-f002.md`
+
+No other tracked file is part of this follow-up remediation.
+
+### Clean-environment procedure
+
+Every default-configuration, stack, discovery, and browser command began with an explicit guard:
+
+```powershell
+if (Test-Path Env:PORTAL_IDP_PUBLIC_URL) {
+    throw 'Transient PORTAL_IDP_PUBLIC_URL override is prohibited'
+}
+```
+
+Observed result:
+
+```text
+PORTAL_IDP_PUBLIC_URL=UNSET
+```
+
+No command set `PORTAL_IDP_PUBLIC_URL` or an equivalent issuer override.
+
+### Default configuration evidence
+
+Final materialization start: `2026-07-27T16:57:22.2218429Z`
+
+```powershell
+docker compose --env-file .env.example config --format json
+docker compose --env-file .env.example ps portal-keycloak portal-api portal-web
+```
+
+Effective values:
+
+```text
+KEYCLOAK_KC_HOSTNAME=http://portal-idp.localhost:8081
+PORTAL_API_OIDC_ISSUER=http://portal-idp.localhost:8081/realms/fintech-portal
+PORTAL_API_OIDC_DISCOVERY_URL=http://portal-idp.localhost:8081/realms/fintech-portal/.well-known/openid-configuration
+```
+
+Result: **PASS**. Keycloak, Portal API, and Portal Web were all healthy.
+
+The initial default-stack recreate command:
+
+```powershell
+docker compose --env-file .env.example up -d --build --force-recreate --wait portal-keycloak portal-api portal-web
+```
+
+exceeded the command runner's 124-second wait and returned exit 124 while Keycloak was still
+starting. Docker continued the already-requested startup. Read-only follow-up inspection showed
+Keycloak import completed successfully and all three services became healthy. The timeout is
+recorded and is not treated as a hidden successful command.
+
+Docker also emitted a local client-config permission warning for
+`C:\Users\miynzi\.docker\config.json`; Compose materialization and runtime operations otherwise
+completed.
+
+### Positive integrated discovery evidence
+
+With `PORTAL_IDP_PUBLIC_URL` unset, discovery was queried from both the host and the running
+`portal-api` container.
+
+Observed provider metadata:
+
+```text
+issuer=http://portal-idp.localhost:8081/realms/fintech-portal
+authorization_endpoint=http://portal-idp.localhost:8081/realms/fintech-portal/protocol/openid-connect/auth
+token_endpoint=http://portal-idp.localhost:8081/realms/fintech-portal/protocol/openid-connect/token
+jwks_uri=http://portal-idp.localhost:8081/realms/fintech-portal/protocol/openid-connect/certs
+```
+
+The Portal API reported `READY`.
+
+Playwright start: `2026-07-27T16:54:50.9237243Z`
+
+```powershell
+$env:PORTAL_E2E_AUTH='1'
+$env:PORTAL_E2E_EXTERNAL='1'
+$env:PORTAL_WEB_URL='http://localhost:3000'
+pnpm --filter @fintech/portal-web run e2e --output=.tmp-playwright-f002
+```
+
+`PORTAL_IDP_PUBLIC_URL` remained unset.
+
+Result: **PASS — 3 passed, 0 failed, 0 skipped**.
+
+- BFF foundation connected.
+- Real confidential-client OIDC login completed.
+- Exact discovery authority led to successful callback/session establishment.
+- Only an opaque HttpOnly Portal session entered the browser.
+- Callback replay and a mutation without CSRF failed closed.
+
+The bounded Playwright output directory was removed after execution.
+
+### Negative and regression verification
+
+Backend verification start: `2026-07-27T16:55:31.7661677Z`
+
+```text
+python -m pytest apps/portal-api/tests/unit/test_config.py apps/portal-api/tests/unit/test_token_validation.py apps/portal-api/tests/integration/test_oidc_provider_lifecycle.py apps/portal-api/tests/integration/test_login_initiation.py apps/portal-api/tests/integration/test_callback_orchestration.py -q -p no:cacheprovider
+```
+
+Result: **PASS — 56 passed, 0 failed, 0 skipped, 0 deselected**.
+
+This preserves evidence for:
+
+- issuer substitution rejection;
+- cross-origin endpoint rejection;
+- unsupported and invalid confidential-client authentication;
+- unknown-`kid` forced refresh and fail-closed resolution;
+- stale-cache expiry;
+- callback replay and CSRF protection;
+- F-001 race/revocation behavior;
+- F-003 restart, transition-window, and unavailable-key behavior.
+
+One existing Starlette `TestClient` deprecation warning remained.
+
+Backend static verification:
+
+```text
+2026-07-27T16:55:47.0739882Z
+Ruff lint: PASS
+Ruff format check: PASS — 77 files already formatted
+
+2026-07-27T16:55:52.9143512Z
+mypy: PASS — no issues in 57 source files
+```
+
+The bounded mypy cache was removed after execution.
+
+Frontend verification:
+
+```text
+2026-07-27T16:56:28.2816926Z  ESLint: PASS
+2026-07-27T16:56:44.1278515Z  TypeScript: PASS
+2026-07-27T16:56:53.7693707Z  Vitest: PASS — 11 files / 25 tests
+2026-07-27T16:57:04.2827427Z  Prettier: PASS
+```
+
+### Remaining gaps and follow-up decision
+
+No known F-002 implementation or evidence gap remains after this follow-up.
+
+The original finding remains `OPEN / NOT REVIEW-VERIFIED` pending a new immutable target,
+attestation, and independent F-002-only re-review.
+
+Follow-up completion decision:
+
+```text
+COMPLETED
+
+F-002:
+IMPLEMENTED
+IMPLEMENTATION-VERIFIED
+READY FOR TARGETED RE-REVIEW
+OPEN
+NOT REVIEW-VERIFIED
+```
+
+Next authorized step:
+
+**Review Target Freeze — Workstream B Evidence Update**
