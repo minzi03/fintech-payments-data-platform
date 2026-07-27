@@ -28,6 +28,7 @@ from portal_api.auth.dependencies import (
 )
 from portal_api.auth.http_models import LoginContextView, LoginRequest
 from portal_api.auth.login_intent import LoginInitiationError, LoginInitiationService
+from portal_api.auth.ports import ProviderExchangeFailure
 from portal_api.auth.session import AuthenticatedSession
 from portal_api.auth.session_models import LogoutResult
 from portal_api.core.correlation import get_correlation_id, get_request_id
@@ -100,9 +101,9 @@ def login_context(
     status_code=303,
     responses={**PROBLEM_RESPONSES, 303: {"description": "Redirect to the configured provider"}},
 )
-def start_login(request: Request, body: LoginRequest) -> RedirectResponse:
+async def start_login(request: Request, body: LoginRequest) -> RedirectResponse:
     try:
-        redirect = _login_service(request).start_login(
+        redirect = await _login_service(request).start_login(
             intent_token=body.intent_token,
             requested_return_path=body.return_to,
             extra_fields=frozenset((body.model_extra or {}).keys()),
@@ -111,6 +112,14 @@ def start_login(request: Request, body: LoginRequest) -> RedirectResponse:
             correlation_id=get_correlation_id(),
             request_id=get_request_id(),
         )
+    except ProviderExchangeFailure as error:
+        raise PortalError(
+            status_code=503,
+            error_code=ErrorCode.SERVICE_NOT_READY,
+            title="Authentication unavailable",
+            detail="The configured identity provider is unavailable.",
+            retryable=True,
+        ) from error
     except LoginInitiationError as error:
         raise PortalError(
             status_code=403 if error.origin_failure else 400,

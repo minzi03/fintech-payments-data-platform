@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Iterator
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -11,7 +13,9 @@ from fastapi.testclient import TestClient
 from portal_api.audit.ledger import AuditLedger
 from portal_api.audit.models import AuditEvent
 from portal_api.auth.login_intent import LoginInitiationService
+from portal_api.auth.ports import ProviderTokenSet
 from portal_api.auth.protected_value import EphemeralEnvelopeCipher
+from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.auth.security_material import EphemeralSecurityMaterial
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
 from portal_api.main import create_app
@@ -51,14 +55,45 @@ def _secured_settings(runtime_url: str) -> PortalApiSettings:
         trusted_hosts="testserver,portal.test",
         security_runtime_enabled=True,
         database_url=runtime_url,
-        oidc_authorization_endpoint="http://identity.test/authorize",
+        oidc_issuer="http://identity.test/realms/portal",
+        oidc_client_secret="test-client-secret",
         oidc_redirect_uri="http://portal.test/portal-api/v1/auth/callback",
     )
 
 
+class StaticOidcProvider:
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
+        del force_refresh
+        return OidcProviderConfig(
+            provider_id="local-keycloak",
+            issuer="http://identity.test/realms/portal",
+            client_id="fintech-portal",
+            authorization_endpoint="http://identity.test/authorize",
+            token_endpoint="http://identity.test/token",
+            jwks_uri="http://identity.test/jwks",
+            redirect_uri="http://portal.test/portal-api/v1/auth/callback",
+            scopes=("openid", "profile"),
+        )
+
+    async def exchange_code(
+        self,
+        *,
+        code: str,
+        verifier: str,
+        redirect_uri: str,
+    ) -> ProviderTokenSet:
+        raise AssertionError("Token exchange is outside login-initiation tests")
+
+    async def get_jwks(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        raise AssertionError("JWKS is outside login-initiation tests")
+
+
 def _secured_client(runtime_url: str) -> TestClient:
     return TestClient(
-        create_app(settings=_secured_settings(runtime_url)),
+        create_app(
+            settings=_secured_settings(runtime_url),
+            oidc_provider=StaticOidcProvider(),
+        ),
         follow_redirects=False,
     )
 
@@ -199,6 +234,7 @@ def test_audit_failure_rolls_back_intent_consumption_and_transaction_creation(
         settings=settings,
         security_material=material,
         protected_value_cipher=cipher,
+        provider=StaticOidcProvider(),
     )
     context = context_service.create_context(
         requested_return_path=None,
@@ -210,19 +246,22 @@ def test_audit_failure_rolls_back_intent_consumption_and_transaction_creation(
         settings=settings,
         security_material=material,
         protected_value_cipher=cipher,
+        provider=StaticOidcProvider(),
         audit_ledger=FailingValidatedAuditLedger(),
     )
 
     try:
         with pytest.raises(RuntimeError, match="injected audit failure"):
-            failing_service.start_login(
-                intent_token=context.intent_token,
-                requested_return_path=None,
-                extra_fields=frozenset(),
-                origin="http://portal.test",
-                referer=None,
-                correlation_id="atomic-start",
-                request_id="atomic-start-request",
+            asyncio.run(
+                failing_service.start_login(
+                    intent_token=context.intent_token,
+                    requested_return_path=None,
+                    extra_fields=frozenset(),
+                    origin="http://portal.test",
+                    referer=None,
+                    correlation_id="atomic-start",
+                    request_id="atomic-start-request",
+                )
             )
     finally:
         runtime_engine.dispose()

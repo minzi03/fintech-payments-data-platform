@@ -8,6 +8,8 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
+from portal_api.auth.provider_config import OidcProviderConfig
+
 
 class ProviderFailureKind(StrEnum):
     PRE_DISPATCH = "PRE_DISPATCH"
@@ -31,6 +33,8 @@ class ProviderTokenSet:
 
 
 class OidcProviderPort(Protocol):
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig: ...
+
     async def exchange_code(
         self,
         *,

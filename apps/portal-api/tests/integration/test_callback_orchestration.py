@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from portal_api.audit.ledger import AuditLedger
 from portal_api.audit.models import AuditEvent, AuditEventType
 from portal_api.auth.callback import CallbackOrchestrator
+from portal_api.auth.login_intent import LoginInitiationService
 from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
 from portal_api.auth.ports import (
     CallbackPolicyDecision,
@@ -27,6 +28,7 @@ from portal_api.auth.ports import (
     ValidatedIdentity,
 )
 from portal_api.auth.principal import ConfiguredPrincipalResolver
+from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.auth.recovery import CallbackRecovery
 from portal_api.auth.security_material import EphemeralSecurityMaterial
 from portal_api.auth.session import SessionAuthenticationError, SessionService
@@ -93,9 +95,7 @@ def _settings(
         security_key_transition_started_at=transition_started_at,
         security_key_transition_expires_at=transition_expires_at,
         oidc_issuer="http://identity.test/realms/portal",
-        oidc_authorization_endpoint="http://identity.test/authorize",
-        oidc_token_endpoint="http://identity.test/token",
-        oidc_jwks_uri="http://identity.test/jwks",
+        oidc_client_secret="test-client-secret",
         oidc_redirect_uri="http://portal.test/portal-api/v1/auth/callback",
     )
 
@@ -104,6 +104,19 @@ class TransactionBoundaryProvider:
     def __init__(self, inspection_engine: Engine) -> None:
         self._inspection_engine = inspection_engine
         self.calls = 0
+
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
+        del force_refresh
+        return OidcProviderConfig(
+            provider_id="local-keycloak",
+            issuer="http://identity.test/realms/portal",
+            client_id="fintech-portal",
+            authorization_endpoint="http://identity.test/authorize",
+            token_endpoint="http://identity.test/token",
+            jwks_uri="http://identity.test/jwks",
+            redirect_uri="http://portal.test/portal-api/v1/auth/callback",
+            scopes=("openid", "profile"),
+        )
 
     async def exchange_code(
         self,
@@ -216,6 +229,13 @@ def _replace_orchestrator(
     assert cipher is not None
     selected_provider = provider or TransactionBoundaryProvider(inspection_engine)
     selected_policy = policy or LocalDevelopmentCallbackPolicy(settings)
+    app.state.login_initiation_service = LoginInitiationService(
+        engine=runtime_engine,
+        settings=settings,
+        security_material=material,
+        protected_value_cipher=cipher,
+        provider=selected_provider,
+    )
     app.state.callback_orchestrator = CallbackOrchestrator(
         engine=runtime_engine,
         settings=settings,
@@ -712,6 +732,11 @@ def test_expired_ambiguous_claim_is_conservatively_consumed(
     migration_engine, runtime_url = callback_database
     settings = _settings(runtime_url)
     app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
     with TestClient(app, follow_redirects=False) as client:
         _begin_login(client)
     with migration_engine.begin() as connection:

@@ -79,17 +79,10 @@ class PortalApiSettings(BaseSettings):
     security_key_transition_started_at: datetime | None = None
     security_key_transition_expires_at: datetime | None = None
     oidc_provider_id: str = "local-keycloak"
-    oidc_issuer: str = "http://localhost:8081/realms/fintech-portal"
+    oidc_issuer: str = "http://portal-idp.localhost:8081/realms/fintech-portal"
+    oidc_discovery_url: str | None = None
     oidc_client_id: str = "fintech-portal"
-    oidc_authorization_endpoint: str = (
-        "http://localhost:8081/realms/fintech-portal/protocol/openid-connect/auth"
-    )
-    oidc_token_endpoint: str = (
-        "http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/token"
-    )
-    oidc_jwks_uri: str = (
-        "http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/certs"
-    )
+    oidc_client_secret: SecretStr | None = None
     oidc_redirect_uri: str = "http://localhost:3000/portal-api/v1/auth/callback"
     oidc_scopes: str = "openid profile"
     oidc_allowed_algorithms: str = "RS256"
@@ -110,6 +103,8 @@ class PortalApiSettings(BaseSettings):
     session_activity_write_interval_seconds: int = Field(default=60, gt=0, le=60)
     maximum_active_sessions: int = Field(default=5, gt=0, le=5)
     oidc_http_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    oidc_cache_ttl_seconds: int = Field(default=900, ge=900, le=900)
+    oidc_stale_ceiling_seconds: int = Field(default=3600, ge=3600, le=3600)
     allowed_return_paths: str = "/,/system-status"
     login_intent_ttl_seconds: int = Field(default=300, gt=0, le=300)
     login_transaction_ttl_seconds: int = Field(default=300, gt=0, le=300)
@@ -135,6 +130,12 @@ class PortalApiSettings(BaseSettings):
     @property
     def oidc_scope_values(self) -> tuple[str, ...]:
         return tuple(scope for scope in self.oidc_scopes.split() if scope)
+
+    @property
+    def oidc_discovery_url_value(self) -> str:
+        return self.oidc_discovery_url or (
+            f"{self.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+        )
 
     @property
     def oidc_allowed_algorithm_values(self) -> tuple[str, ...]:
@@ -287,23 +288,25 @@ class PortalApiSettings(BaseSettings):
             raise ValueError("PORTAL_API_ALLOWED_ENVIRONMENT_IDS must not be empty")
         if self.session_idle_ttl_seconds > self.session_absolute_ttl_seconds:
             raise ValueError("Portal session idle lifetime cannot exceed absolute lifetime")
+        if self.oidc_client_secret is None or not self.oidc_client_secret.get_secret_value():
+            raise ValueError(
+                "PORTAL_API_OIDC_CLIENT_SECRET is required for confidential-client authentication"
+            )
         for field_name in (
             "oidc_issuer",
-            "oidc_authorization_endpoint",
-            "oidc_token_endpoint",
-            "oidc_jwks_uri",
             "oidc_redirect_uri",
         ):
             value = getattr(self, field_name)
             parsed = urlsplit(value)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ValueError(f"PORTAL_API_{field_name.upper()} must be an absolute HTTP(S) URL")
+        discovery = urlsplit(self.oidc_discovery_url_value)
+        if discovery.scheme not in {"http", "https"} or not discovery.netloc:
+            raise ValueError("PORTAL_API_OIDC_DISCOVERY_URL must be an absolute HTTP(S) URL")
         if self.environment not in {PortalEnvironment.LOCAL, PortalEnvironment.TEST}:
             external_urls = (
                 self.oidc_issuer,
-                self.oidc_authorization_endpoint,
-                self.oidc_token_endpoint,
-                self.oidc_jwks_uri,
+                self.oidc_discovery_url_value,
                 self.oidc_redirect_uri,
             )
             if any(value.startswith("http://") for value in external_urls):

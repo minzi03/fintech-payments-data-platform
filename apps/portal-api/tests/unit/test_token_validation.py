@@ -10,6 +10,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from portal_api.auth.ports import ProviderTokenSet
+from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
 from portal_api.auth.token_validation import PyJwtTokenValidator, TokenValidationError
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
@@ -19,6 +20,10 @@ class JwksOnlyProvider:
     def __init__(self, jwk: dict[str, Any]) -> None:
         self.jwk = jwk
         self.refreshes: list[bool] = []
+
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
+        del force_refresh
+        raise AssertionError("Discovery is not used by validation tests")
 
     async def exchange_code(
         self,

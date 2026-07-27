@@ -21,6 +21,7 @@ from portal_api.auth.callback import CallbackOrchestrator
 from portal_api.auth.login_intent import LoginInitiationService
 from portal_api.auth.oidc_provider import HttpxOidcProvider
 from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
+from portal_api.auth.ports import OidcProviderPort
 from portal_api.auth.principal import ConfiguredPrincipalResolver
 from portal_api.auth.protected_value import (
     AesGcmEnvelopeCipher,
@@ -113,6 +114,7 @@ def create_app(
     adapter_registry: AdapterRegistry | None = None,
     telemetry: TelemetryRecorder | None = None,
     database_engine: Engine | None = None,
+    oidc_provider: OidcProviderPort | None = None,
 ) -> FastAPI:
     """Create an isolated Portal API without import-time infrastructure calls."""
     resolved_settings = settings or get_settings()
@@ -126,18 +128,23 @@ def create_app(
     )
     resolved_database_engine = database_engine or owned_database_engine
     security_material, protected_value_cipher = _security_components(resolved_settings)
+    provider: OidcProviderPort | None = None
+    if resolved_settings.security_runtime_enabled:
+        provider = oidc_provider or HttpxOidcProvider(resolved_settings)
     login_initiation_service = (
         LoginInitiationService(
             engine=resolved_database_engine,
             settings=resolved_settings,
             security_material=security_material,
             protected_value_cipher=protected_value_cipher,
+            provider=provider,
         )
         if (
             resolved_settings.security_runtime_enabled
             and resolved_database_engine is not None
             and security_material is not None
             and protected_value_cipher is not None
+            and provider is not None
         )
         else None
     )
@@ -151,7 +158,8 @@ def create_app(
         and security_material is not None
         and protected_value_cipher is not None
     ):
-        provider = HttpxOidcProvider(resolved_settings)
+        if provider is None:
+            raise RuntimeError("OIDC provider authority is not configured")
         callback_orchestrator = CallbackOrchestrator(
             engine=resolved_database_engine,
             settings=resolved_settings,
@@ -237,6 +245,7 @@ def create_app(
         telemetry=resolved_telemetry,
     )
     app.state.database_engine = resolved_database_engine
+    app.state.oidc_provider = provider
     app.state.login_initiation_service = login_initiation_service
     app.state.callback_orchestrator = callback_orchestrator
     app.state.callback_recovery = callback_recovery

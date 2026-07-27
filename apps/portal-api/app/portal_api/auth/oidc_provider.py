@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -18,11 +22,71 @@ from portal_api.core.config import PortalApiSettings
 MAX_PROVIDER_RESPONSE_BYTES = 64 * 1024
 
 
+@dataclass(frozen=True)
+class _CachedDiscovery:
+    provider: OidcProviderConfig
+    cached_at: float
+
+
+@dataclass(frozen=True)
+class _CachedJwks:
+    payload: dict[str, Any]
+    jwks_uri: str
+    cached_at: float
+
+
 class HttpxOidcProvider(OidcProviderPort):
-    def __init__(self, settings: PortalApiSettings) -> None:
-        self._provider = OidcProviderConfig.from_settings(settings)
+    def __init__(
+        self,
+        settings: PortalApiSettings,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        if settings.oidc_client_secret is None:
+            raise RuntimeError("Validated OIDC client credentials are unavailable")
+        self._settings = settings
+        self._client_secret = settings.oidc_client_secret.get_secret_value()
         self._timeout = httpx.Timeout(settings.oidc_http_timeout_seconds)
-        self._cached_jwks: dict[str, Any] | None = None
+        self._transport = transport
+        self._clock = clock
+        self._discovery_cache: _CachedDiscovery | None = None
+        self._jwks_cache: _CachedJwks | None = None
+        self._discovery_lock = asyncio.Lock()
+        self._jwks_lock = asyncio.Lock()
+
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
+        cached = self._discovery_cache
+        now = self._clock()
+        if cached is not None and not force_refresh and self._is_fresh(cached.cached_at, now):
+            return cached.provider
+
+        async with self._discovery_lock:
+            cached = self._discovery_cache
+            now = self._clock()
+            if cached is not None and not force_refresh and self._is_fresh(cached.cached_at, now):
+                return cached.provider
+            try:
+                payload = await self._get_json(self._settings.oidc_discovery_url_value)
+                provider = OidcProviderConfig.from_discovery(self._settings, payload)
+            except ProviderExchangeFailure as error:
+                if (
+                    not force_refresh
+                    and error.kind is ProviderFailureKind.AMBIGUOUS
+                    and cached is not None
+                    and self._is_within_stale_ceiling(cached.cached_at, now)
+                ):
+                    return cached.provider
+                raise
+            except ValueError as error:
+                raise ProviderExchangeFailure(
+                    ProviderFailureKind.AUTHORITATIVE_REJECTION
+                ) from error
+
+            if cached is not None and cached.provider.jwks_uri != provider.jwks_uri:
+                self._jwks_cache = None
+            self._discovery_cache = _CachedDiscovery(provider=provider, cached_at=now)
+            return provider
 
     async def exchange_code(
         self,
@@ -31,19 +95,20 @@ class HttpxOidcProvider(OidcProviderPort):
         verifier: str,
         redirect_uri: str,
     ) -> ProviderTokenSet:
-        if redirect_uri != self._provider.redirect_uri:
+        provider = await self.get_config()
+        if redirect_uri != provider.redirect_uri:
             raise ProviderExchangeFailure(ProviderFailureKind.PRE_DISPATCH)
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with self._client() as client:
                 response = await client.post(
-                    self._provider.token_endpoint,
+                    provider.token_endpoint,
                     data={
                         "grant_type": "authorization_code",
                         "code": code,
-                        "client_id": self._provider.client_id,
-                        "redirect_uri": self._provider.redirect_uri,
+                        "redirect_uri": provider.redirect_uri,
                         "code_verifier": verifier,
                     },
+                    auth=httpx.BasicAuth(provider.client_id, self._client_secret),
                     headers={"Accept": "application/json"},
                 )
         except (httpx.InvalidURL, httpx.UnsupportedProtocol) as error:
@@ -84,20 +149,77 @@ class HttpxOidcProvider(OidcProviderPort):
         )
 
     async def get_jwks(self, *, force_refresh: bool = False) -> dict[str, Any]:
-        if self._cached_jwks is not None and not force_refresh:
-            return self._cached_jwks
+        provider = await self.get_config()
+        cached = self._jwks_cache
+        now = self._clock()
+        if (
+            cached is not None
+            and cached.jwks_uri == provider.jwks_uri
+            and not force_refresh
+            and self._is_fresh(cached.cached_at, now)
+        ):
+            return cached.payload
+
+        async with self._jwks_lock:
+            cached = self._jwks_cache
+            now = self._clock()
+            if (
+                cached is not None
+                and cached.jwks_uri == provider.jwks_uri
+                and not force_refresh
+                and self._is_fresh(cached.cached_at, now)
+            ):
+                return cached.payload
+            try:
+                payload = await self._get_json(provider.jwks_uri)
+                if not isinstance(payload.get("keys"), list):
+                    raise ProviderExchangeFailure(ProviderFailureKind.AUTHORITATIVE_REJECTION)
+            except ProviderExchangeFailure as error:
+                if (
+                    not force_refresh
+                    and error.kind is ProviderFailureKind.AMBIGUOUS
+                    and cached is not None
+                    and cached.jwks_uri == provider.jwks_uri
+                    and self._is_within_stale_ceiling(cached.cached_at, now)
+                ):
+                    return cached.payload
+                raise
+            self._jwks_cache = _CachedJwks(
+                payload=payload,
+                jwks_uri=provider.jwks_uri,
+                cached_at=now,
+            )
+            return payload
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=self._timeout,
+            transport=self._transport,
+            follow_redirects=False,
+        )
+
+    async def _get_json(self, url: str) -> dict[str, Any]:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(
-                    self._provider.jwks_uri,
-                    headers={"Accept": "application/json"},
-                )
+            async with self._client() as client:
+                response = await client.get(url, headers={"Accept": "application/json"})
+        except (httpx.InvalidURL, httpx.UnsupportedProtocol) as error:
+            raise ProviderExchangeFailure(ProviderFailureKind.PRE_DISPATCH) from error
         except httpx.RequestError as error:
             raise ProviderExchangeFailure(ProviderFailureKind.AMBIGUOUS) from error
+        if response.status_code >= 500:
+            raise ProviderExchangeFailure(ProviderFailureKind.AMBIGUOUS)
         if response.status_code != 200 or len(response.content) > MAX_PROVIDER_RESPONSE_BYTES:
             raise ProviderExchangeFailure(ProviderFailureKind.AUTHORITATIVE_REJECTION)
-        payload = response.json()
-        if not isinstance(payload, dict) or not isinstance(payload.get("keys"), list):
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise ProviderExchangeFailure(ProviderFailureKind.AUTHORITATIVE_REJECTION) from error
+        if not isinstance(payload, dict):
             raise ProviderExchangeFailure(ProviderFailureKind.AUTHORITATIVE_REJECTION)
-        self._cached_jwks = payload
         return payload
+
+    def _is_fresh(self, cached_at: float, now: float) -> bool:
+        return now - cached_at < self._settings.oidc_cache_ttl_seconds
+
+    def _is_within_stale_ceiling(self, cached_at: float, now: float) -> bool:
+        return now - cached_at <= self._settings.oidc_stale_ceiling_seconds

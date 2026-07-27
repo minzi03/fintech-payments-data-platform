@@ -95,14 +95,13 @@ def test_security_runtime_is_bounded_to_local_and_development() -> None:
         database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
         security_master_key=TEST_SECURITY_MASTER_KEY,
         oidc_issuer="https://identity.dev.example/realms/portal",
-        oidc_authorization_endpoint="https://identity.dev.example/authorize",
-        oidc_token_endpoint="https://identity.dev.example/token",
-        oidc_jwks_uri="https://identity.dev.example/jwks",
+        oidc_client_secret="test-client-secret",
         oidc_redirect_uri="https://portal.dev.example/portal-api/v1/auth/callback",
     )
     assert settings.security_runtime_enabled
     assert settings.security_master_key_bytes == bytes(range(32))
-    assert "secret" not in repr(settings)
+    assert "portal_runtime:secret" not in repr(settings)
+    assert "test-client-secret" not in repr(settings)
 
     with pytest.raises(ValidationError, match="authorized only for local/development"):
         PortalApiSettings(
@@ -119,9 +118,7 @@ def test_restart_safe_security_runtime_requires_valid_master_key() -> None:
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
             oidc_issuer="https://identity.dev.example/realms/portal",
-            oidc_authorization_endpoint="https://identity.dev.example/authorize",
-            oidc_token_endpoint="https://identity.dev.example/token",
-            oidc_jwks_uri="https://identity.dev.example/jwks",
+            oidc_client_secret="test-client-secret",
             oidc_redirect_uri="https://portal.dev.example/portal-api/v1/auth/callback",
         )
 
@@ -130,6 +127,7 @@ def test_restart_safe_security_runtime_requires_valid_master_key() -> None:
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
             security_master_key="dG9vLXNob3J0",
+            oidc_client_secret="test-client-secret",
         )
 
 
@@ -141,6 +139,7 @@ def test_security_key_transition_is_complete_explicit_and_bounded() -> None:
         security_runtime_enabled=True,
         database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
         security_master_key=TEST_SECURITY_MASTER_KEY,
+        oidc_client_secret="test-client-secret",
         security_key_version="local-v2",
         security_previous_master_key=TEST_PREVIOUS_SECURITY_MASTER_KEY,
         security_previous_key_version="local-v1",
@@ -158,6 +157,7 @@ def test_security_key_transition_is_complete_explicit_and_bounded() -> None:
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
             security_master_key=TEST_SECURITY_MASTER_KEY,
+            oidc_client_secret="test-client-secret",
             security_key_version="local-v2",
             security_previous_key_version="local-v1",
         )
@@ -168,6 +168,7 @@ def test_security_key_transition_is_complete_explicit_and_bounded() -> None:
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
             security_master_key=TEST_SECURITY_MASTER_KEY,
+            oidc_client_secret="test-client-secret",
             security_key_version="local-v2",
             security_previous_master_key=TEST_PREVIOUS_SECURITY_MASTER_KEY,
             security_previous_key_version="local-v1",
@@ -190,3 +191,28 @@ def test_security_runtime_rejects_unsafe_oidc_configuration() -> None:
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
             allowed_return_paths="https://attacker.example",
         )
+
+    with pytest.raises(ValidationError, match="OIDC_CLIENT_SECRET is required"):
+        PortalApiSettings(
+            environment=PortalEnvironment.TEST,
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        )
+
+
+def test_oidc_discovery_and_cache_policy_are_frozen() -> None:
+    settings = PortalApiSettings(
+        oidc_issuer="https://identity.example/realms/portal",
+        oidc_client_secret="test-client-secret",
+    )
+
+    assert settings.oidc_discovery_url_value == (
+        "https://identity.example/realms/portal/.well-known/openid-configuration"
+    )
+    assert settings.oidc_cache_ttl_seconds == 900
+    assert settings.oidc_stale_ceiling_seconds == 3600
+
+    with pytest.raises(ValidationError):
+        PortalApiSettings(oidc_cache_ttl_seconds=901)
+    with pytest.raises(ValidationError):
+        PortalApiSettings(oidc_stale_ceiling_seconds=3599)

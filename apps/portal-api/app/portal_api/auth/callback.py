@@ -24,7 +24,6 @@ from portal_api.auth.ports import (
     TokenValidatorPort,
 )
 from portal_api.auth.protected_value import ProtectedValue, ProtectedValueCipher
-from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
 from portal_api.auth.session_store import (
     CallbackSession,
@@ -99,7 +98,6 @@ class CallbackOrchestrator:
         self._policy = policy
         self._session_store = session_store
         self._audit = audit_ledger or AuditLedger()
-        self._provider_config = OidcProviderConfig.from_settings(settings)
 
     async def process(
         self,
@@ -238,7 +236,7 @@ class CallbackOrchestrator:
             raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
         if (
             command.provider_issuer_hint is not None
-            and command.provider_issuer_hint != self._provider_config.issuer
+            and command.provider_issuer_hint != self._settings.oidc_issuer
         ):
             raise CallbackFailure("OIDC_PROVIDER_RESPONSE_INVALID")
 
@@ -315,8 +313,8 @@ class CallbackOrchestrator:
                             version=transaction["version"],
                         )
                     elif (
-                        transaction["provider_id"] != self._provider_config.provider_id
-                        or transaction["redirect_uri"] != self._provider_config.redirect_uri
+                        transaction["provider_id"] != self._settings.oidc_provider_id
+                        or transaction["redirect_uri"] != self._settings.oidc_redirect_uri
                     ):
                         failure = "OIDC_PROVIDER_BINDING_INVALID"
                         self._terminal_update(

@@ -38,6 +38,7 @@ from portal_api.auth.policy import LocalDevelopmentCallbackPolicy  # noqa: E402
 from portal_api.auth.ports import ProviderTokenSet, ValidatedIdentity  # noqa: E402
 from portal_api.auth.principal import ConfiguredPrincipalResolver  # noqa: E402
 from portal_api.auth.protected_value import ProtectedValue  # noqa: E402
+from portal_api.auth.provider_config import OidcProviderConfig  # noqa: E402
 from portal_api.auth.security_material import EphemeralSecurityMaterial  # noqa: E402
 from portal_api.auth.session_store import CallbackSessionStore  # noqa: E402
 from portal_api.core.config import PortalApiSettings, PortalEnvironment  # noqa: E402
@@ -106,6 +107,19 @@ class EvidenceRecorder:
 
 
 class EvidenceProvider:
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
+        del force_refresh
+        return OidcProviderConfig(
+            provider_id="local-keycloak",
+            issuer="http://identity.test/realms/portal",
+            client_id="fintech-portal",
+            authorization_endpoint="http://identity.test/authorize",
+            token_endpoint="http://identity.test/token",
+            jwks_uri="http://identity.test/jwks",
+            redirect_uri="http://portal.test/portal-api/v1/auth/callback",
+            scopes=("openid", "profile"),
+        )
+
     async def exchange_code(
         self,
         *,
@@ -197,9 +211,7 @@ def settings_for(
         security_key_transition_expires_at=transition_expires_at,
         session_security_epoch=session_security_epoch,
         oidc_issuer="http://identity.test/realms/portal",
-        oidc_authorization_endpoint="http://identity.test/authorize",
-        oidc_token_endpoint="http://identity.test/token",
-        oidc_jwks_uri="http://identity.test/jwks",
+        oidc_client_secret="test-client-secret",
         oidc_redirect_uri="http://portal.test/portal-api/v1/auth/callback",
     )
 
@@ -447,7 +459,7 @@ def run_drill(output_directory: Path) -> dict[str, Any]:
         current_key_version=SOURCE_KEY_VERSION,
         session_security_epoch=1,
     )
-    source_app = create_app(settings=source_settings)
+    source_app = create_app(settings=source_settings, oidc_provider=EvidenceProvider())
     attach_controlled_callback(source_app, source_settings)
     with TestClient(source_app, follow_redirects=False) as source_client:
         authenticated = complete_login(source_client)
@@ -602,7 +614,7 @@ def run_drill(output_directory: Path) -> dict[str, Any]:
         transition_expires_at=transition_expires_at,
         session_security_epoch=2,
     )
-    restored_app = create_app(settings=restored_settings)
+    restored_app = create_app(settings=restored_settings, oidc_provider=EvidenceProvider())
     attach_controlled_callback(restored_app, restored_settings)
     with TestClient(restored_app, follow_redirects=False) as restored_client:
         restored_client.cookies.set("fintech_portal_session_v1", session_secret)

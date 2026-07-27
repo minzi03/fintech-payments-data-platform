@@ -18,6 +18,7 @@ from portal_api.auth.login_transaction import (
     PendingLoginTransaction,
     build_pending_login_transaction,
 )
+from portal_api.auth.ports import OidcProviderPort
 from portal_api.auth.protected_value import ProtectedValueCipher
 from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
@@ -59,6 +60,7 @@ class LoginInitiationService:
         settings: PortalApiSettings,
         security_material: EphemeralSecurityMaterial,
         protected_value_cipher: ProtectedValueCipher,
+        provider: OidcProviderPort,
         audit_ledger: AuditLedger | None = None,
     ) -> None:
         self._engine = engine
@@ -66,7 +68,7 @@ class LoginInitiationService:
         self._security_material = security_material
         self._protected_value_cipher = protected_value_cipher
         self._audit = audit_ledger or AuditLedger()
-        self._provider = OidcProviderConfig.from_settings(settings)
+        self._provider = provider
 
     def create_context(
         self,
@@ -97,7 +99,7 @@ class LoginInitiationService:
                 insert(portal_login_intents).values(
                     intent_id=intent_id,
                     intent_lookup_hash=intent_hash,
-                    selected_provider=self._provider.provider_id,
+                    selected_provider=self._settings.oidc_provider_id,
                     validated_return_path=return_path,
                     status="PENDING",
                     version=1,
@@ -113,16 +115,16 @@ class LoginInitiationService:
                 intent_event="created",
                 correlation_id=correlation_id,
                 request_id=request_id,
-                safe_metadata={"selected_provider": self._provider.provider_id},
+                safe_metadata={"selected_provider": self._settings.oidc_provider_id},
             )
         return LoginContext(
             intent_token=intent_token,
-            selected_provider=self._provider.provider_id,
+            selected_provider=self._settings.oidc_provider_id,
             return_to=return_path,
             expires_at=expires_at,
         )
 
-    def start_login(
+    async def start_login(
         self,
         *,
         intent_token: str | None,
@@ -155,6 +157,7 @@ class LoginInitiationService:
             )
             raise LoginInitiationError("LOGIN_INTENT_MISSING")
 
+        provider = await self._provider.get_config()
         now = datetime.now(UTC)
         intent_hashes = tuple(
             protected
@@ -203,7 +206,7 @@ class LoginInitiationService:
             if failure is None and intent is not None:
                 transaction = build_pending_login_transaction(
                     settings=self._settings,
-                    provider=self._provider,
+                    provider=provider,
                     security_material=self._security_material,
                     protected_value_cipher=self._protected_value_cipher,
                     return_path=return_path,
@@ -248,7 +251,7 @@ class LoginInitiationService:
                     },
                 )
                 redirect = LoginRedirect(
-                    location=self._authorization_url(transaction),
+                    location=self._authorization_url(provider, transaction),
                     browser_binding_secret=transaction.browser_binding_secret,
                 )
 
@@ -351,17 +354,21 @@ class LoginInitiationService:
             for allowed in self._settings.allowed_origin_values
         )
 
-    def _authorization_url(self, transaction: PendingLoginTransaction) -> str:
+    def _authorization_url(
+        self,
+        provider: OidcProviderConfig,
+        transaction: PendingLoginTransaction,
+    ) -> str:
         query = urlencode(
             {
                 "response_type": "code",
-                "client_id": self._provider.client_id,
-                "redirect_uri": self._provider.redirect_uri,
-                "scope": " ".join(self._provider.scopes),
+                "client_id": provider.client_id,
+                "redirect_uri": provider.redirect_uri,
+                "scope": " ".join(provider.scopes),
                 "state": transaction.state,
                 "nonce": transaction.nonce,
                 "code_challenge": transaction.code_challenge,
                 "code_challenge_method": "S256",
             }
         )
-        return f"{self._provider.authorization_endpoint}?{query}"
+        return f"{provider.authorization_endpoint}?{query}"
