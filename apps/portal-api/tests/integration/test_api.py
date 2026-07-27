@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import UTC, datetime
 
 from fastapi import FastAPI
@@ -206,3 +207,24 @@ def test_no_environment_dump_endpoint_or_session_cookie(client: TestClient) -> N
 
     assert response.status_code == 404
     assert "set-cookie" not in live.headers
+
+
+def test_security_runtime_starts_only_after_schema_compatibility_check(
+    settings: PortalApiSettings,
+) -> None:
+    database_url = os.environ.get("PORTAL_TEST_RUNTIME_DATABASE_URL", "")
+    if not database_url:
+        return
+    values = settings.model_dump()
+    values.update(
+        {
+            "security_runtime_enabled": True,
+            "database_url": database_url,
+        }
+    )
+    secured_settings = PortalApiSettings(**values)
+
+    with TestClient(create_app(settings=secured_settings)) as secured_client:
+        response = secured_client.get("/health/live")
+
+    assert response.status_code == 200

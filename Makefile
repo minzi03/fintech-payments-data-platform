@@ -56,8 +56,12 @@ export SETTLEMENT_REJECTION_WARN_RATE SETTLEMENT_REJECTION_FAIL_RATE
 export SILVER_REJECTION_WARN_RATE SILVER_REJECTION_FAIL_RATE
 export CDC_LAG_WARN_THRESHOLD CDC_LAG_FAIL_THRESHOLD
 export CDC_FRESHNESS_WARN_SECONDS CDC_FRESHNESS_FAIL_SECONDS
+export PORTAL_DB_PORT PORTAL_DB_NAME PORTAL_DB_ADMIN_USER PORTAL_DB_ADMIN_PASSWORD
+export PORTAL_DB_MIGRATION_PASSWORD PORTAL_DB_RUNTIME_PASSWORD PORTAL_DB_AUDIT_PASSWORD
+export PORTAL_DB_ARCHIVE_PASSWORD PORTAL_MIGRATION_DATABASE_URL
+export PORTAL_TEST_MIGRATION_DATABASE_URL PORTAL_TEST_RUNTIME_DATABASE_URL
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-web-test portal-test portal-build portal-config-check portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-web-test portal-test portal-build portal-config-check portal-db-up portal-db-migrate portal-db-down portal-db-logs portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
 	@echo "Targets: install lint format-check test-unit test-integration portal-install portal-contracts portal-test portal-build portal-up portal-e2e portal-down postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down"
@@ -165,6 +169,18 @@ portal-build:
 
 portal-config-check:
 	PYTHONPATH=apps/portal-api/app $(PYTHON) apps/portal-api/scripts/validate_config.py
+
+portal-db-up:
+	docker compose --env-file $(COMPOSE_ENV) up -d --wait portal-postgres
+
+portal-db-migrate:
+	docker compose --env-file $(COMPOSE_ENV) run --rm --build portal-migrate
+
+portal-db-down:
+	docker compose --env-file $(COMPOSE_ENV) rm --stop --force portal-postgres
+
+portal-db-logs:
+	docker compose --env-file $(COMPOSE_ENV) logs --tail=200 -f portal-postgres portal-migrate
 
 portal-up:
 	docker compose --env-file $(COMPOSE_ENV) up -d --build --wait portal-api portal-web

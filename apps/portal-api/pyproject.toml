@@ -8,9 +8,13 @@ version = "0.1.0"
 description = "Backend for Frontend foundation for the Fintech Data Platform Portal."
 requires-python = ">=3.11"
 dependencies = [
+  "alembic>=1.14,<2.0",
+  "cryptography>=44,<46",
   "fastapi==0.139.2",
   "pydantic==2.13.4",
   "pydantic-settings==2.14.2",
+  "psycopg[binary]>=3.2,<4.0",
+  "sqlalchemy>=2.0,<3.0",
   "uvicorn==0.51.0",
 ]
 

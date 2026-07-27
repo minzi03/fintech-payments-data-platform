@@ -81,7 +81,56 @@ x-airflow-common: &airflow-common
       condition: service_completed_successfully
 
 services:
+  portal-postgres:
+    image: postgres:16.4-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PORTAL_DB_NAME:-portal_control}
+      POSTGRES_USER: ${PORTAL_DB_ADMIN_USER:-portal_admin}
+      POSTGRES_PASSWORD: ${PORTAL_DB_ADMIN_PASSWORD:-change_me}
+      PORTAL_DB_MIGRATION_PASSWORD: ${PORTAL_DB_MIGRATION_PASSWORD:-change_me}
+      PORTAL_DB_RUNTIME_PASSWORD: ${PORTAL_DB_RUNTIME_PASSWORD:-change_me}
+      PORTAL_DB_AUDIT_PASSWORD: ${PORTAL_DB_AUDIT_PASSWORD:-change_me}
+      PORTAL_DB_ARCHIVE_PASSWORD: ${PORTAL_DB_ARCHIVE_PASSWORD:-change_me}
+    ports:
+      - "127.0.0.1:${PORTAL_DB_PORT:-55432}:5432"
+    volumes:
+      - portal_postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/portal/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  portal-migrate:
+    image: fintech-portal-api:local
+    build:
+      context: .
+      dockerfile: apps/portal-api/Dockerfile
+      args:
+        PORTAL_API_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
+        PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
+        PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
+    restart: "no"
+    depends_on:
+      portal-postgres:
+        condition: service_healthy
+    environment:
+      PORTAL_MIGRATION_DATABASE_URL: >-
+        postgresql+psycopg://portal_migration:${PORTAL_DB_MIGRATION_PASSWORD:-change_me}@portal-postgres:5432/${PORTAL_DB_NAME:-portal_control}
+    command:
+      - alembic
+      - -c
+      - /app/alembic.ini
+      - upgrade
+      - head
+
   portal-api:
+    image: fintech-portal-api:local
     build:
       context: .
       dockerfile: apps/portal-api/Dockerfile
@@ -90,6 +139,9 @@ services:
         PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
         PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
     restart: unless-stopped
+    depends_on:
+      portal-migrate:
+        condition: service_completed_successfully
     environment:
       PORTAL_API_ENVIRONMENT: ${PORTAL_API_ENVIRONMENT:-local}
       PORTAL_API_SERVICE_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
@@ -110,6 +162,9 @@ services:
       PORTAL_API_TELEMETRY_ENABLED: ${PORTAL_API_TELEMETRY_ENABLED:-false}
       PORTAL_API_OPENAPI_ENABLED: ${PORTAL_API_OPENAPI_ENABLED:-true}
       PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED: "false"
+      PORTAL_API_SECURITY_RUNTIME_ENABLED: ${PORTAL_API_SECURITY_RUNTIME_ENABLED:-true}
+      PORTAL_API_DATABASE_URL: >-
+        postgresql+psycopg://portal_runtime:${PORTAL_DB_RUNTIME_PASSWORD:-change_me}@portal-postgres:5432/${PORTAL_DB_NAME:-portal_control}
     ports:
       - "127.0.0.1:${PORTAL_API_PORT:-8010}:8010"
     healthcheck:
@@ -522,6 +577,8 @@ services:
       start_period: 30s
 
 volumes:
+  portal_postgres_data:
+    name: fintech-payments-portal-postgres-data
   postgres_data:
     name: fintech-payments-postgres-data
   minio_data:

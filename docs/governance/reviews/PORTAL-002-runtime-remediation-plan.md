@@ -5,6 +5,18 @@
 - Implementation branch: `feat/portal-002-runtime-conformance`
 - Production deployment authorization: **NOT GRANTED**
 
+## Execution status
+
+| Batch | Status |
+|---|---|
+| 1 — Database, persistence, encryption, and audit foundations | COMPLETE |
+| 2 — Login context and login initiation | PENDING |
+| 3 — Model C callback orchestration | PENDING |
+| 4 — Failure, replay, and crash recovery | PENDING |
+| 5 — Session lifecycle and authorization enforcement | PENDING |
+| 6 — Contract-driven frontend integration | PENDING |
+| 7 — Integrated verification and local development proof | PENDING |
+
 ## 1. Planning principles
 
 1. Effective governance remains authoritative; implementation does not rewrite or weaken it.

@@ -8,12 +8,17 @@ from portal_api.core.logging import JsonFormatter, redact_text
 
 def test_secret_like_values_are_redacted() -> None:
     rendered = redact_text(
-        "password=super-secret authorization:Bearer-abc url=https://user:credential@private.example"
+        "password=super-secret authorization:Bearer-abc code_verifier=pkce-private "
+        "nonce=nonce-private state=state-private "
+        "url=https://user:credential@private.example"
     )
 
     assert "super-secret" not in rendered
     assert "Bearer-abc" not in rendered
     assert "credential@" not in rendered
+    assert "pkce-private" not in rendered
+    assert "nonce-private" not in rendered
+    assert "state-private" not in rendered
 
 
 def test_json_formatter_contains_safe_context_without_exception_message_secret() -> None:

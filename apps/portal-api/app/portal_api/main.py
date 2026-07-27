@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy.engine import Engine
 
 from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
@@ -16,6 +17,8 @@ from portal_api.core.errors import register_error_handlers
 from portal_api.core.logging import configure_logging
 from portal_api.core.middleware import RequestContextMiddleware
 from portal_api.core.security import configure_security_middleware
+from portal_api.db.engine import create_runtime_engine
+from portal_api.db.schema_guard import validate_runtime_schema
 from portal_api.health.service import HealthService
 from portal_api.telemetry.metrics import NoopTelemetry, TelemetryRecorder
 
@@ -27,15 +30,26 @@ def create_app(
     settings: PortalApiSettings | None = None,
     adapter_registry: AdapterRegistry | None = None,
     telemetry: TelemetryRecorder | None = None,
+    database_engine: Engine | None = None,
 ) -> FastAPI:
     """Create an isolated Portal API without import-time infrastructure calls."""
     resolved_settings = settings or get_settings()
     configure_logging(resolved_settings)
     resolved_telemetry = telemetry or NoopTelemetry()
     registry = adapter_registry or AdapterRegistry()
+    owned_database_engine = (
+        create_runtime_engine(resolved_settings)
+        if resolved_settings.security_runtime_enabled and database_engine is None
+        else None
+    )
+    resolved_database_engine = database_engine or owned_database_engine
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if resolved_settings.security_runtime_enabled:
+            if resolved_database_engine is None:
+                raise RuntimeError("Portal security database engine is not configured")
+            validate_runtime_schema(resolved_database_engine)
         LOGGER.info(
             "portal api started",
             extra={
@@ -44,8 +58,12 @@ def create_app(
                 "build_sha": resolved_settings.build_sha,
             },
         )
-        yield
-        LOGGER.info("portal api stopped", extra={"event": "application_stopped"})
+        try:
+            yield
+        finally:
+            if owned_database_engine is not None:
+                owned_database_engine.dispose()
+            LOGGER.info("portal api stopped", extra={"event": "application_stopped"})
 
     openapi_url = "/openapi.json" if resolved_settings.openapi_enabled else None
     docs_url = "/docs" if resolved_settings.openapi_enabled else None
@@ -73,6 +91,7 @@ def create_app(
         settings=resolved_settings,
         telemetry=resolved_telemetry,
     )
+    app.state.database_engine = resolved_database_engine
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(system_router)

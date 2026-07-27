@@ -12,6 +12,8 @@ def test_local_defaults_are_explicit_and_safe() -> None:
     assert settings.service_version == "0.1.0-dev"
     assert settings.build_sha == "local"
     assert settings.allowed_origin_values == ("http://localhost:3000",)
+    assert not settings.security_runtime_enabled
+    assert settings.database_url is None
 
 
 @pytest.mark.parametrize(
@@ -68,3 +70,31 @@ def test_production_configuration_can_be_valid() -> None:
     )
 
     assert settings.is_production
+
+
+def test_security_runtime_requires_postgresql_psycopg_url() -> None:
+    with pytest.raises(ValidationError, match="DATABASE_URL is required"):
+        PortalApiSettings(security_runtime_enabled=True)
+
+    with pytest.raises(ValidationError, match="PostgreSQL with psycopg"):
+        PortalApiSettings(
+            security_runtime_enabled=True,
+            database_url="sqlite:///portal.db",
+        )
+
+
+def test_security_runtime_is_bounded_to_local_and_development() -> None:
+    settings = PortalApiSettings(
+        environment=PortalEnvironment.DEVELOPMENT,
+        security_runtime_enabled=True,
+        database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+    )
+    assert settings.security_runtime_enabled
+    assert "secret" not in repr(settings)
+
+    with pytest.raises(ValidationError, match="authorized only for local/development"):
+        PortalApiSettings(
+            environment=PortalEnvironment.STAGING,
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        )

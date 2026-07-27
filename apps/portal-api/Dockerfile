@@ -28,6 +28,8 @@ RUN addgroup --system --gid 10001 portal \
 COPY --from=builder /wheels /wheels
 RUN python -m pip install --no-cache-dir /wheels/* \
     && rm -rf /wheels
+COPY --chown=10001:10001 apps/portal-api/alembic.ini /app/alembic.ini
+COPY --chown=10001:10001 apps/portal-api/migrations /app/migrations
 
 USER 10001:10001
 WORKDIR /app

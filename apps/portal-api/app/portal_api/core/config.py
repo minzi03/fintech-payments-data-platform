@@ -6,7 +6,7 @@ from enum import StrEnum
 from functools import lru_cache
 from urllib.parse import urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +53,8 @@ class PortalApiSettings(BaseSettings):
     telemetry_enabled: bool = False
     openapi_enabled: bool = True
     development_identity_enabled: bool = False
+    security_runtime_enabled: bool = False
+    database_url: SecretStr | None = None
 
     @property
     def allowed_origin_values(self) -> tuple[str, ...]:
@@ -84,6 +86,18 @@ class PortalApiSettings(BaseSettings):
                 raise ValueError("PORTAL_API_ALLOWED_ORIGINS entries must not contain paths")
         if self.log_format not in {"json", "console"}:
             raise ValueError("PORTAL_API_LOG_FORMAT must be json or console")
+        if self.security_runtime_enabled:
+            if self.database_url is None:
+                raise ValueError(
+                    "PORTAL_API_DATABASE_URL is required when the security runtime is enabled"
+                )
+            database_url = self.database_url.get_secret_value()
+            if not database_url.startswith("postgresql+psycopg://"):
+                raise ValueError("PORTAL_API_DATABASE_URL must use PostgreSQL with psycopg")
+            if self.environment in {PortalEnvironment.STAGING, PortalEnvironment.PRODUCTION}:
+                raise ValueError(
+                    "Portal security runtime is authorized only for local/development environments"
+                )
         if self.is_production:
             if self.log_format != "json":
                 raise ValueError("Production requires PORTAL_API_LOG_FORMAT=json")

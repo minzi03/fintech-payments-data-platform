@@ -12,7 +12,8 @@ from portal_api.core.config import PortalApiSettings
 
 _SECRET_PATTERNS = (
     re.compile(
-        r"(?i)(password|passwd|secret|authorization|cookie|access[_-]?token|refresh[_-]?token)"
+        r"(?i)(password|passwd|secret|authorization|cookie|access[_-]?token|refresh[_-]?token|"
+        r"id[_-]?token|authorization[_-]?code|code[_-]?verifier|browser[_-]?binding|nonce|state)"
         r"\s*[:=]\s*[^\s,;]+"
     ),
     re.compile(r"(?i)(https?://[^:/\s]+:)[^@\s]+@"),
@@ -49,7 +50,20 @@ class JsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key in _STANDARD_RECORD_FIELDS or key.startswith("_") or key in payload:
                 continue
-            if key in {"authorization", "cookie", "password", "secret", "token", "body"}:
+            if key in {
+                "authorization",
+                "authorization_code",
+                "body",
+                "browser_binding",
+                "code_verifier",
+                "cookie",
+                "id_token",
+                "nonce",
+                "password",
+                "secret",
+                "state",
+                "token",
+            }:
                 continue
             payload[key] = redact_text(value) if isinstance(value, str) else value
         if record.exc_info:
