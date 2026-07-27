@@ -55,6 +55,23 @@ class PortalApiSettings(BaseSettings):
     development_identity_enabled: bool = False
     security_runtime_enabled: bool = False
     database_url: SecretStr | None = None
+    oidc_provider_id: str = "local-keycloak"
+    oidc_issuer: str = "http://localhost:8081/realms/fintech-portal"
+    oidc_client_id: str = "fintech-portal"
+    oidc_authorization_endpoint: str = (
+        "http://localhost:8081/realms/fintech-portal/protocol/openid-connect/auth"
+    )
+    oidc_token_endpoint: str = (
+        "http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/token"
+    )
+    oidc_jwks_uri: str = (
+        "http://portal-keycloak:8080/realms/fintech-portal/protocol/openid-connect/certs"
+    )
+    oidc_redirect_uri: str = "http://localhost:3000/portal-api/v1/auth/callback"
+    oidc_scopes: str = "openid profile"
+    allowed_return_paths: str = "/,/system-status"
+    login_intent_ttl_seconds: int = Field(default=300, gt=0, le=300)
+    login_transaction_ttl_seconds: int = Field(default=300, gt=0, le=300)
 
     @property
     def allowed_origin_values(self) -> tuple[str, ...]:
@@ -69,6 +86,14 @@ class PortalApiSettings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment is PortalEnvironment.PRODUCTION
+
+    @property
+    def allowed_return_path_values(self) -> tuple[str, ...]:
+        return _csv_values(self.allowed_return_paths)
+
+    @property
+    def oidc_scope_values(self) -> tuple[str, ...]:
+        return tuple(scope for scope in self.oidc_scopes.split() if scope)
 
     @model_validator(mode="after")
     def validate_safety(self) -> PortalApiSettings:
@@ -98,6 +123,7 @@ class PortalApiSettings(BaseSettings):
                 raise ValueError(
                     "Portal security runtime is authorized only for local/development environments"
                 )
+            self._validate_oidc_configuration()
         if self.is_production:
             if self.log_format != "json":
                 raise ValueError("Production requires PORTAL_API_LOG_FORMAT=json")
@@ -114,6 +140,36 @@ class PortalApiSettings(BaseSettings):
             if self.build_sha == "local" or self.build_time == "local":
                 raise ValueError("Production requires immutable build SHA and build time")
         return self
+
+    def _validate_oidc_configuration(self) -> None:
+        if not self.allowed_return_path_values or any(
+            not value.startswith("/") or value.startswith("//") or "\\" in value
+            for value in self.allowed_return_path_values
+        ):
+            raise ValueError("PORTAL_API_ALLOWED_RETURN_PATHS must contain local absolute paths")
+        if "openid" not in self.oidc_scope_values:
+            raise ValueError("PORTAL_API_OIDC_SCOPES must include openid")
+        for field_name in (
+            "oidc_issuer",
+            "oidc_authorization_endpoint",
+            "oidc_token_endpoint",
+            "oidc_jwks_uri",
+            "oidc_redirect_uri",
+        ):
+            value = getattr(self, field_name)
+            parsed = urlsplit(value)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError(f"PORTAL_API_{field_name.upper()} must be an absolute HTTP(S) URL")
+        if self.environment not in {PortalEnvironment.LOCAL, PortalEnvironment.TEST}:
+            external_urls = (
+                self.oidc_issuer,
+                self.oidc_authorization_endpoint,
+                self.oidc_token_endpoint,
+                self.oidc_jwks_uri,
+                self.oidc_redirect_uri,
+            )
+            if any(value.startswith("http://") for value in external_urls):
+                raise ValueError("Non-local OIDC configuration requires HTTPS")
 
 
 @lru_cache(maxsize=1)

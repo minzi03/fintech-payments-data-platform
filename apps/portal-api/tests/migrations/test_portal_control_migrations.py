@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "portal_capability_overrides",
     "portal_policy_revisions",
     "portal_principals",
+    "portal_login_intents",
     "portal_security_epochs",
     "portal_sessions",
     "portal_token_envelopes",
@@ -62,15 +63,18 @@ def test_upgrade_downgrade_and_authoritative_history() -> None:
     try:
         assert set(inspect(engine).get_table_names(schema="portal_control")) == EXPECTED_TABLES
         with engine.connect() as connection:
-            record = connection.execute(
+            records = connection.execute(
                 text(
                     "SELECT version, checksum, application_compat "
-                    "FROM portal_control.schema_migrations"
+                    "FROM portal_control.schema_migrations ORDER BY version"
                 )
-            ).one()
-            assert record.version == "001_initial_portal_control"
-            assert len(record.checksum) == 64
-            assert record.application_compat == ">=0.1.0,<1.0.0"
+            ).all()
+            assert [record.version for record in records] == [
+                "001_initial_portal_control",
+                "002_login_intent_and_initiation",
+            ]
+            assert all(len(record.checksum) == 64 for record in records)
+            assert all(record.application_compat == ">=0.1.0,<1.0.0" for record in records)
     finally:
         engine.dispose()
 

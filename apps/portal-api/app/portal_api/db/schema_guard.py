@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-SUPPORTED_SCHEMA_VERSION = "001_initial_portal_control"
+SUPPORTED_SCHEMA_VERSION = "002_login_intent_and_initiation"
 
 
 class SchemaCompatibilityError(RuntimeError):

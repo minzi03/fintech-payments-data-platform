@@ -18,7 +18,7 @@ def configure_security_middleware(app: FastAPI, settings: PortalApiSettings) -> 
         CORSMiddleware,
         allow_origins=list(settings.allowed_origin_values),
         allow_credentials=True,
-        allow_methods=["GET", "HEAD", "OPTIONS"],
+        allow_methods=["GET", "HEAD", "OPTIONS", "POST"],
         allow_headers=["Accept", "Content-Type", "X-Correlation-ID"],
         expose_headers=["X-Correlation-ID", "X-Request-ID"],
         max_age=600,

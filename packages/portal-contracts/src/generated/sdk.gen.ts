@@ -12,6 +12,9 @@ import type {
   GetLivenessData,
   GetLivenessErrors,
   GetLivenessResponses,
+  GetLoginContextData,
+  GetLoginContextErrors,
+  GetLoginContextResponses,
   GetReadinessData,
   GetReadinessErrors,
   GetReadinessResponses,
@@ -21,6 +24,8 @@ import type {
   GetSystemInfoData,
   GetSystemInfoErrors,
   GetSystemInfoResponses,
+  StartLoginData,
+  StartLoginErrors,
 } from "./types.gen";
 
 export type Options<
@@ -102,6 +107,43 @@ export class Sdk extends HeyApiClient {
       GetReadinessErrors,
       ThrowOnError
     >({ url: "/health/ready", ...options });
+  }
+
+  /**
+   * Start Login
+   */
+  public startLogin<ThrowOnError extends boolean = false>(
+    options: Options<StartLoginData, ThrowOnError>,
+  ): RequestResult<unknown, StartLoginErrors, ThrowOnError> {
+    return (options.client ?? this.client).post<
+      unknown,
+      StartLoginErrors,
+      ThrowOnError
+    >({
+      url: "/v1/auth/login",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  }
+
+  /**
+   * Login Context
+   */
+  public getLoginContext<ThrowOnError extends boolean = false>(
+    options?: Options<GetLoginContextData, ThrowOnError>,
+  ): RequestResult<
+    GetLoginContextResponses,
+    GetLoginContextErrors,
+    ThrowOnError
+  > {
+    return (options?.client ?? this.client).get<
+      GetLoginContextResponses,
+      GetLoginContextErrors,
+      ThrowOnError
+    >({ url: "/v1/auth/login-context", ...options });
   }
 
   /**

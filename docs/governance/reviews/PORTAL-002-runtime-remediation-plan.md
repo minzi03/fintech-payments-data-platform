@@ -10,7 +10,7 @@
 | Batch | Status |
 |---|---|
 | 1 — Database, persistence, encryption, and audit foundations | COMPLETE |
-| 2 — Login context and login initiation | PENDING |
+| 2 — Login context and login initiation | COMPLETE |
 | 3 — Model C callback orchestration | PENDING |
 | 4 — Failure, replay, and crash recovery | PENDING |
 | 5 — Session lifecycle and authorization enforcement | PENDING |

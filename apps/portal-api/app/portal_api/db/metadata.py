@@ -56,6 +56,31 @@ portal_principals = Table(
     CheckConstraint("status IN ('ACTIVE', 'DISABLED')", name="principal_status"),
 )
 
+portal_login_intents = Table(
+    "portal_login_intents",
+    metadata,
+    Column("intent_id", UUID(as_uuid=True), primary_key=True),
+    Column("intent_lookup_hash", LargeBinary, nullable=False, unique=True),
+    Column("selected_provider", String(128), nullable=False),
+    Column("validated_return_path", Text, nullable=True),
+    Column("browser_binding_reference", String(128), nullable=True),
+    Column("status", String(32), nullable=False),
+    Column("version", Integer, nullable=False, server_default=text("1")),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("consumed_at", DateTime(timezone=True), nullable=True),
+    CheckConstraint(
+        "status IN ('PENDING', 'CONSUMED', 'EXPIRED')",
+        name="login_intent_status",
+    ),
+    CheckConstraint("version > 0", name="login_intent_version"),
+)
+Index(
+    "ix_portal_login_intents_pending",
+    portal_login_intents.c.expires_at,
+    postgresql_where=portal_login_intents.c.status == "PENDING",
+)
+
 oidc_login_transactions = Table(
     "oidc_login_transactions",
     metadata,

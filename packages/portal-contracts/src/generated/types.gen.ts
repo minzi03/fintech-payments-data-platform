@@ -118,6 +118,42 @@ export type LivenessResponse = {
 export type LivenessStatus = "UP";
 
 /**
+ * LoginContextView
+ */
+export type LoginContextView = {
+  /**
+   * Expires At
+   */
+  expires_at: string;
+  /**
+   * Intent Token
+   */
+  intent_token: string;
+  /**
+   * Return To
+   */
+  return_to: string | null;
+  /**
+   * Selected Provider
+   */
+  selected_provider: string;
+};
+
+/**
+ * LoginRequest
+ */
+export type LoginRequest = {
+  /**
+   * Intent Token
+   */
+  intent_token?: string | null;
+  /**
+   * Return To
+   */
+  return_to?: string | null;
+};
+
+/**
  * ProblemDetails
  *
  * Portal-wide error response contract.
@@ -342,6 +378,78 @@ export type GetReadinessResponses = {
 
 export type GetReadinessResponse =
   GetReadinessResponses[keyof GetReadinessResponses];
+
+export type StartLoginData = {
+  body: LoginRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/auth/login";
+};
+
+export type StartLoginErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type StartLoginError = StartLoginErrors[keyof StartLoginErrors];
+
+export type GetLoginContextData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Return To
+     */
+    return_to?: string | null;
+  };
+  url: "/v1/auth/login-context";
+};
+
+export type GetLoginContextErrors = {
+  /**
+   * Resource not found
+   */
+  404: ProblemDetails;
+  /**
+   * Method not allowed
+   */
+  405: ProblemDetails;
+  /**
+   * Invalid request
+   */
+  422: ProblemDetails;
+  /**
+   * Sanitized internal error
+   */
+  500: ProblemDetails;
+};
+
+export type GetLoginContextError =
+  GetLoginContextErrors[keyof GetLoginContextErrors];
+
+export type GetLoginContextResponses = {
+  /**
+   * Successful Response
+   */
+  200: LoginContextView;
+};
+
+export type GetLoginContextResponse =
+  GetLoginContextResponses[keyof GetLoginContextResponses];
 
 export type GetSystemDependenciesData = {
   body?: never;

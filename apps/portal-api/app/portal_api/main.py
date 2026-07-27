@@ -11,7 +11,11 @@ from sqlalchemy.engine import Engine
 
 from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
+from portal_api.api.v1.auth import router as auth_router
 from portal_api.api.v1.system import router as system_router
+from portal_api.auth.login_intent import LoginInitiationService
+from portal_api.auth.protected_value import EphemeralEnvelopeCipher
+from portal_api.auth.security_material import EphemeralSecurityMaterial
 from portal_api.core.config import PortalApiSettings, get_settings
 from portal_api.core.errors import register_error_handlers
 from portal_api.core.logging import configure_logging
@@ -43,6 +47,16 @@ def create_app(
         else None
     )
     resolved_database_engine = database_engine or owned_database_engine
+    login_initiation_service = (
+        LoginInitiationService(
+            engine=resolved_database_engine,
+            settings=resolved_settings,
+            security_material=EphemeralSecurityMaterial.generate(),
+            protected_value_cipher=EphemeralEnvelopeCipher(),
+        )
+        if resolved_settings.security_runtime_enabled and resolved_database_engine is not None
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -92,9 +106,11 @@ def create_app(
         telemetry=resolved_telemetry,
     )
     app.state.database_engine = resolved_database_engine
+    app.state.login_initiation_service = login_initiation_service
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(system_router)
+    app.include_router(auth_router)
     configure_security_middleware(app, resolved_settings)
     app.add_middleware(RequestContextMiddleware, telemetry=resolved_telemetry)
     return app

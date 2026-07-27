@@ -88,6 +88,11 @@ def test_security_runtime_is_bounded_to_local_and_development() -> None:
         environment=PortalEnvironment.DEVELOPMENT,
         security_runtime_enabled=True,
         database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        oidc_issuer="https://identity.dev.example/realms/portal",
+        oidc_authorization_endpoint="https://identity.dev.example/authorize",
+        oidc_token_endpoint="https://identity.dev.example/token",
+        oidc_jwks_uri="https://identity.dev.example/jwks",
+        oidc_redirect_uri="https://portal.dev.example/portal-api/v1/auth/callback",
     )
     assert settings.security_runtime_enabled
     assert "secret" not in repr(settings)
@@ -97,4 +102,20 @@ def test_security_runtime_is_bounded_to_local_and_development() -> None:
             environment=PortalEnvironment.STAGING,
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+        )
+
+
+def test_security_runtime_rejects_unsafe_oidc_configuration() -> None:
+    with pytest.raises(ValidationError, match="must include openid"):
+        PortalApiSettings(
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            oidc_scopes="profile",
+        )
+
+    with pytest.raises(ValidationError, match="local absolute paths"):
+        PortalApiSettings(
+            security_runtime_enabled=True,
+            database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            allowed_return_paths="https://attacker.example",
         )
