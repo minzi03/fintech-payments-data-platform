@@ -1,13 +1,17 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
+import { currentServerSession } from "@/features/auth/server-session";
 import { ErrorTrigger } from "@/features/development/error-trigger";
 import { developmentRoutesEnabled } from "@/features/development/route-policy";
 
 export const dynamic = "force-dynamic";
 
-export default function ErrorTestPage() {
+export default async function ErrorTestPage() {
   if (!developmentRoutesEnabled()) {
     notFound();
+  }
+  if (!(await currentServerSession())) {
+    redirect("/login?return_to=/error-test");
   }
   return (
     <div className="page-stack">

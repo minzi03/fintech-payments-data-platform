@@ -1,12 +1,16 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
+import { currentServerSession } from "@/features/auth/server-session";
 import { developmentRoutesEnabled } from "@/features/development/route-policy";
 
 export const dynamic = "force-dynamic";
 
-export default function DeveloperPage() {
+export default async function DeveloperPage() {
   if (!developmentRoutesEnabled()) {
     notFound();
+  }
+  if (!(await currentServerSession())) {
+    redirect("/login?return_to=/developer");
   }
   return (
     <div className="page-stack">

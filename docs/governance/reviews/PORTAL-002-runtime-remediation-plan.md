@@ -14,7 +14,7 @@
 | 3 — Model C callback orchestration | COMPLETE |
 | 4 — Failure, replay, and crash recovery | COMPLETE |
 | 5 — Session lifecycle and authorization enforcement | COMPLETE |
-| 6 — Contract-driven frontend integration | PENDING |
+| 6 — Contract-driven frontend integration | COMPLETE |
 | 7 — Integrated verification and local development proof | PENDING |
 
 ## 1. Planning principles
@@ -455,6 +455,19 @@ None directly. Frontend actions exercise only versioned FastAPI contracts.
 - All API calls use generated contracts.
 - UI projects server decisions and never creates authority.
 - Generic failures disclose no provider or token detail.
+
+### Completion evidence
+
+- Login initiation uses a native form and a same-origin Next server route; login intent creation,
+  provider selection, redirect handling, and the browser-binding cookie remain server mediated.
+- The browser uses the generated client for session, CSRF, environment, capability, navigation,
+  logout, and protected dependency contracts.
+- CSRF material is fetched immediately before each unsafe operation and is not persisted.
+- Environment selection updates UI state only after the Portal API accepts it. Protected dependency
+  status, navigation, and capabilities remain environment-scoped server projections.
+- Development-only pages require both a non-production build and a current server session.
+- Frontend unit tests, source trust-boundary tests, type checking, linting, formatting, and the
+  optimized build pass. Batch 7 owns end-to-end browser and real-provider proof.
 
 ## 9. Batch 7 — Integrated verification and local development proof
 

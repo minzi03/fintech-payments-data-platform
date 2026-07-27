@@ -1,18 +1,10 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { portalConfig } from "@/api/config";
-
-const navigation = [
-  { href: "/", label: "Home" },
-  { href: "/system-status", label: "System Status" },
-];
+import { AuthorizedNavigation } from "@/features/auth/authorized-navigation";
+import { SessionControls } from "@/features/auth/session-controls";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const links = portalConfig.developerNavigationEnabled
-    ? [...navigation, { href: "/developer", label: "Developer" }]
-    : navigation;
-
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -28,23 +20,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="brand-name">Fintech Data Platform</p>
           </div>
         </div>
-        <span className="environment-pill" aria-label={`Environment: ${portalConfig.environment}`}>
-          {portalConfig.environment}
-        </span>
+        <div className="topbar-actions">
+          <span
+            className="environment-pill"
+            aria-label={`Environment: ${portalConfig.environment}`}
+          >
+            {portalConfig.environment}
+          </span>
+          <SessionControls />
+        </div>
       </header>
       <div className="workspace">
         <nav className="sidebar" aria-label="Foundation navigation">
           <p className="nav-section">Workspace</p>
-          <ul>
-            {links.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href}>{link.label}</Link>
-              </li>
-            ))}
-          </ul>
+          <AuthorizedNavigation includeDeveloper={portalConfig.developerNavigationEnabled} />
           <div className="sidebar-note">
-            <p>Foundation only</p>
-            <span>Operational controls arrive in later reviewed releases.</span>
+            <p>Server-authorized</p>
+            <span>Capabilities are re-evaluated by the Portal API for every environment.</span>
           </div>
         </nav>
         <main id="main-content" className="main-content" tabIndex={-1}>

@@ -1,13 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "vitest-axe";
 import { describe, expect, it } from "vitest";
 
 import { AppShell } from "@/components/app-shell";
+import { renderWithProviders } from "@/tests/test-utils";
 
 describe("foundation shell", () => {
   it("renders landmarks, environment, and no fabricated metrics", () => {
-    render(
+    renderWithProviders(
       <AppShell>
         <h1>Foundation content</h1>
       </AppShell>,
@@ -25,7 +26,7 @@ describe("foundation shell", () => {
 
   it("exposes a keyboard-reachable skip link", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithProviders(
       <AppShell>
         <h1>Foundation content</h1>
       </AppShell>,
@@ -36,7 +37,7 @@ describe("foundation shell", () => {
   });
 
   it("has no automated accessibility violations", async () => {
-    const { container } = render(
+    const { container } = renderWithProviders(
       <AppShell>
         <h1>Foundation content</h1>
       </AppShell>,
