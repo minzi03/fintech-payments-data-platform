@@ -202,6 +202,24 @@ class CallbackOrchestrator:
                 request_id=request_id,
             )
             raise CallbackFailure("CALLBACK_IDENTITY_INVALID") from error
+        except Exception as error:
+            status = await run_in_threadpool(
+                self._authoritative_status,
+                claim.transaction_id,
+            )
+            if status == "CLAIMED":
+                await self._dispose_claim(
+                    claim,
+                    terminal_state="CONSUMED",
+                    reason_code="CALLBACK_PROCESSING_ERROR",
+                    correlation_id=correlation_id,
+                    request_id=request_id,
+                )
+            raise CallbackFailure(
+                "CALLBACK_PROCESSING_ERROR",
+                status_code=503,
+                retryable=False,
+            ) from error
         finally:
             if "verifier" in locals():
                 verifier = ""
@@ -448,6 +466,15 @@ class CallbackOrchestrator:
             return plaintext.decode("ascii")
         except UnicodeDecodeError as error:
             raise CallbackFailure("OIDC_PKCE_VERIFIER_INVALID") from error
+
+    def _authoritative_status(self, transaction_id: UUID) -> str | None:
+        with self._engine.connect() as connection:
+            status = connection.execute(
+                select(oidc_login_transactions.c.status).where(
+                    oidc_login_transactions.c.transaction_id == transaction_id
+                )
+            ).scalar_one_or_none()
+        return str(status) if status is not None else None
 
     def _append_audit(
         self,

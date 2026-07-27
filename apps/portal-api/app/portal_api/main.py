@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
+from starlette.concurrency import run_in_threadpool
 
 from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
@@ -19,6 +20,7 @@ from portal_api.auth.oidc_provider import HttpxOidcProvider
 from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
 from portal_api.auth.principal import ConfiguredPrincipalResolver
 from portal_api.auth.protected_value import EphemeralEnvelopeCipher
+from portal_api.auth.recovery import CallbackRecovery
 from portal_api.auth.security_material import EphemeralSecurityMaterial
 from portal_api.auth.session_store import CallbackSessionStore
 from portal_api.auth.token_validation import PyJwtTokenValidator
@@ -75,6 +77,7 @@ def create_app(
         else None
     )
     callback_orchestrator: CallbackOrchestrator | None = None
+    callback_recovery: CallbackRecovery | None = None
     if (
         resolved_settings.security_runtime_enabled
         and resolved_database_engine is not None
@@ -105,6 +108,7 @@ def create_app(
                 protected_value_cipher=protected_value_cipher,
             ),
         )
+        callback_recovery = CallbackRecovery(engine=resolved_database_engine)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -112,6 +116,9 @@ def create_app(
             if resolved_database_engine is None:
                 raise RuntimeError("Portal security database engine is not configured")
             validate_runtime_schema(resolved_database_engine)
+            if callback_recovery is None:
+                raise RuntimeError("Portal callback recovery is not configured")
+            await run_in_threadpool(callback_recovery.recover_expired_claims)
         LOGGER.info(
             "portal api started",
             extra={
@@ -156,6 +163,7 @@ def create_app(
     app.state.database_engine = resolved_database_engine
     app.state.login_initiation_service = login_initiation_service
     app.state.callback_orchestrator = callback_orchestrator
+    app.state.callback_recovery = callback_recovery
     app.state.security_material = security_material
     app.state.protected_value_cipher = protected_value_cipher
     register_error_handlers(app)

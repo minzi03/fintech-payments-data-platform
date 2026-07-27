@@ -6,6 +6,7 @@ import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,18 +16,23 @@ from portal_api.auth.callback import CallbackOrchestrator
 from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
 from portal_api.auth.ports import (
     CallbackPolicyDecision,
+    OidcProviderPort,
     PolicyOutcome,
+    ProviderExchangeFailure,
+    ProviderFailureKind,
     ProviderTokenSet,
     ResolvedPrincipal,
     ValidatedIdentity,
 )
 from portal_api.auth.principal import ConfiguredPrincipalResolver
+from portal_api.auth.recovery import CallbackRecovery
 from portal_api.auth.security_material import EphemeralSecurityMaterial
 from portal_api.auth.session_store import CallbackSessionStore
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
 from portal_api.main import create_app
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
+from starlette.responses import Response
 
 
 @pytest.fixture
@@ -106,6 +112,26 @@ class TransactionBoundaryProvider:
         raise AssertionError("The fake validator does not fetch JWKS")
 
 
+class FailedExchangeProvider(TransactionBoundaryProvider):
+    def __init__(self, inspection_engine: Engine, kind: ProviderFailureKind) -> None:
+        super().__init__(inspection_engine)
+        self._kind = kind
+
+    async def exchange_code(
+        self,
+        *,
+        code: str,
+        verifier: str,
+        redirect_uri: str,
+    ) -> ProviderTokenSet:
+        await super().exchange_code(
+            code=code,
+            verifier=verifier,
+            redirect_uri=redirect_uri,
+        )
+        raise ProviderExchangeFailure(self._kind)
+
+
 class FixedTokenValidator:
     async def validate(
         self,
@@ -156,6 +182,7 @@ def _replace_orchestrator(
     inspection_engine: Engine,
     policy=None,
     final_audit: AuditLedger | None = None,
+    provider: OidcProviderPort | None = None,
 ) -> TransactionBoundaryProvider:
     runtime_engine = app.state.database_engine
     material = app.state.security_material
@@ -163,14 +190,14 @@ def _replace_orchestrator(
     assert isinstance(runtime_engine, Engine)
     assert isinstance(material, EphemeralSecurityMaterial)
     assert cipher is not None
-    provider = TransactionBoundaryProvider(inspection_engine)
+    selected_provider = provider or TransactionBoundaryProvider(inspection_engine)
     selected_policy = policy or LocalDevelopmentCallbackPolicy(settings)
     app.state.callback_orchestrator = CallbackOrchestrator(
         engine=runtime_engine,
         settings=settings,
         security_material=material,
         protected_value_cipher=cipher,
-        provider=provider,
+        provider=selected_provider,
         token_validator=FixedTokenValidator(),
         principal_resolver=ConfiguredPrincipalResolver(
             engine=runtime_engine,
@@ -185,7 +212,8 @@ def _replace_orchestrator(
             audit_ledger=final_audit,
         ),
     )
-    return provider
+    assert isinstance(selected_provider, TransactionBoundaryProvider)
+    return selected_provider
 
 
 def _begin_login(client: TestClient) -> str:
@@ -302,7 +330,7 @@ def test_non_allow_policy_consumes_failure_without_creating_session(
 
 
 @pytest.mark.integration
-def test_final_audit_failure_rolls_back_session_and_successful_consumption(
+def test_final_audit_failure_rolls_back_session_and_records_failed_consumption(
     callback_database: tuple[Engine, str],
 ) -> None:
     migration_engine, runtime_url = callback_database
@@ -321,14 +349,14 @@ def test_final_audit_failure_rolls_back_session_and_successful_consumption(
             params={"state": state, "code": "provider-code"},
         )
 
-    assert response.status_code == 500
+    assert response.status_code == 503
     assert "fintech_portal_session_v1=" not in response.headers.get("set-cookie", "")
     with migration_engine.connect() as connection:
         assert (
             connection.execute(
                 text("SELECT status FROM portal_control.oidc_login_transactions")
             ).scalar_one()
-            == "CLAIMED"
+            == "CONSUMED"
         )
         assert (
             connection.execute(
@@ -340,11 +368,206 @@ def test_final_audit_failure_rolls_back_session_and_successful_consumption(
             connection.execute(
                 text(
                     "SELECT count(*) FROM portal_control.security_audit_events "
-                    "WHERE event_type IN "
-                    "('auth.login_succeeded.v1', 'auth.session_created.v1') "
+                    "WHERE reason_code = 'CALLBACK_PROCESSING_ERROR' "
                     "AND correlation_id = :correlation_id"
                 ),
                 {"correlation_id": response.json()["correlation_id"]},
             ).scalar_one()
-            == 0
+            == 1
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("kind", "expected_status"),
+    [
+        (ProviderFailureKind.PRE_DISPATCH, "INVALIDATED"),
+        (ProviderFailureKind.AUTHORITATIVE_REJECTION, "CONSUMED"),
+        (ProviderFailureKind.AMBIGUOUS, "CONSUMED"),
+    ],
+)
+def test_provider_failure_taxonomy_has_one_terminal_state(
+    callback_database: tuple[Engine, str],
+    kind: ProviderFailureKind,
+    expected_status: str,
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    provider = FailedExchangeProvider(migration_engine, kind)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+        provider=provider,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        state = _begin_login(client)
+        response = client.get(
+            "/v1/auth/callback",
+            params={"state": state, "code": "provider-code"},
+        )
+
+    assert response.status_code == 503
+    assert provider.calls == 1
+    assert "fintech_portal_session_v1=" not in response.headers.get("set-cookie", "")
+    with migration_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM portal_control.oidc_login_transactions")
+            ).scalar_one()
+            == expected_status
+        )
+
+
+@pytest.mark.integration
+def test_provider_error_and_browser_binding_mismatch_fail_before_exchange(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+
+    provider_error_app = create_app(settings=settings)
+    provider_error_adapter = _replace_orchestrator(
+        provider_error_app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(provider_error_app, follow_redirects=False) as client:
+        state = _begin_login(client)
+        provider_error_response = client.get(
+            "/v1/auth/callback",
+            params={"state": state, "error": "access_denied"},
+        )
+    assert provider_error_response.status_code == 401
+    assert provider_error_adapter.calls == 0
+    with migration_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM portal_control.oidc_login_transactions")
+            ).scalar_one()
+            == "INVALIDATED"
+        )
+
+    _clear_callback_state(migration_engine)
+    binding_app = create_app(settings=settings)
+    binding_adapter = _replace_orchestrator(
+        binding_app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(binding_app, follow_redirects=False) as client:
+        state = _begin_login(client)
+        client.cookies.clear()
+        client.cookies.set("fintech_portal_oidc_binding_v1", "tampered")
+        binding_response = client.get(
+            "/v1/auth/callback",
+            params={"state": state, "code": "provider-code"},
+        )
+    assert binding_response.status_code == 401
+    assert binding_adapter.calls == 0
+    assert "Max-Age=0" in binding_response.headers["set-cookie"]
+    with migration_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM portal_control.oidc_login_transactions")
+            ).scalar_one()
+            == "INVALIDATED"
+        )
+
+
+@pytest.mark.integration
+def test_expired_ambiguous_claim_is_conservatively_consumed(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    with TestClient(app, follow_redirects=False) as client:
+        _begin_login(client)
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE portal_control.oidc_login_transactions "
+                "SET status = 'CLAIMED', claimed_by = :claim_id, "
+                "claimed_at = CURRENT_TIMESTAMP - INTERVAL '10 minutes', "
+                "expires_at = CURRENT_TIMESTAMP - INTERVAL '5 minutes', "
+                "version = version + 1"
+            ),
+            {"claim_id": str(uuid4())},
+        )
+    runtime_engine = create_engine(runtime_url)
+    try:
+        recovered = CallbackRecovery(engine=runtime_engine).recover_expired_claims()
+    finally:
+        runtime_engine.dispose()
+
+    assert recovered == 1
+    with migration_engine.connect() as connection:
+        transaction = connection.execute(
+            text("SELECT status, consumed_at FROM portal_control.oidc_login_transactions")
+        ).one()
+        evidence = connection.execute(
+            text(
+                "SELECT safe_metadata FROM portal_control.security_audit_events "
+                "WHERE reason_code = 'OIDC_STALE_CLAIM_AMBIGUOUS' "
+                "ORDER BY ledger_sequence DESC LIMIT 1"
+            )
+        ).scalar_one()
+    assert transaction.status == "CONSUMED"
+    assert transaction.consumed_at is not None
+    assert evidence["recovery_basis"] == "durable_expiry"
+
+
+@pytest.mark.integration
+def test_browser_binding_cleanup_failure_cannot_undo_committed_success(
+    callback_database: tuple[Engine, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+
+    def fail_cleanup(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected cleanup failure")
+
+    monkeypatch.setattr(Response, "delete_cookie", fail_cleanup)
+    with TestClient(app, follow_redirects=False) as client:
+        state = _begin_login(client)
+        response = client.get(
+            "/v1/auth/callback",
+            params={"state": state, "code": "provider-code"},
+        )
+
+    assert response.status_code == 303
+    assert "fintech_portal_session_v1=" in response.headers["set-cookie"]
+    with migration_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM portal_control.oidc_login_transactions")
+            ).scalar_one()
+            == "CONSUMED"
+        )
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM portal_control.portal_sessions")
+            ).scalar_one()
+            == 1
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM portal_control.security_audit_events "
+                    "WHERE event_type IN "
+                    "('auth.login_succeeded.v1', 'auth.session_created.v1') "
+                    "AND correlation_id = :correlation_id"
+                ),
+                {"correlation_id": response.headers["X-Correlation-ID"]},
+            ).scalar_one()
+            == 2
         )

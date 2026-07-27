@@ -55,13 +55,17 @@ def clear_browser_binding_cookie(
     settings: PortalApiSettings,
 ) -> None:
     policy = browser_binding_cookie(settings)
-    response.delete_cookie(
-        key=policy.name,
-        path="/",
-        secure=policy.secure,
-        httponly=True,
-        samesite="lax",
-    )
+    try:
+        response.delete_cookie(
+            key=policy.name,
+            path="/",
+            secure=policy.secure,
+            httponly=True,
+            samesite="lax",
+        )
+    except Exception:
+        # Terminal state and authorization never depend on browser cleanup succeeding.
+        return
 
 
 def set_session_cookie(
