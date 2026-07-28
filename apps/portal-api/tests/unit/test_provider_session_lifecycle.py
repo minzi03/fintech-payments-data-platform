@@ -7,6 +7,14 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from portal_api.abuse.models import (
+    AbuseBackendStatus,
+    AbuseDecision,
+    AbuseDimension,
+    AbuseEvaluationResult,
+    AbuseOperation,
+    PenaltyLevel,
+)
 from portal_api.auth.ports import (
     ProviderExchangeFailure,
     ProviderFailureKind,
@@ -66,6 +74,7 @@ class FakeRepository:
         self.completed: list[RefreshClaim] = []
         self.failures: list[tuple[RefreshClaim, ProviderExchangeFailure]] = []
         self.finished_logout: tuple[LogoutPlan, tuple[CleanupEvidence, ...]] | None = None
+        self.deferred: list[tuple[RefreshClaim, str]] = []
         self.backchannel_calls = 0
 
     def claim_due(self, **kwargs: object) -> tuple[RefreshClaim, ...]:
@@ -96,6 +105,17 @@ class FakeRepository:
         self.failures.append((claim, failure))
         return "revoked" if failure.reason_code == "INVALID_GRANT" else "retry_scheduled"
 
+    def defer_refresh(
+        self,
+        *,
+        claim: RefreshClaim,
+        reason_code: str,
+        **kwargs: object,
+    ) -> str:
+        del kwargs
+        self.deferred.append((claim, reason_code))
+        return "deferred"
+
     def begin_logout(self, **kwargs: object) -> LogoutPlan:
         del kwargs
         target = LogoutTokenTarget(
@@ -115,6 +135,14 @@ class FakeRepository:
         del kwargs
         self.finished_logout = (plan, evidence)
 
+    def record_logout_cleanup(
+        self,
+        *,
+        plan: LogoutPlan,
+        evidence: tuple[CleanupEvidence, ...],
+    ) -> None:
+        self.finished_logout = (plan, evidence)
+
     def revoke_from_backchannel(self, **kwargs: object) -> int:
         del kwargs
         self.backchannel_calls += 1
@@ -127,9 +155,11 @@ class FakeProvider:
         *,
         refresh_failure: ProviderExchangeFailure | None = None,
         refresh_delay: float = 0,
+        cleanup_failure: ProviderExchangeFailure | None = None,
     ) -> None:
         self.refresh_failure = refresh_failure
         self.refresh_delay = refresh_delay
+        self.cleanup_failure = cleanup_failure
         self.refresh_calls = 0
         self.cleanup_calls: list[str] = []
 
@@ -157,6 +187,8 @@ class FakeProvider:
     ) -> ProviderOperationResult:
         assert token
         self.cleanup_calls.append(token_kind.value)
+        if self.cleanup_failure is not None:
+            raise self.cleanup_failure
         return ProviderOperationResult(ProviderOperationStatus.SUCCEEDED)
 
     async def logout_provider_session(
@@ -166,10 +198,48 @@ class FakeProvider:
     ) -> ProviderOperationResult:
         assert refresh_token == "refresh"
         self.cleanup_calls.append("provider_logout")
+        if self.cleanup_failure is not None:
+            raise self.cleanup_failure
         return ProviderOperationResult(ProviderOperationStatus.SUCCEEDED)
 
     async def front_channel_logout_url(self) -> str | None:
         return "http://identity.test/logout"
+
+
+class FakeAbuseProtection:
+    def __init__(self, *, allow: bool, provider_permit: bool = True) -> None:
+        self.allow = allow
+        self.provider_permitted = provider_permit
+        self.evaluations: list[tuple[AbuseOperation, dict[AbuseDimension, str | None]]] = []
+
+    async def evaluate(
+        self,
+        operation: AbuseOperation,
+        *,
+        dimensions: dict[AbuseDimension, str | None],
+        **kwargs: object,
+    ) -> AbuseEvaluationResult:
+        del kwargs
+        self.evaluations.append((operation, dimensions))
+        return AbuseEvaluationResult(
+            decision=AbuseDecision.ALLOW if self.allow else AbuseDecision.THROTTLE,
+            policy_name="test",
+            policy_version="test-v1",
+            limiting_dimension=None if self.allow else AbuseDimension.SESSION,
+            retry_after_seconds=0 if self.allow else 30,
+            remaining=1 if self.allow else 0,
+            backend_status=AbuseBackendStatus.UP,
+            penalty_level=PenaltyLevel.NORMAL,
+        )
+
+    async def _provider_permit_context(self):
+        yield self.provider_permitted
+
+    def provider_permit(self, **kwargs: object):
+        from contextlib import asynccontextmanager
+
+        del kwargs
+        return asynccontextmanager(self._provider_permit_context)()
 
 
 def test_state_machine_contains_all_required_states_and_rejects_illegal_transitions() -> None:
@@ -259,6 +329,30 @@ async def test_invalid_grant_and_timeout_are_classified_without_token_exposure()
 
 
 @pytest.mark.asyncio
+async def test_background_refresh_throttle_has_no_ip_and_does_not_charge_retry_budget() -> None:
+    claim = _claim(failures=2)
+    repository = FakeRepository((claim,))
+    provider = FakeProvider()
+    abuse = FakeAbuseProtection(allow=False)
+    service = ProviderSessionLifecycleService(
+        repository=repository,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        settings=_settings(),
+        abuse_protection=abuse,  # type: ignore[arg-type]
+    )
+
+    assert await service.refresh_due(worker_id="worker-1") == 1
+
+    assert provider.refresh_calls == 0
+    assert repository.deferred == [(claim, "ABUSE_THROTTLED")]
+    assert not repository.failures
+    operation, dimensions = abuse.evaluations[0]
+    assert operation is AbuseOperation.BACKGROUND_REFRESH
+    assert AbuseDimension.IP_PREFIX not in dimensions
+    assert dimensions[AbuseDimension.SESSION] == str(claim.session_family_id)
+
+
+@pytest.mark.asyncio
 async def test_logout_orders_provider_cleanup_and_preserves_local_completion() -> None:
     repository = FakeRepository()
     provider = FakeProvider()
@@ -291,6 +385,64 @@ async def test_logout_orders_provider_cleanup_and_preserves_local_completion() -
         "SUCCEEDED",
         "SUCCEEDED",
         "SUCCEEDED",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_logout_commits_locally_when_provider_cleanup_is_throttled() -> None:
+    repository = FakeRepository()
+    provider = FakeProvider()
+    service = ProviderSessionLifecycleService(
+        repository=repository,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+
+    result = await service.logout(
+        session=object(),  # type: ignore[arg-type]
+        all_for_principal=False,
+        correlation_id="correlation",
+        request_id="request",
+        provider_cleanup_allowed=False,
+    )
+
+    assert result.revoked_session_count == 1
+    assert result.front_channel_logout_url is None
+    assert provider.cleanup_calls == []
+    assert repository.finished_logout is not None
+    assert repository.finished_logout[1][0].outcome == "THROTTLED"
+    assert repository.finished_logout[1][0].reason_code == "ABUSE_THROTTLED"
+
+
+@pytest.mark.asyncio
+async def test_provider_outage_cannot_undo_committed_local_logout() -> None:
+    repository = FakeRepository()
+    provider = FakeProvider(
+        cleanup_failure=ProviderExchangeFailure(
+            ProviderFailureKind.AMBIGUOUS,
+            reason_code="PROVIDER_UNAVAILABLE",
+        )
+    )
+    service = ProviderSessionLifecycleService(
+        repository=repository,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+
+    result = await service.logout(
+        session=object(),  # type: ignore[arg-type]
+        all_for_principal=False,
+        correlation_id="correlation",
+        request_id="request",
+    )
+
+    assert result.revoked_session_count == 1
+    assert result.provider_failures == 3
+    assert repository.finished_logout is not None
+    assert [item.reason_code for item in repository.finished_logout[1]] == [
+        "PROVIDER_UNAVAILABLE",
+        "PROVIDER_UNAVAILABLE",
+        "PROVIDER_UNAVAILABLE",
     ]
 
 

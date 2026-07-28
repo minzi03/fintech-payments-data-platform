@@ -8,6 +8,14 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 
+from portal_api.abuse.models import (
+    AbuseDecision,
+    AbuseDimension,
+    AbuseEvaluationResult,
+    AbuseOperation,
+    ResolvedClientAddress,
+)
+from portal_api.abuse.service import AbuseProtectionService, bounded_retry_after
 from portal_api.auth.callback import (
     MAX_PROVIDER_ERROR_LENGTH,
     CallbackCommand,
@@ -98,6 +106,57 @@ def _logout_token_validator(request: Request) -> ProviderLogoutTokenValidator:
     return validator
 
 
+def _abuse_service(request: Request) -> AbuseProtectionService | None:
+    service = request.app.state.abuse_protection_service
+    return service if isinstance(service, AbuseProtectionService) else None
+
+
+def _client_abuse_identity(request: Request) -> str | None:
+    identity = getattr(request.state, "abuse_client", None)
+    return identity.fingerprint if isinstance(identity, ResolvedClientAddress) else None
+
+
+async def _evaluate_abuse(
+    request: Request,
+    operation: AbuseOperation,
+    *,
+    dimensions: dict[AbuseDimension, str | None] | None = None,
+) -> AbuseEvaluationResult | None:
+    service = _abuse_service(request)
+    if service is None:
+        return None
+    resolved = dict(dimensions or {})
+    resolved.setdefault(AbuseDimension.IP_PREFIX, _client_abuse_identity(request))
+    return await service.evaluate(
+        operation,
+        dimensions=resolved,
+        correlation_id=get_correlation_id(),
+        request_id=get_request_id(),
+    )
+
+
+async def _enforce_abuse(
+    request: Request,
+    operation: AbuseOperation,
+    *,
+    dimensions: dict[AbuseDimension, str | None] | None = None,
+) -> None:
+    result = await _evaluate_abuse(request, operation, dimensions=dimensions)
+    if result is None or result.decision in {
+        AbuseDecision.ALLOW,
+        AbuseDecision.DEGRADED_ALLOW,
+    }:
+        return
+    raise PortalError(
+        status_code=429,
+        error_code=ErrorCode.RATE_LIMITED,
+        title="Request rate limited",
+        detail="The request cannot be accepted at this time.",
+        retryable=True,
+        retry_after_seconds=bounded_retry_after(result),
+    )
+
+
 @router.get(
     "/login-context",
     response_model=LoginContextView,
@@ -137,6 +196,7 @@ def login_context(
     responses={**PROBLEM_RESPONSES, 303: {"description": "Redirect to the configured provider"}},
 )
 async def start_login(request: Request, body: LoginRequest) -> RedirectResponse:
+    await _enforce_abuse(request, AbuseOperation.LOGIN_INITIATION)
     try:
         redirect = await _login_service(request).start_login(
             intent_token=body.intent_token,
@@ -181,6 +241,13 @@ async def start_login(request: Request, body: LoginRequest) -> RedirectResponse:
 )
 async def complete_login_callback(request: Request) -> RedirectResponse:
     request.state.clear_browser_binding = True
+    await _enforce_abuse(
+        request,
+        AbuseOperation.OIDC_CALLBACK,
+        dimensions={
+            AbuseDimension.PROVIDER_ISSUER: request.app.state.settings.oidc_provider_id,
+        },
+    )
     try:
         values = _bounded_callback_values(request)
         binding_name = browser_binding_cookie(request.app.state.settings).name
@@ -196,6 +263,13 @@ async def complete_login_callback(request: Request) -> RedirectResponse:
             request_id=get_request_id(),
         )
     except CallbackFailure as error:
+        await _enforce_abuse(
+            request,
+            AbuseOperation.INVALID_AUTH_TRAFFIC,
+            dimensions={
+                AbuseDimension.PROVIDER_ISSUER: request.app.state.settings.oidc_provider_id,
+            },
+        )
         raise PortalError(
             status_code=error.status_code,
             error_code=ErrorCode.INVALID_REQUEST,
@@ -247,11 +321,19 @@ async def logout(
 ) -> LogoutResult:
     require_csrf(request, session)
     require_action(request, session=session, action="portal.logout")
+    abuse = await _evaluate_abuse(
+        request,
+        AbuseOperation.LOGOUT,
+        dimensions={AbuseDimension.SESSION: str(session.session_family_id)},
+    )
     result = await _provider_session_service(request).logout(
         session=session,
         all_for_principal=False,
         correlation_id=get_correlation_id(),
         request_id=get_request_id(),
+        provider_cleanup_allowed=(
+            abuse is None or abuse.decision in {AbuseDecision.ALLOW, AbuseDecision.DEGRADED_ALLOW}
+        ),
     )
     clear_session_cookie(response, settings=request.app.state.settings)
     if result.front_channel_logout_url is not None:
@@ -274,11 +356,19 @@ async def logout_all(
 ) -> LogoutResult:
     require_csrf(request, session)
     require_action(request, session=session, action="portal.logout")
+    abuse = await _evaluate_abuse(
+        request,
+        AbuseOperation.LOGOUT,
+        dimensions={AbuseDimension.SESSION: str(session.session_family_id)},
+    )
     result = await _provider_session_service(request).logout(
         session=session,
         all_for_principal=True,
         correlation_id=get_correlation_id(),
         request_id=get_request_id(),
+        provider_cleanup_allowed=(
+            abuse is None or abuse.decision in {AbuseDecision.ALLOW, AbuseDecision.DEGRADED_ALLOW}
+        ),
     )
     clear_session_cookie(response, settings=request.app.state.settings)
     if result.front_channel_logout_url is not None:
@@ -294,6 +384,10 @@ async def logout_all(
     include_in_schema=False,
 )
 async def backchannel_logout(request: Request) -> Response:
+    await _enforce_abuse(
+        request,
+        AbuseOperation.INVALID_AUTH_TRAFFIC,
+    )
     content_type = request.headers.get("content-type", "").partition(";")[0].strip().casefold()
     if content_type != "application/x-www-form-urlencoded":
         raise PortalError(
@@ -348,4 +442,17 @@ async def backchannel_logout(request: Request) -> Response:
             detail="The provider logout request could not be accepted.",
             retryable=False,
         ) from error
+    # Redis is only a post-authority replay accelerator. The signed token and
+    # durable PostgreSQL receipt have already been validated and committed.
+    await _evaluate_abuse(
+        request,
+        AbuseOperation.BACKCHANNEL_LOGOUT,
+        dimensions={
+            AbuseDimension.PROVIDER_ISSUER: request.app.state.settings.oidc_provider_id,
+            AbuseDimension.BACKCHANNEL_JTI: identity.token_identifier,
+            AbuseDimension.PROVIDER_SESSION: (
+                identity.provider_session or identity.provider_subject
+            ),
+        },
+    )
     return Response(status_code=204)

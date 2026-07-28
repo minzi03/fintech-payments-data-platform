@@ -40,6 +40,13 @@ class AuditEventType(StrEnum):
     ENVIRONMENT_SELECTION_DENIED = "authz.environment_selection_denied.v1"
     CAPABILITY_PROJECTION_GENERATED = "authz.capability_projection_generated.v1"
     STEP_UP_REQUIRED = "authz.step_up_required.v1"
+    ABUSE_REQUEST_THROTTLED = "security.abuse_request_throttled.v1"
+    ABUSE_TEMPORARY_BLOCK_APPLIED = "security.abuse_temporary_block_applied.v1"
+    ABUSE_PENALTY_ESCALATED = "security.abuse_penalty_escalated.v1"
+    ABUSE_BACKEND_UNAVAILABLE = "security.abuse_backend_unavailable.v1"
+    ABUSE_FALLBACK_ACTIVATED = "security.abuse_fallback_activated.v1"
+    ABUSE_PROVIDER_OPERATION_THROTTLED = "security.abuse_provider_operation_throttled.v1"
+    ABUSE_REPLAY_FAST_REJECTED = "security.abuse_replay_fast_rejected.v1"
 
 
 @dataclass(frozen=True)

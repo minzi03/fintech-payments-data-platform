@@ -99,6 +99,30 @@ class TelemetryRecorder(Protocol):
         to_state: str | None = None,
     ) -> None: ...
 
+    def record_abuse(
+        self,
+        *,
+        operation: str,
+        decision: str,
+        policy: str,
+        policy_version: str,
+        dimension: str,
+        backend_status: str,
+        failure_class: str,
+        penalty_level: str,
+        fallback_mode: str,
+        duration_ms: float,
+    ) -> None: ...
+
+    def record_abuse_provider_concurrency(
+        self,
+        *,
+        operation: str,
+        outcome: str,
+        backend_status: str,
+        duration_ms: float,
+    ) -> None: ...
+
     def record_database_connection(self, outcome: str, duration_ms: float) -> None: ...
 
     def record_database_query(self, operation: str, outcome: str, duration_ms: float) -> None: ...
@@ -118,6 +142,7 @@ class TelemetrySnapshot:
     session_events: dict[str, int]
     oidc_operations: dict[str, int]
     provider_session_operations: dict[str, int]
+    abuse_operations: dict[str, int]
     database_operations: dict[str, int]
     audit_events: dict[str, int]
     archive_events: dict[str, int]
@@ -137,6 +162,7 @@ class InMemoryTelemetry:
         self._session_events: Counter[str] = Counter()
         self._oidc_operations: Counter[str] = Counter()
         self._provider_session_operations: Counter[str] = Counter()
+        self._abuse_operations: Counter[str] = Counter()
         self._database_operations: Counter[str] = Counter()
         self._audit_events: Counter[str] = Counter()
         self._archive_events: Counter[str] = Counter()
@@ -228,6 +254,44 @@ class InMemoryTelemetry:
                 self._provider_session_operations[f"transition:{from_state}:{to_state}"] += 1
             self._durations[f"provider_session:{operation}"].append(duration_ms)
 
+    def record_abuse(
+        self,
+        *,
+        operation: str,
+        decision: str,
+        policy: str,
+        policy_version: str,
+        dimension: str,
+        backend_status: str,
+        failure_class: str,
+        penalty_level: str,
+        fallback_mode: str,
+        duration_ms: float,
+    ) -> None:
+        del policy_version, failure_class
+        with self._lock:
+            self._abuse_operations[f"request:{operation}"] += 1
+            self._abuse_operations[f"decision:{operation}:{decision}"] += 1
+            self._abuse_operations[f"policy:{policy}:{dimension}"] += 1
+            self._abuse_operations[f"backend:{backend_status}"] += 1
+            self._abuse_operations[f"penalty:{penalty_level}"] += 1
+            if fallback_mode == "active":
+                self._abuse_operations[f"fallback:{operation}"] += 1
+            self._durations[f"abuse:{operation}"].append(duration_ms)
+
+    def record_abuse_provider_concurrency(
+        self,
+        *,
+        operation: str,
+        outcome: str,
+        backend_status: str,
+        duration_ms: float,
+    ) -> None:
+        with self._lock:
+            self._abuse_operations[f"provider:{operation}:{outcome}"] += 1
+            self._abuse_operations[f"provider_backend:{backend_status}"] += 1
+            self._durations[f"abuse_provider:{operation}"].append(duration_ms)
+
     def record_database_connection(self, outcome: str, duration_ms: float) -> None:
         with self._lock:
             self._database_operations[f"connection:{outcome}"] += 1
@@ -262,6 +326,7 @@ class InMemoryTelemetry:
                 session_events=dict(self._session_events),
                 oidc_operations=dict(self._oidc_operations),
                 provider_session_operations=dict(self._provider_session_operations),
+                abuse_operations=dict(self._abuse_operations),
                 database_operations=dict(self._database_operations),
                 audit_events=dict(self._audit_events),
                 archive_events=dict(self._archive_events),
@@ -333,6 +398,32 @@ class NoopTelemetry:
         retry_count: int = 0,
         from_state: str | None = None,
         to_state: str | None = None,
+    ) -> None:
+        return None
+
+    def record_abuse(
+        self,
+        *,
+        operation: str,
+        decision: str,
+        policy: str,
+        policy_version: str,
+        dimension: str,
+        backend_status: str,
+        failure_class: str,
+        penalty_level: str,
+        fallback_mode: str,
+        duration_ms: float,
+    ) -> None:
+        return None
+
+    def record_abuse_provider_concurrency(
+        self,
+        *,
+        operation: str,
+        outcome: str,
+        backend_status: str,
+        duration_ms: float,
     ) -> None:
         return None
 

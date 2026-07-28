@@ -53,6 +53,21 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_PROVIDER_REFRESH_BATCH_SIZE` | `25` | no | no | Maximum claims per worker scan; 1-100 |
 | `PORTAL_API_PROVIDER_LOGOUT_TIMEOUT_SECONDS` | `5` | no | no | Per-provider cleanup operation timeout; greater than 0 and at most 30 seconds |
 | `PORTAL_API_PROVIDER_LOGOUT_REPLAY_TTL_SECONDS` | `86400` | no | no | Durable back-channel logout-token replay fence; 300-86400 seconds |
+| `PORTAL_API_ABUSE_PROTECTION_ENABLED` | `false` | no | no | Enables Redis-backed enforcement and bounded operation-specific fallbacks |
+| `PORTAL_API_REDIS_URL` | none | when abuse protection enabled | yes | `redis://` locally; production requires `rediss://`; query and embedded logging forbidden |
+| `PORTAL_API_REDIS_CONNECT_TIMEOUT_SECONDS` | `0.5` | no | no | Greater than 0 and at most 5 seconds |
+| `PORTAL_API_REDIS_OPERATION_TIMEOUT_SECONDS` | `0.25` | no | no | Greater than 0 and at most 5 seconds |
+| `PORTAL_API_REDIS_MAX_CONNECTIONS` | `50` | no | no | 1-500 |
+| `PORTAL_API_REDIS_KEY_PREFIX` | `portal:abuse` | no | no | Bounded safe namespace |
+| `PORTAL_API_ABUSE_POLICY_VERSION` | `development-v1` | no | no | Bounded policy revision; defaults require production tuning |
+| `PORTAL_API_CLIENT_ADDRESS_HMAC_SECRET` | none | when abuse protection enabled | yes | Base64url-encoded 256-bit key, distinct per environment |
+| `PORTAL_API_FORWARDED_HEADER_MODE` | `direct` | no | no | `direct` or `x_forwarded_for` |
+| `PORTAL_API_TRUSTED_PROXY_CIDRS` | empty | in proxy mode | no | Canonical explicit CIDRs; catch-all ranges forbidden |
+| `PORTAL_API_MAX_FORWARDED_HOPS` | `5` | no | no | 1-16 |
+| `PORTAL_API_IPV4_PREFIX_LENGTH` | `24` | no | no | 16-32 |
+| `PORTAL_API_IPV6_PREFIX_LENGTH` | `64` | no | no | 32-128 |
+| `PORTAL_API_ABUSE_LOCAL_FALLBACK_MAX_KEYS` | `10000` | no | no | 100-100000 bounded process-local keys |
+| `PORTAL_API_ABUSE_PROVIDER_MAX_CONCURRENCY` | `20` | no | no | 1-500 leased provider calls |
 
 The test environment may omit the master key to obtain isolated ephemeral authority. Local and
 development security runtimes require an explicit key so valid sessions and pending authentication
@@ -78,6 +93,9 @@ exporter setup, and operational validation.
 
 See [Provider-backed session lifecycle](provider-session-lifecycle.md) for state transitions,
 provider configuration, refresh/revocation/logout operations, and incident procedures.
+
+See [Distributed abuse protection](abuse-protection.md) before configuring trusted proxies,
+production Redis, operation policies, or degradation behavior.
 
 ## Portal Web
 

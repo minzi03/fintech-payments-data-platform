@@ -1,5 +1,11 @@
 # Provider-backed session lifecycle
 
+Distributed abuse enforcement is an outer coordination boundary, not lifecycle authority.
+Background refresh never uses client IP; it applies session/provider quotas after PostgreSQL claim
+and before provider I/O. Throttle deterministically reschedules without consuming the provider
+failure budget. Logout persists terminal state and crypto-erasure before any rate-limited provider
+cleanup. See [Distributed abuse protection](abuse-protection.md).
+
 The Portal owns browser session authority while integrating with the provider token lifecycle.
 The browser receives only an opaque, HttpOnly Portal session cookie. Provider access, ID, and
 refresh tokens remain in encrypted server-side envelopes and are never returned by an API,

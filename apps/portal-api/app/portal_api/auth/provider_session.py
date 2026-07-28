@@ -8,7 +8,7 @@ import hmac
 import json
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -21,6 +21,8 @@ from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.engine import Connection, Engine
 
+from portal_api.abuse.models import AbuseDimension, AbuseOperation
+from portal_api.abuse.service import AbuseProtectionService
 from portal_api.audit.ledger import AuditLedger
 from portal_api.audit.models import AuditEvent, AuditEventType
 from portal_api.auth.ports import (
@@ -761,6 +763,66 @@ class ProviderSessionRepository:
             )
         return "retry_scheduled" if retryable else "failed_closed"
 
+    def defer_refresh(
+        self,
+        *,
+        claim: RefreshClaim,
+        reason_code: str,
+        correlation_id: str,
+        request_id: str,
+        now: datetime | None = None,
+    ) -> str:
+        """Release a claimed refresh without charging the provider retry budget."""
+        evaluated_at = now or datetime.now(UTC)
+        with local_transaction(self._engine) as connection:
+            durable = (
+                connection.execute(
+                    select(portal_token_envelopes)
+                    .where(portal_token_envelopes.c.envelope_id == claim.envelope_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if (
+                durable is None
+                or durable["lifecycle_state"] != "REFRESHING"
+                or durable["refresh_lease_owner"] != claim.worker_id
+                or int(durable["token_generation"]) != claim.token_generation
+            ):
+                return "stale_claim"
+            row = dict(durable)
+            self._transition(
+                connection,
+                row=row,
+                target=ProviderSessionState.REFRESH_FAILED,
+                now=evaluated_at,
+                correlation_id=correlation_id,
+                request_id=request_id,
+                reason_code=reason_code,
+                values={
+                    "refresh_lease_owner": None,
+                    "refresh_lease_expires_at": None,
+                    "next_refresh_attempt_at": evaluated_at
+                    + timedelta(seconds=self._settings.provider_refresh_initial_backoff_seconds),
+                    "last_failure_code": reason_code,
+                },
+            )
+            self._append(
+                connection,
+                row=row,
+                event_type=AuditEventType.PROVIDER_REFRESH_FAILED,
+                outcome="DEFERRED",
+                reason_code=reason_code,
+                correlation_id=correlation_id,
+                request_id=request_id,
+                safe_metadata={
+                    "retry_count": claim.refresh_failures,
+                    "retry_scheduled": True,
+                },
+            )
+        return "deferred"
+
     def begin_logout(
         self,
         *,
@@ -960,6 +1022,46 @@ class ProviderSessionRepository:
                     ),
                 },
             )
+
+    def record_logout_cleanup(
+        self,
+        *,
+        plan: LogoutPlan,
+        evidence: tuple[CleanupEvidence, ...],
+    ) -> None:
+        """Persist bounded provider-cleanup evidence after local terminal commit."""
+        if not evidence:
+            return
+        evidence_by_family: dict[UUID, list[CleanupEvidence]] = {}
+        for item in evidence:
+            evidence_by_family.setdefault(item.session_family_id, []).append(item)
+        with local_transaction(self._engine) as connection:
+            for target in plan.targets:
+                durable = (
+                    connection.execute(
+                        select(portal_token_envelopes).where(
+                            portal_token_envelopes.c.envelope_id == target.envelope_id
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                row = (
+                    dict(durable)
+                    if durable is not None
+                    else {"session_family_id": target.session_family_id}
+                )
+                for item in evidence_by_family.get(target.session_family_id, []):
+                    self._append(
+                        connection,
+                        row=row,
+                        event_type=self._cleanup_event_type(item),
+                        outcome=item.outcome,
+                        reason_code=item.reason_code,
+                        correlation_id=plan.correlation_id,
+                        request_id=plan.request_id,
+                        safe_metadata={"operation": item.operation},
+                    )
 
     def revoke_from_backchannel(
         self,
@@ -1373,12 +1475,14 @@ class ProviderSessionLifecycleService:
         settings: PortalApiSettings,
         telemetry: TelemetryRecorder | None = None,
         refresh_identity_validator: ProviderRefreshIdentityValidator | None = None,
+        abuse_protection: AbuseProtectionService | None = None,
     ) -> None:
         self._repository = repository
         self._provider = provider
         self._settings = settings
         self._telemetry = telemetry or NoopTelemetry()
         self._refresh_identity_validator = refresh_identity_validator
+        self._abuse = abuse_protection
 
     async def refresh_due(self, *, worker_id: str) -> int:
         correlation_id = f"provider-refresh-{uuid4()}"
@@ -1434,15 +1538,56 @@ class ProviderSessionLifecycleService:
         started = perf_counter()
         outcome = "error"
         try:
+            if self._abuse is not None:
+                abuse_result = await self._abuse.evaluate(
+                    AbuseOperation.BACKGROUND_REFRESH,
+                    dimensions={
+                        AbuseDimension.SESSION: str(claim.session_family_id),
+                        AbuseDimension.SUBJECT: claim.provider_subject,
+                        AbuseDimension.PROVIDER_ISSUER: self._settings.oidc_provider_id,
+                        AbuseDimension.PROVIDER_CLIENT: self._settings.oidc_client_id,
+                        AbuseDimension.PROVIDER_SESSION: claim.provider_session,
+                    },
+                    correlation_id=correlation_id,
+                    request_id=request_id,
+                )
+                if not abuse_result.decision.permits_operation:
+                    outcome = await asyncio.to_thread(
+                        self._repository.defer_refresh,
+                        claim=claim,
+                        reason_code="ABUSE_THROTTLED",
+                        correlation_id=correlation_id,
+                        request_id=request_id,
+                    )
+                    return
             if claim.tokens.refresh_token is None:
                 raise ProviderExchangeFailure(
                     ProviderFailureKind.AUTHORITATIVE_REJECTION,
                     reason_code="REFRESH_TOKEN_UNAVAILABLE",
                 )
-            async with asyncio.timeout(self._settings.oidc_http_timeout_seconds):
-                refreshed = await self._provider.refresh_tokens(
-                    refresh_token=claim.tokens.refresh_token
+            refreshed: ProviderRefreshTokenSet | None
+            if self._abuse is None:
+                provider_permitted = True
+                refreshed = await self._refresh_provider(claim.tokens.refresh_token)
+            else:
+                async with self._abuse.provider_permit(
+                    operation=AbuseOperation.BACKGROUND_REFRESH,
+                    provider_identifier=self._settings.oidc_provider_id,
+                ) as provider_permitted:
+                    refreshed = (
+                        await self._refresh_provider(claim.tokens.refresh_token)
+                        if provider_permitted
+                        else None
+                    )
+            if not provider_permitted or refreshed is None:
+                outcome = await asyncio.to_thread(
+                    self._repository.defer_refresh,
+                    claim=claim,
+                    reason_code="PROVIDER_CONCURRENCY_THROTTLED",
+                    correlation_id=correlation_id,
+                    request_id=request_id,
                 )
+                return
             if refreshed.id_token is not None:
                 if self._refresh_identity_validator is None:
                     raise ProviderExchangeFailure(
@@ -1523,6 +1668,7 @@ class ProviderSessionLifecycleService:
         all_for_principal: bool,
         correlation_id: str,
         request_id: str,
+        provider_cleanup_allowed: bool = True,
     ) -> ProviderLogoutResult:
         plan = await asyncio.to_thread(
             self._repository.begin_logout,
@@ -1531,58 +1677,103 @@ class ProviderSessionLifecycleService:
             correlation_id=correlation_id,
             request_id=request_id,
         )
-        evidence: list[CleanupEvidence] = []
-        for target in plan.targets:
-            evidence.extend(await self._cleanup_provider(target))
-        front_channel_url: str | None = None
-        try:
-            async with asyncio.timeout(self._settings.provider_logout_timeout_seconds):
-                front_channel_url = await self._provider.front_channel_logout_url()
-        except (TimeoutError, ProviderExchangeFailure):
-            LOGGER.warning(
-                "provider front-channel logout metadata unavailable",
-                extra={"event": "provider_front_channel_logout_unavailable"},
-            )
+        # Local revocation and crypto-erasure are authoritative and must commit
+        # before optional provider network cleanup begins.
         await asyncio.to_thread(
             self._repository.finish_logout,
             plan=plan,
-            evidence=tuple(evidence),
+            evidence=(),
         )
+        evidence: list[CleanupEvidence] = []
+        for target in plan.targets:
+            if provider_cleanup_allowed:
+                evidence.extend(
+                    await self._cleanup_provider(
+                        target,
+                        correlation_id=correlation_id,
+                        request_id=request_id,
+                    )
+                )
+            else:
+                evidence.append(
+                    CleanupEvidence(
+                        session_family_id=target.session_family_id,
+                        operation="provider_cleanup",
+                        outcome="THROTTLED",
+                        reason_code="ABUSE_THROTTLED",
+                    )
+                )
+        front_channel_url: str | None = None
+        if provider_cleanup_allowed:
+            try:
+                async with asyncio.timeout(self._settings.provider_logout_timeout_seconds):
+                    front_channel_url = await self._provider.front_channel_logout_url()
+            except (TimeoutError, ProviderExchangeFailure):
+                LOGGER.warning(
+                    "provider front-channel logout metadata unavailable",
+                    extra={"event": "provider_front_channel_logout_unavailable"},
+                )
+        record_cleanup = getattr(self._repository, "record_logout_cleanup", None)
+        if record_cleanup is not None:
+            await asyncio.to_thread(
+                record_cleanup,
+                plan=plan,
+                evidence=tuple(evidence),
+            )
         return ProviderLogoutResult(
             revoked_session_count=plan.revoked_session_count,
             front_channel_logout_url=front_channel_url,
             provider_failures=sum(item.outcome == "FAILED" for item in evidence),
         )
 
-    async def _cleanup_provider(self, target: LogoutTokenTarget) -> list[CleanupEvidence]:
+    async def _cleanup_provider(
+        self,
+        target: LogoutTokenTarget,
+        *,
+        correlation_id: str,
+        request_id: str,
+    ) -> list[CleanupEvidence]:
         evidence: list[CleanupEvidence] = []
-        operations: list[tuple[str, Any]] = [
+        operations: list[
+            tuple[
+                str,
+                AbuseOperation,
+                Callable[[], Awaitable[Any]],
+            ]
+        ] = [
             (
                 "provider_logout",
-                self._provider.logout_provider_session(refresh_token=target.tokens.refresh_token),
+                AbuseOperation.PROVIDER_END_SESSION,
+                lambda: self._provider.logout_provider_session(
+                    refresh_token=target.tokens.refresh_token
+                ),
             )
         ]
-        if target.tokens.access_token is not None:
+        access_token = target.tokens.access_token
+        if access_token is not None:
             operations.append(
                 (
                     "access_revocation",
-                    self._provider.revoke_token(
-                        token=target.tokens.access_token,
+                    AbuseOperation.ACCESS_TOKEN_REVOCATION,
+                    lambda: self._provider.revoke_token(
+                        token=access_token,
                         token_kind=ProviderTokenKind.ACCESS_TOKEN,
                     ),
                 )
             )
-        if target.tokens.refresh_token is not None:
+        refresh_token = target.tokens.refresh_token
+        if refresh_token is not None:
             operations.append(
                 (
                     "refresh_revocation",
-                    self._provider.revoke_token(
-                        token=target.tokens.refresh_token,
+                    AbuseOperation.REFRESH_TOKEN_REVOCATION,
+                    lambda: self._provider.revoke_token(
+                        token=refresh_token,
                         token_kind=ProviderTokenKind.REFRESH_TOKEN,
                     ),
                 )
             )
-        for operation, awaitable in operations:
+        for operation, abuse_operation, operation_factory in operations:
             started = perf_counter()
             outcome = "FAILED"
             reason_code: str | None = None
@@ -1591,9 +1782,38 @@ class ProviderSessionLifecycleService:
                 attributes={"provider.session.operation": operation},
             ):
                 try:
-                    async with asyncio.timeout(self._settings.provider_logout_timeout_seconds):
-                        result = await awaitable
-                    outcome = result.status.value
+                    if self._abuse is not None:
+                        quota = await self._abuse.evaluate(
+                            abuse_operation,
+                            dimensions={
+                                AbuseDimension.SESSION: str(target.session_family_id),
+                                AbuseDimension.PROVIDER_ISSUER: (self._settings.oidc_provider_id),
+                                AbuseDimension.PROVIDER_CLIENT: (self._settings.oidc_client_id),
+                            },
+                            correlation_id=correlation_id,
+                            request_id=request_id,
+                        )
+                        if not quota.decision.permits_operation:
+                            outcome = "THROTTLED"
+                            reason_code = "ABUSE_THROTTLED"
+                        else:
+                            async with self._abuse.provider_permit(
+                                operation=abuse_operation,
+                                provider_identifier=self._settings.oidc_provider_id,
+                            ) as provider_permitted:
+                                if not provider_permitted:
+                                    outcome = "THROTTLED"
+                                    reason_code = "PROVIDER_CONCURRENCY_THROTTLED"
+                                else:
+                                    async with asyncio.timeout(
+                                        self._settings.provider_logout_timeout_seconds
+                                    ):
+                                        result = await operation_factory()
+                                    outcome = result.status.value
+                    else:
+                        async with asyncio.timeout(self._settings.provider_logout_timeout_seconds):
+                            result = await operation_factory()
+                        outcome = result.status.value
                 except TimeoutError:
                     reason_code = "PROVIDER_TIMEOUT"
                 except ProviderExchangeFailure as failure:
@@ -1621,6 +1841,10 @@ class ProviderSessionLifecycleService:
                 )
             )
         return evidence
+
+    async def _refresh_provider(self, refresh_token: str) -> ProviderRefreshTokenSet:
+        async with asyncio.timeout(self._settings.oidc_http_timeout_seconds):
+            return await self._provider.refresh_tokens(refresh_token=refresh_token)
 
     async def backchannel_logout(
         self,

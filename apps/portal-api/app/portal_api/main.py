@@ -10,11 +10,22 @@ from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 from starlette.concurrency import run_in_threadpool
 
+from portal_api.abuse.audit import AbuseAuditSink
+from portal_api.abuse.client_address import (
+    ClientAddressSettings,
+    TrustedClientAddressResolver,
+)
+from portal_api.abuse.local_store import BoundedLocalAbuseStore
+from portal_api.abuse.middleware import AbuseContextMiddleware
+from portal_api.abuse.policy import AbusePolicyRegistry
+from portal_api.abuse.redis_store import RedisAbuseStore
+from portal_api.abuse.service import AbuseProtectionService
 from portal_api.adapters.oidc import OIDC_ADAPTER_ID, OidcReadinessAdapter
 from portal_api.adapters.postgresql import (
     POSTGRESQL_ADAPTER_ID,
     PostgreSqlReadinessAdapter,
 )
+from portal_api.adapters.redis import REDIS_ABUSE_ADAPTER_ID, RedisAbuseReadinessAdapter
 from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
 from portal_api.api.v1.access import router as access_router
@@ -143,6 +154,42 @@ def create_app(
     resolved_database_engine = database_engine or owned_database_engine
     if resolved_database_engine is not None:
         resolved_telemetry.instrument_database(resolved_database_engine)
+    abuse_protection_service: AbuseProtectionService | None = None
+    if resolved_settings.abuse_protection_enabled:
+        fingerprint_key = resolved_settings.client_address_hmac_secret_bytes
+        redis_url = resolved_settings.redis_url
+        if fingerprint_key is None or redis_url is None:
+            raise RuntimeError("Validated abuse-protection configuration is incomplete")
+        abuse_resolver = TrustedClientAddressResolver(
+            ClientAddressSettings(
+                trusted_proxy_cidrs=resolved_settings.trusted_proxy_cidr_values,
+                forwarded_header_mode=resolved_settings.forwarded_header_mode,
+                max_forwarded_hops=resolved_settings.max_forwarded_hops,
+                ipv4_prefix_length=resolved_settings.ipv4_prefix_length,
+                ipv6_prefix_length=resolved_settings.ipv6_prefix_length,
+                fingerprint_key=fingerprint_key,
+            )
+        )
+        abuse_protection_service = AbuseProtectionService(
+            settings=resolved_settings,
+            resolver=abuse_resolver,
+            policies=AbusePolicyRegistry.development_defaults(),
+            distributed_store=RedisAbuseStore(
+                url=redis_url.get_secret_value(),
+                connect_timeout_seconds=resolved_settings.redis_connect_timeout_seconds,
+                operation_timeout_seconds=resolved_settings.redis_operation_timeout_seconds,
+                maximum_connections=resolved_settings.redis_max_connections,
+            ),
+            local_fallback=BoundedLocalAbuseStore(
+                maximum_keys=resolved_settings.abuse_local_fallback_max_keys
+            ),
+            telemetry=resolved_telemetry,
+            audit_sink=(
+                AbuseAuditSink(resolved_database_engine)
+                if resolved_database_engine is not None
+                else None
+            ),
+        )
     security_material, protected_value_cipher = _security_components(resolved_settings)
     provider: OidcProviderPort | None = None
     if resolved_settings.security_runtime_enabled:
@@ -231,6 +278,7 @@ def create_app(
                 provider=provider,
                 telemetry=resolved_telemetry,
             ),
+            abuse_protection=abuse_protection_service,
         )
         provider_logout_token_validator = ProviderLogoutTokenValidator(
             settings=resolved_settings,
@@ -251,6 +299,8 @@ def create_app(
                     provider=provider,
                 )
             )
+        if abuse_protection_service is not None and not registry.contains(REDIS_ABUSE_ADAPTER_ID):
+            registry.register(RedisAbuseReadinessAdapter(abuse_protection_service))
 
     required_adapter_ids = (
         REQUIRED_SECURITY_ADAPTER_IDS if resolved_settings.security_runtime_enabled else ()
@@ -314,6 +364,8 @@ def create_app(
         finally:
             if provider_refresh_worker is not None:
                 await provider_refresh_worker.stop()
+            if abuse_protection_service is not None:
+                await abuse_protection_service.close()
             resolved_telemetry.shutdown()
             if owned_database_engine is not None:
                 owned_database_engine.dispose()
@@ -351,6 +403,7 @@ def create_app(
     app.state.provider_session_service = provider_session_service
     app.state.provider_logout_token_validator = provider_logout_token_validator
     app.state.provider_refresh_worker = provider_refresh_worker
+    app.state.abuse_protection_service = abuse_protection_service
     app.state.security_material = security_material
     app.state.protected_value_cipher = protected_value_cipher
     register_error_handlers(app)
@@ -360,6 +413,11 @@ def create_app(
     app.include_router(session_router)
     app.include_router(access_router)
     configure_security_middleware(app, resolved_settings)
+    if abuse_protection_service is not None:
+        app.add_middleware(
+            AbuseContextMiddleware,
+            resolver=abuse_protection_service.resolver,
+        )
     app.add_middleware(RequestContextMiddleware, telemetry=resolved_telemetry)
     return app
 

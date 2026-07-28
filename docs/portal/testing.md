@@ -71,6 +71,21 @@ Its default run completes 10,000 refresh operations through the production lifec
 bounded simulated provider latency and one recoverable provider outage per 50 operations. It fails
 on duplication, incomplete work, excessive p95 latency, or excessive traced allocation.
 
+The real-Redis abuse suite and distributed load harness are:
+
+```bash
+docker compose up -d portal-redis
+cd apps/portal-api
+python -m pytest tests/integration/test_redis_abuse_enforcement.py
+python scripts/validate_abuse_protection_load.py
+```
+
+The tests use two independent Redis clients as application replicas, assert one atomic shared
+quota, validate owner-safe provider leases, force `NOSCRIPT`, and wait for TTL cleanup. The default
+load run performs 10,000 multi-dimensional evaluations with 100 workers and fails on over-quota,
+provider concurrency overflow, or leaked keys. Redis restart and combined provider/Redis outage
+procedures are documented in [Distributed abuse protection](abuse-protection.md).
+
 ## Container security and smoke checks
 
 CI builds both images, asserts configured users are non-root, starts the isolated Portal services,

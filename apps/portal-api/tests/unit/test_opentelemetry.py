@@ -88,6 +88,24 @@ def test_prometheus_catalog_is_low_cardinality_and_complete() -> None:
         runtime.record_database_query("SELECT", "success", 1.2)
         runtime.record_audit_event("auth.login_succeeded.v1", "SUCCEEDED")
         runtime.record_archive("success")
+        runtime.record_abuse(
+            operation="login",
+            decision="throttled",
+            policy="login-default",
+            policy_version="v1",
+            dimension="ip_prefix",
+            backend_status="up",
+            failure_class="none",
+            penalty_level="temporarily_blocked",
+            fallback_mode="inactive",
+            duration_ms=0.8,
+        )
+        runtime.record_abuse_provider_concurrency(
+            operation="token_refresh",
+            outcome="throttled",
+            backend_status="up",
+            duration_ms=0.3,
+        )
         rendered = generate_latest(registry).decode("utf-8")
     finally:
         runtime.shutdown()
@@ -107,6 +125,12 @@ def test_prometheus_catalog_is_low_cardinality_and_complete() -> None:
         "portal_audit_events_total",
         "portal_audit_outbox_backlog",
         "portal_audit_archive_total",
+        "portal_abuse_requests_total",
+        "portal_abuse_decisions_total",
+        "portal_abuse_backend_duration",
+        "portal_abuse_penalties_total",
+        "portal_abuse_provider_concurrency",
+        "portal_abuse_provider_throttled_total",
     ):
         assert metric in rendered
     assert 'event="login_success"' in rendered
@@ -114,6 +138,9 @@ def test_prometheus_catalog_is_low_cardinality_and_complete() -> None:
     assert 'scope="process"' in rendered
     assert "request_id" not in rendered
     assert "trace_id" not in rendered
+    assert "raw_ip" not in rendered
+    assert "session_id" not in rendered
+    assert "subject" not in rendered
 
 
 def test_http_trace_propagation_response_correlation_and_metrics() -> None:

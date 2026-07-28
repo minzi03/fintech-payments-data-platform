@@ -98,6 +98,14 @@ All names below are logical OpenTelemetry names.
 | `portal.readiness.dependency.duration` | Histogram | `ms` | `dependency`, `status` | Dependency-check latency |
 | `portal.readiness.dependency.status` | Gauge | `1` | `dependency` | Latest state: 1 up, 0 otherwise |
 | `portal.readiness.dependency.timeouts` | Counter | `{timeout}` | `dependency` | Dependency timeouts |
+| `portal.abuse.requests` | Counter | `{request}` | operation, policy, policy version | Abuse evaluation volume |
+| `portal.abuse.decisions` | Counter | `{decision}` | operation, decision, dimension | Bounded allow/throttle/block outcomes |
+| `portal.abuse.backend.duration` | Histogram | `ms` | operation, backend status | Distributed/fallback evaluation latency |
+| `portal.abuse.backend.failures` | Counter | `{failure}` | operation, failure class | Redis timeouts and unavailability |
+| `portal.abuse.penalties` | Counter | `{transition}` | operation, penalty level | Bounded temporary penalty outcomes |
+| `portal.abuse.fallback.activations` | Counter | `{activation}` | operation, fallback mode | Process-local fallback activation |
+| `portal.abuse.provider.concurrency` | Histogram | `ms` | provider operation, outcome | Provider lease acquisition |
+| `portal.abuse.provider.throttled` | Counter | `{operation}` | provider operation | Rejected provider outbound work |
 | `portal.readiness.dependency.transitions` | Counter | `{transition}` | `dependency`, `from`, `to` | Dependency state transitions |
 | `portal.readiness.dependency.recovery` | Histogram | `s` | `dependency` | Failure-to-recovery duration |
 | `portal.readiness.dependency.availability` | Observable gauge | `1` | `dependency` | Process-lifetime successful-check ratio |

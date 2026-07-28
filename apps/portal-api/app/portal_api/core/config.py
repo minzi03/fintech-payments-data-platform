@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import ipaddress
 import re
 from datetime import datetime
 from enum import StrEnum
@@ -12,6 +13,8 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from portal_api.abuse.client_address import ForwardedHeaderMode
 
 
 class PortalEnvironment(StrEnum):
@@ -98,6 +101,23 @@ class PortalApiSettings(BaseSettings):
     development_identity_enabled: bool = False
     security_runtime_enabled: bool = False
     database_url: SecretStr | None = None
+    abuse_protection_enabled: bool = False
+    trusted_proxy_cidrs: str = ""
+    forwarded_header_mode: ForwardedHeaderMode = ForwardedHeaderMode.DIRECT
+    max_forwarded_hops: int = Field(default=5, ge=1, le=16)
+    ipv4_prefix_length: int = Field(default=24, ge=16, le=32)
+    ipv6_prefix_length: int = Field(default=64, ge=32, le=128)
+    client_address_hmac_secret: SecretStr | None = None
+    redis_url: SecretStr | None = None
+    redis_connect_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
+    redis_operation_timeout_seconds: float = Field(default=0.25, gt=0, le=5)
+    redis_max_connections: int = Field(default=50, ge=1, le=500)
+    redis_key_prefix: str = "portal:abuse"
+    abuse_policy_version: str = "development-v1"
+    abuse_local_fallback_max_keys: int = Field(default=10_000, ge=100, le=100_000)
+    abuse_provider_max_concurrency: int = Field(default=20, ge=1, le=500)
+    abuse_provider_concurrency_lease_seconds: float = Field(default=15, ge=1, le=120)
+    abuse_backend_audit_interval_seconds: float = Field(default=60, ge=1, le=3_600)
     security_master_key: SecretStr | None = None
     security_key_version: str = "local-development-v1"
     security_previous_master_key: SecretStr | None = None
@@ -154,6 +174,17 @@ class PortalApiSettings(BaseSettings):
     def trusted_host_values(self) -> tuple[str, ...]:
         """Return normalized trusted hosts."""
         return _csv_values(self.trusted_hosts)
+
+    @property
+    def trusted_proxy_cidr_values(self) -> tuple[str, ...]:
+        return _csv_values(self.trusted_proxy_cidrs)
+
+    @property
+    def client_address_hmac_secret_bytes(self) -> bytes | None:
+        return _decode_master_key(
+            self.client_address_hmac_secret,
+            variable_name="PORTAL_API_CLIENT_ADDRESS_HMAC_SECRET",
+        )
 
     @property
     def is_production(self) -> bool:
@@ -224,6 +255,8 @@ class PortalApiSettings(BaseSettings):
         )
 
     @field_validator(
+        "client_address_hmac_secret",
+        "redis_url",
         "security_previous_master_key",
         "security_previous_key_version",
         "security_key_transition_started_at",
@@ -250,6 +283,7 @@ class PortalApiSettings(BaseSettings):
                 raise ValueError("PORTAL_API_ALLOWED_ORIGINS entries must not contain paths")
         if self.log_format not in {"json", "console"}:
             raise ValueError("PORTAL_API_LOG_FORMAT must be json or console")
+        self._validate_abuse_configuration()
         if self.telemetry_enabled:
             if (
                 self.telemetry_metrics_exporter is TelemetryMetricsExporter.NONE
@@ -410,6 +444,41 @@ class PortalApiSettings(BaseSettings):
             self.provider_logout_timeout_seconds,
         ):
             raise ValueError("Provider refresh lease must exceed the configured provider timeout")
+
+    def _validate_abuse_configuration(self) -> None:
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9:_.-]{0,63}", self.redis_key_prefix) is None:
+            raise ValueError("PORTAL_API_REDIS_KEY_PREFIX must be a bounded safe identifier")
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", self.abuse_policy_version) is None:
+            raise ValueError("PORTAL_API_ABUSE_POLICY_VERSION must be a bounded safe identifier")
+        networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for value in self.trusted_proxy_cidr_values:
+            try:
+                network = ipaddress.ip_network(value, strict=True)
+            except ValueError as error:
+                raise ValueError(
+                    "PORTAL_API_TRUSTED_PROXY_CIDRS must contain valid canonical CIDRs"
+                ) from error
+            if network.prefixlen == 0:
+                raise ValueError("Catch-all trusted proxy CIDRs are forbidden")
+            networks.append(network)
+        if self.forwarded_header_mode is ForwardedHeaderMode.X_FORWARDED_FOR and not networks:
+            raise ValueError("Forwarded headers require at least one explicit trusted proxy CIDR")
+        if not self.abuse_protection_enabled:
+            return
+        if self.client_address_hmac_secret is None:
+            raise ValueError(
+                "PORTAL_API_CLIENT_ADDRESS_HMAC_SECRET is required when abuse protection is enabled"
+            )
+        _ = self.client_address_hmac_secret_bytes
+        if self.redis_url is None:
+            raise ValueError("PORTAL_API_REDIS_URL is required when abuse protection is enabled")
+        parsed = urlsplit(self.redis_url.get_secret_value())
+        if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
+            raise ValueError("PORTAL_API_REDIS_URL must be a valid redis:// or rediss:// URL")
+        if parsed.query or parsed.fragment:
+            raise ValueError("PORTAL_API_REDIS_URL must not contain query or fragment components")
+        if self.is_production and parsed.scheme != "rediss":
+            raise ValueError("Production abuse protection requires Redis TLS")
 
 
 @lru_cache(maxsize=1)

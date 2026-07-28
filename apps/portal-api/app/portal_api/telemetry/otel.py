@@ -292,6 +292,46 @@ class OpenTelemetryRuntime:
             description="Provider session state transitions",
             unit="{transition}",
         )
+        self._abuse_requests = self._meter.create_counter(
+            "portal.abuse.requests",
+            description="Abuse-protection evaluations",
+            unit="{request}",
+        )
+        self._abuse_decisions = self._meter.create_counter(
+            "portal.abuse.decisions",
+            description="Abuse-protection decisions",
+            unit="{decision}",
+        )
+        self._abuse_backend_duration = self._meter.create_histogram(
+            "portal.abuse.backend.duration",
+            description="Distributed abuse backend latency",
+            unit="ms",
+        )
+        self._abuse_backend_failures = self._meter.create_counter(
+            "portal.abuse.backend.failures",
+            description="Distributed abuse backend failures",
+            unit="{failure}",
+        )
+        self._abuse_penalties = self._meter.create_counter(
+            "portal.abuse.penalties",
+            description="Abuse penalty outcomes",
+            unit="{penalty}",
+        )
+        self._abuse_fallback_activations = self._meter.create_counter(
+            "portal.abuse.fallback.activations",
+            description="Process-local abuse fallback activations",
+            unit="{activation}",
+        )
+        self._abuse_provider_concurrency = self._meter.create_histogram(
+            "portal.abuse.provider.concurrency",
+            description="Provider concurrency acquisition latency",
+            unit="ms",
+        )
+        self._abuse_provider_throttled = self._meter.create_counter(
+            "portal.abuse.provider.throttled",
+            description="Provider operations rejected by bounded concurrency",
+            unit="{operation}",
+        )
         self._database_connection_wait = self._meter.create_histogram(
             "portal.db.connection.wait",
             description="Database pool checkout and connection acquisition latency",
@@ -531,6 +571,84 @@ class OpenTelemetryRuntime:
                 1,
                 {"from": from_state, "to": to_state},
             )
+
+    def record_abuse(
+        self,
+        *,
+        operation: str,
+        decision: str,
+        policy: str,
+        policy_version: str,
+        dimension: str,
+        backend_status: str,
+        failure_class: str,
+        penalty_level: str,
+        fallback_mode: str,
+        duration_ms: float,
+    ) -> None:
+        common = {
+            "operation": operation,
+            "policy": policy,
+            "policy_version": policy_version,
+        }
+        self._abuse_requests.add(1, common)
+        self._abuse_decisions.add(
+            1,
+            {
+                **common,
+                "decision": decision,
+                "dimension": dimension,
+                "backend_status": backend_status,
+            },
+        )
+        self._abuse_backend_duration.record(
+            duration_ms,
+            {
+                "operation": operation,
+                "backend_status": backend_status,
+            },
+        )
+        if failure_class != "none":
+            self._abuse_backend_failures.add(
+                1,
+                {
+                    "operation": operation,
+                    "failure_class": failure_class,
+                },
+            )
+        if penalty_level != "normal":
+            self._abuse_penalties.add(
+                1,
+                {
+                    "operation": operation,
+                    "penalty_level": penalty_level,
+                },
+            )
+        if fallback_mode == "active":
+            self._abuse_fallback_activations.add(
+                1,
+                {
+                    "operation": operation,
+                    "fallback_mode": fallback_mode,
+                },
+            )
+
+    def record_abuse_provider_concurrency(
+        self,
+        *,
+        operation: str,
+        outcome: str,
+        backend_status: str,
+        duration_ms: float,
+    ) -> None:
+        attributes = {
+            "provider_operation": operation,
+            "backend_status": backend_status,
+            "outcome": outcome,
+        }
+        self._abuse_provider_concurrency.record(duration_ms, attributes)
+        if outcome == "throttled":
+            self._abuse_provider_throttled.add(1, attributes)
 
     def record_database_connection(self, outcome: str, duration_ms: float) -> None:
         self._database_connection_wait.record(duration_ms, {"outcome": outcome})

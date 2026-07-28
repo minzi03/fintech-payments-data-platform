@@ -7,6 +7,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from portal_api.abuse.models import (
+    AbuseDecision,
+    AbuseDimension,
+    AbuseOperation,
+    ResolvedClientAddress,
+)
+from portal_api.abuse.service import AbuseProtectionService, bounded_retry_after
 from portal_api.auth.cookies import set_session_cookie
 from portal_api.auth.dependencies import (
     authenticated_session,
@@ -17,7 +24,7 @@ from portal_api.auth.dependencies import (
 from portal_api.auth.session import AuthenticatedSession
 from portal_api.auth.session_models import CsrfView, SessionView
 from portal_api.core.correlation import get_correlation_id, get_request_id
-from portal_api.core.errors import PROBLEM_RESPONSES
+from portal_api.core.errors import PROBLEM_RESPONSES, ErrorCode, PortalError
 
 router = APIRouter(prefix="/v1/session", tags=["session"])
 
@@ -84,7 +91,7 @@ def get_session_csrf(
     operation_id="refreshSession",
     responses=PROBLEM_RESPONSES,
 )
-def refresh_session(
+async def refresh_session(
     request: Request,
     session: Annotated[AuthenticatedSession, Depends(authenticated_session)],
 ) -> JSONResponse:
@@ -94,6 +101,33 @@ def refresh_session(
         session=session,
         action="portal.session.read",
     )
+    abuse = request.app.state.abuse_protection_service
+    if isinstance(abuse, AbuseProtectionService):
+        client = getattr(request.state, "abuse_client", None)
+        result = await abuse.evaluate(
+            AbuseOperation.FOREGROUND_REFRESH,
+            dimensions={
+                AbuseDimension.SESSION: str(session.session_family_id),
+                AbuseDimension.IP_PREFIX: (
+                    client.fingerprint if isinstance(client, ResolvedClientAddress) else None
+                ),
+                AbuseDimension.PROVIDER_ISSUER: request.app.state.settings.oidc_provider_id,
+            },
+            correlation_id=get_correlation_id(),
+            request_id=get_request_id(),
+        )
+        if result.decision not in {
+            AbuseDecision.ALLOW,
+            AbuseDecision.DEGRADED_ALLOW,
+        }:
+            raise PortalError(
+                status_code=429,
+                error_code=ErrorCode.RATE_LIMITED,
+                title="Request rate limited",
+                detail="The request cannot be accepted at this time.",
+                retryable=True,
+                retry_after_seconds=bounded_retry_after(result),
+            )
     rotated = session_service(request).rotate(
         session=session,
         correlation_id=get_correlation_id(),
