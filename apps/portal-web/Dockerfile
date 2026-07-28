@@ -1,6 +1,8 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.23@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
 
-FROM node:22.20.0-bookworm-slim AS dependencies
+ARG SOURCE_DATE_EPOCH=0
+
+FROM node:22.20.0-bookworm-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e AS dependencies
 WORKDIR /workspace
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -16,7 +18,9 @@ ARG PORTAL_BUILD_SHA=local
 ARG PORTAL_ENV=local
 ARG PORTAL_API_INTERNAL_URL=http://portal-api:8010
 ARG PORTAL_IDP_PUBLIC_URL=http://portal-idp.localhost:8081
+ARG SOURCE_DATE_EPOCH
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 ENV NEXT_PUBLIC_PORTAL_WEB_VERSION=$PORTAL_WEB_VERSION
 ENV NEXT_PUBLIC_PORTAL_BUILD_SHA=$PORTAL_BUILD_SHA
 ENV NEXT_PUBLIC_PORTAL_ENV=$PORTAL_ENV
@@ -26,7 +30,7 @@ COPY apps/portal-web apps/portal-web
 COPY packages/portal-contracts packages/portal-contracts
 RUN pnpm --filter @fintech/portal-web build
 
-FROM node:22.20.0-bookworm-slim AS runtime
+FROM node:22.20.0-bookworm-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e AS runtime
 ENV HOSTNAME=0.0.0.0
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

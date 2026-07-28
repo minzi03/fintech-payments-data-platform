@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  generateBuildId: async () => process.env.NEXT_PUBLIC_PORTAL_BUILD_SHA ?? "local",
   async headers() {
     return [
       {
