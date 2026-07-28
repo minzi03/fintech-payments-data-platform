@@ -12,6 +12,19 @@ bounded provider-outage recovery, back-channel replay protection, logout, and cr
 make portal-api-test
 ```
 
+Container hardening has separate static and runtime validation:
+
+```bash
+python scripts/portal/verify_container_hardening.py
+docker compose --env-file .env.example up -d --no-build --wait \
+  portal-api portal-audit-worker portal-redis portal-web
+python scripts/portal/verify_container_hardening.py --runtime
+```
+
+The runtime verifier reports only control identifiers and service names. It does not print
+environment values. See [Portal container hardening](container-hardening.md) for the control and
+exception model.
+
 This runs Ruff, formatting checks, strict mypy, unit tests, and integration tests.
 
 ## Frontend

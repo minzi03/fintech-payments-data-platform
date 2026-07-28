@@ -56,6 +56,13 @@ def test_portal_dockerfiles_use_digest_pinned_base_images() -> None:
     assert "@sha256:" in artifacts.pinned_frontend(
         REPOSITORY_ROOT / "apps" / "portal-web" / "Dockerfile"
     )
+    vendor_images = artifacts.pinned_vendor_images(REPOSITORY_ROOT / "docker-compose.yml")
+    assert {item["service"] for item in vendor_images} == {
+        "portal-postgres",
+        "portal-redis",
+        "portal-keycloak",
+    }
+    assert all("@sha256:" in item["reference"] for item in vendor_images)
 
 
 def test_portal_ci_actions_are_commit_pinned() -> None:
@@ -82,3 +89,54 @@ def test_manifest_safety_rejects_sensitive_fields_and_host_paths() -> None:
             "digest": "sha256:" + ("a" * 64),
         }
     )
+
+
+def test_container_hardening_compose_contract_is_complete() -> None:
+    hardening = load_script("verify_container_hardening")
+
+    hardened = {
+        "user": "10001:10001",
+        "read_only": True,
+        "cap_drop": ["ALL"],
+        "security_opt": ["no-new-privileges:true"],
+        "tmpfs": ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"],
+        "pids_limit": 32,
+        "stop_grace_period": "30s",
+        "logging": {
+            "driver": "json-file",
+            "options": {"max-file": "3", "max-size": "10m"},
+        },
+    }
+    services = {
+        name: {**hardened, "networks": {network: None for network in networks}}
+        for name, networks in hardening.EXPECTED_NETWORKS.items()
+        if name in hardening.FIRST_PARTY_SERVICES
+    }
+    services["portal-migrate"].update(
+        {
+            "environment": {"PORTAL_MIGRATION_DATABASE_URL": "redacted"},
+            "healthcheck": {"disable": True},
+        }
+    )
+    services["portal-audit-worker"]["environment"] = {
+        name: "redacted" for name in hardening.EXPECTED_WORKER_ENVIRONMENT
+    }
+    services["portal-web"].update(
+        {
+            "environment": {
+                "PORTAL_API_INTERNAL_URL": "http://portal-api:8010",
+                "PORTAL_PUBLIC_ORIGIN": "http://localhost:3000",
+            },
+            "ports": [{"host_ip": "127.0.0.1"}],
+        }
+    )
+    services["portal-api"]["ports"] = [{"host_ip": "127.0.0.1"}]
+    for name in hardening.VENDOR_SERVICES:
+        services[name] = {
+            "image": f"{name}:test@sha256:" + ("a" * 64),
+            "networks": {"portal-data": None},
+            "ports": [{"host_ip": "127.0.0.1"}],
+        }
+
+    configuration = {"services": services}
+    hardening.validate_compose_contract(configuration)

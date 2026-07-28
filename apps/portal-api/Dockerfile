@@ -36,10 +36,15 @@ RUN addgroup --system --gid 10001 portal \
 
 COPY --from=dependencies /wheels /wheels
 RUN python -m pip install --no-cache-dir --no-compile --no-deps /wheels/* \
-    && rm -rf /wheels
-COPY --chown=10001:10001 apps/portal-api/app/portal_api /app/portal_api
-COPY --chown=10001:10001 apps/portal-api/alembic.ini /app/alembic.ini
-COPY --chown=10001:10001 apps/portal-api/migrations /app/migrations
+    && python -m pip uninstall --yes pip setuptools wheel \
+    && rm -rf /wheels /root/.cache \
+    && find /bin /sbin /usr/bin /usr/sbin -xdev -type f \
+        \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} +
+COPY apps/portal-api/app/portal_api /app/portal_api
+COPY apps/portal-api/alembic.ini /app/alembic.ini
+COPY apps/portal-api/migrations /app/migrations
+RUN find /app -xdev -type d -exec chmod 0755 {} + \
+    && find /app -xdev -type f -exec chmod 0644 {} +
 
 USER 10001:10001
 WORKDIR /app

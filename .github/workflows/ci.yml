@@ -104,12 +104,15 @@ jobs:
           --require-clean
 
       - name: Start isolated Portal from verified images
-        run: docker compose --env-file .env.example up -d --no-build --wait portal-api portal-web
+        run: >-
+          docker compose --env-file .env.example up -d --no-build --wait
+          portal-api portal-audit-worker portal-redis portal-web
 
-      - name: Verify non-root users and health
+      - name: Verify container hardening, identity and network isolation
+        run: python3 scripts/portal/verify_container_hardening.py --runtime
+
+      - name: Verify public health and boundary behavior
         run: |
-          test "$(docker compose exec -T portal-api id -u)" != "0"
-          test "$(docker compose exec -T portal-web id -u)" != "0"
           curl --fail --silent http://127.0.0.1:8010/health/live
           curl --fail --silent http://127.0.0.1:3000/health
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -117,9 +120,26 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
             http://127.0.0.1:3000/developer)" = "404"
 
+      - name: Verify graceful first-party shutdown
+        run: |
+          assert_graceful_shutdown() {
+            service="$1"
+            budget="$2"
+            started="$(date +%s)"
+            docker compose stop --timeout "${budget}" "${service}"
+            elapsed="$(( $(date +%s) - started ))"
+            test "${elapsed}" -le "${budget}"
+            exit_code="$(docker inspect --format '{{.State.ExitCode}}' \
+              "$(docker compose ps -a -q "${service}")")"
+            test "${exit_code}" = "0" || test "${exit_code}" = "143"
+          }
+          assert_graceful_shutdown portal-web 30
+          assert_graceful_shutdown portal-api 30
+          assert_graceful_shutdown portal-audit-worker 45
+
       - name: Capture safe Portal diagnostics
         if: failure()
-        run: docker compose logs --tail=200 portal-api portal-web
+        run: docker compose logs --tail=200 portal-api portal-audit-worker portal-web
 
       - name: Stop Portal
         if: always()

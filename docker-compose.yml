@@ -82,7 +82,7 @@ x-airflow-common: &airflow-common
 
 services:
   portal-postgres:
-    image: postgres:16.4-bookworm
+    image: postgres:16.4-bookworm@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${PORTAL_DB_NAME:-portal_control}
@@ -105,6 +105,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks:
+      - portal-data
 
   portal-migrate:
     image: fintech-portal-api:local
@@ -116,6 +118,21 @@ services:
         PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
         PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
     restart: "no"
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    pids_limit: 32
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       portal-postgres:
         condition: service_healthy
@@ -128,9 +145,15 @@ services:
       - /app/alembic.ini
       - upgrade
       - head
+    healthcheck:
+      disable: true
+    mem_limit: 128m
+    cpus: 0.25
+    networks:
+      - portal-data
 
   portal-keycloak:
-    image: quay.io/keycloak/keycloak:26.4.7
+    image: quay.io/keycloak/keycloak:26.4.7@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
     restart: unless-stopped
     command:
       - start-dev
@@ -146,7 +169,7 @@ services:
     ports:
       - "127.0.0.1:${PORTAL_IDP_PORT:-8081}:8081"
     networks:
-      default:
+      portal-data:
         aliases:
           - portal-idp.localhost
     volumes:
@@ -166,7 +189,7 @@ services:
     cpus: 1.0
 
   portal-redis:
-    image: redis:7.4.2-alpine
+    image: redis:7.4.2-alpine@sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952
     restart: unless-stopped
     command:
       - redis-server
@@ -189,6 +212,8 @@ services:
       start_period: 5s
     mem_limit: 128m
     cpus: 0.25
+    networks:
+      - portal-data
 
   portal-api:
     image: fintech-portal-api:local
@@ -200,6 +225,21 @@ services:
         PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
         PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    pids_limit: 64
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       portal-keycloak:
         condition: service_healthy
@@ -347,10 +387,28 @@ services:
       start_period: 10s
     mem_limit: 256m
     cpus: 0.50
+    networks:
+      - portal-app
+      - portal-data
 
   portal-audit-worker:
     image: fintech-portal-api:local
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    pids_limit: 64
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       portal-migrate:
         condition: service_completed_successfully
@@ -419,6 +477,8 @@ services:
       start_period: 10s
     mem_limit: 256m
     cpus: 0.50
+    networks:
+      - portal-data
 
   portal-web:
     build:
@@ -431,6 +491,21 @@ services:
         PORTAL_API_INTERNAL_URL: http://portal-api:8010
         PORTAL_IDP_PUBLIC_URL: ${PORTAL_IDP_PUBLIC_URL:-http://portal-idp.localhost:8081}
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
+    pids_limit: 64
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       portal-api:
         condition: service_healthy
@@ -454,6 +529,8 @@ services:
       start_period: 10s
     mem_limit: 384m
     cpus: 0.75
+    networks:
+      - portal-app
 
   postgres:
     image: postgres:16.4-bookworm
@@ -815,6 +892,12 @@ services:
       timeout: 10s
       retries: 20
       start_period: 30s
+
+networks:
+  portal-app:
+    name: fintech-payments-portal-app
+  portal-data:
+    name: fintech-payments-portal-data
 
 volumes:
   portal_postgres_data:

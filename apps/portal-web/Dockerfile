@@ -36,11 +36,18 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 RUN groupadd --system --gid 10001 portal \
-    && useradd --system --uid 10001 --gid portal --home-dir /nonexistent portal
+    && useradd --system --uid 10001 --gid portal --home-dir /nonexistent portal \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+        /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+    && find /bin /sbin /usr/bin /usr/sbin -xdev -type f \
+        \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} +
 WORKDIR /app
-COPY --from=build --chown=portal:portal /workspace/apps/portal-web/.next/standalone ./
-COPY --from=build --chown=portal:portal /workspace/apps/portal-web/.next/static \
+COPY --from=build /workspace/apps/portal-web/.next/standalone ./
+COPY --from=build /workspace/apps/portal-web/.next/static \
     ./apps/portal-web/.next/static
+RUN find /app -xdev -type d -exec chmod 0755 {} + \
+    && find /app -xdev -type f -exec chmod 0644 {} +
 USER 10001:10001
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=5 \
