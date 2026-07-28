@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
+from portal_api.configuration import MigrationEnvironmentInputs
 from portal_api.db.metadata import metadata
 from portal_api.db.migration_integrity import (
     MIGRATION_LOCK_KEY,
@@ -34,12 +34,7 @@ def _include_object(
 
 
 def _migration_url() -> str:
-    url = os.environ.get("PORTAL_MIGRATION_DATABASE_URL", "").strip()
-    if not url:
-        raise RuntimeError("PORTAL_MIGRATION_DATABASE_URL is required")
-    if not url.startswith("postgresql+psycopg://"):
-        raise RuntimeError("Portal migrations require PostgreSQL with psycopg")
-    return url
+    return MigrationEnvironmentInputs().reveal_validated_database_url()
 
 
 def run_migrations_offline() -> None:

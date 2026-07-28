@@ -4,14 +4,7 @@ import { Sdk } from "@fintech/portal-contracts";
 import { createClient } from "@fintech/portal-contracts/client";
 import { type NextRequest, NextResponse } from "next/server";
 
-function configuredUrl(name: string, fallback: string): URL {
-  const value = process.env[name]?.trim() || fallback;
-  const url = new URL(value);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${name} must use HTTP or HTTPS.`);
-  }
-  return url;
-}
+import { loadPortalWebRuntimeConfiguration } from "../../../config/server";
 
 function loginFailure(request: NextRequest): NextResponse {
   return NextResponse.redirect(new URL("/login?failed=1", request.nextUrl.origin), 303);
@@ -38,10 +31,9 @@ function providerRedirect(value: string | null): URL | null {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const apiOrigin = configuredUrl("PORTAL_API_INTERNAL_URL", "http://127.0.0.1:8010").toString();
-    const publicOrigin = configuredUrl("PORTAL_PUBLIC_ORIGIN", "http://localhost:3000").origin;
+    const configuration = loadPortalWebRuntimeConfiguration();
     const client = createClient({
-      baseUrl: apiOrigin,
+      baseUrl: configuration.apiInternalUrl,
       credentials: "include",
       responseStyle: "fields",
       throwOnError: false,
@@ -50,7 +42,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const form = await request.formData();
     const returnTo = safeReturnPath(form.get("return_to"));
     const headers: Record<string, string> = {
-      Origin: publicOrigin,
+      Origin: configuration.publicOrigin,
       "X-Correlation-ID": randomUUID(),
     };
     const incomingCookies = request.headers.get("cookie");

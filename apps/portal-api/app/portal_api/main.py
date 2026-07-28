@@ -59,6 +59,7 @@ from portal_api.auth.security_material import (
 from portal_api.auth.session import SessionService
 from portal_api.auth.session_store import CallbackSessionStore
 from portal_api.auth.token_validation import PyJwtTokenValidator
+from portal_api.configuration import ApiRuntimeConfiguration, PortalProcessRole
 from portal_api.core.config import PortalApiSettings, get_settings
 from portal_api.core.errors import register_error_handlers
 from portal_api.core.logging import configure_logging
@@ -150,6 +151,9 @@ def create_app(
 ) -> FastAPI:
     """Create an isolated Portal API without import-time infrastructure calls."""
     resolved_settings = settings or get_settings()
+    runtime_configuration = resolved_settings.for_role(PortalProcessRole.API)
+    if not isinstance(runtime_configuration, ApiRuntimeConfiguration):
+        raise RuntimeError("Portal API composition received an invalid process-role configuration")
     configure_logging(resolved_settings)
     resolved_secret_provider = secret_provider or environment_secret_provider(resolved_settings)
     resolved_secret_provider.start()
@@ -415,6 +419,7 @@ def create_app(
         license_info={"name": "Private repository"},
     )
     app.state.settings = resolved_settings
+    app.state.runtime_configuration = runtime_configuration
     app.state.adapter_registry = registry
     app.state.telemetry = resolved_telemetry
     app.state.health_service = health_service

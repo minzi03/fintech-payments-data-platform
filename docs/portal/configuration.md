@@ -38,6 +38,8 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_OPENAPI_ENABLED` | `true` | no | no | Must be false in production |
 | `PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED` | `false` | no | no | Forbidden in production; no identity behavior exists yet |
 | `PORTAL_API_SECRET_PROVIDER` | `environment` | yes | no | Bounded provider ID; environment adapter is forbidden for secret-bearing production features |
+| `PORTAL_API_SECURITY_RUNTIME_ENABLED` | `false` | no | no | Supported only in local, test and development; staging/production authorization remains deferred |
+| `PORTAL_API_DATABASE_URL` | none | with security runtime and environment provider | yes | PostgreSQL URL resolved only by the environment secret-provider input model |
 | `PORTAL_API_SECURITY_MASTER_KEY` | none | when local/development security runtime is enabled | yes | Base64url-encoded 256-bit key; keep stable across normal restart |
 | `PORTAL_API_SECURITY_KEY_VERSION` | `local-development-v1` | with security master key | no | Bounded identifier attached to derived lookup keys and protected envelopes |
 | `PORTAL_API_SECURITY_PREVIOUS_MASTER_KEY` | none | during a controlled key transition | yes | Previous 256-bit key; accepted only inside the declared transition window |
@@ -45,6 +47,33 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_SECURITY_KEY_TRANSITION_STARTED_AT` | none | with previous key | no | Timezone-aware start of previous-key acceptance |
 | `PORTAL_API_SECURITY_KEY_TRANSITION_EXPIRES_AT` | none | with previous key | no | Exclusive deterministic expiry; the window cannot exceed one absolute session lifetime |
 | `PORTAL_API_SECURITY_FUTURE_KEY_VERSION` | none | no | no | Metadata-only staged version; must differ from current and previous versions |
+| `PORTAL_API_OIDC_PROVIDER_ID` | `local-keycloak` | with security runtime | no | Bounded provider identity |
+| `PORTAL_API_OIDC_ISSUER` | local Keycloak realm | with security runtime | no | Exact configured issuer; non-local environments require HTTPS |
+| `PORTAL_API_OIDC_DISCOVERY_URL` | issuer discovery path | no | no | Absolute HTTP(S) URL; exact issuer validation remains mandatory |
+| `PORTAL_API_OIDC_CLIENT_ID` | `fintech-portal` | with security runtime | no | Confidential client identity |
+| `PORTAL_API_OIDC_CLIENT_SECRET` | none | with security runtime and environment provider | yes | Resolved only through the selected secret provider |
+| `PORTAL_API_OIDC_REDIRECT_URI` | local Portal callback | with security runtime | no | Absolute HTTP(S) callback URL |
+| `PORTAL_API_OIDC_SCOPES` | `openid profile` | yes | no | Whitespace-separated; must contain `openid` |
+| `PORTAL_API_OIDC_ALLOWED_ALGORITHMS` | `RS256` | yes | no | Comma-separated allowlist |
+| `PORTAL_API_OIDC_GROUP_CLAIM_PATH` | `groups` | yes | no | Provider group-claim path |
+| `PORTAL_API_OIDC_ALLOWED_ROLES` | Portal viewer roles | yes | no | Comma-separated provider-role allowlist |
+| `PORTAL_API_ALLOWED_ENVIRONMENT_IDS` | `local,development` | yes | no | Comma-separated environment authority |
+| `PORTAL_API_PORTAL_TENANT_ID` | `fintech-platform-primary` | yes | no | Stable tenant identity |
+| `PORTAL_API_IDENTITY_MAPPING_REVISION` | `local-mapping-v1` | yes | no | Identity mapping revision |
+| `PORTAL_API_CALLBACK_POLICY_REVISION` | `local-callback-policy-v1` | yes | no | Local/test/development policy only; production policy remains deferred |
+| `PORTAL_API_CAPABILITY_REVISION` | `local-capability-v1` | yes | no | Capability mapping revision |
+| `PORTAL_API_SESSION_SECURITY_EPOCH` | `1` | yes | no | Positive durable revocation epoch |
+| `PORTAL_API_SESSION_IDLE_TTL_SECONDS` | `1800` | yes | no | At most 1800 and no longer than the absolute lifetime |
+| `PORTAL_API_SESSION_ABSOLUTE_TTL_SECONDS` | `28800` | yes | no | At most 28800 |
+| `PORTAL_API_IDENTITY_FRESHNESS_SECONDS` | `900` | yes | no | At most 900 |
+| `PORTAL_API_SESSION_ACTIVITY_WRITE_INTERVAL_SECONDS` | `60` | yes | no | At most 60 |
+| `PORTAL_API_MAXIMUM_ACTIVE_SESSIONS` | `5` | yes | no | At most 5 |
+| `PORTAL_API_OIDC_HTTP_TIMEOUT_SECONDS` | `5` | yes | no | Greater than 0, at most 30 |
+| `PORTAL_API_OIDC_CACHE_TTL_SECONDS` | `900` | yes | no | Fixed validated discovery/JWKS cache TTL |
+| `PORTAL_API_OIDC_STALE_CEILING_SECONDS` | `3600` | yes | no | Fixed fail-closed stale ceiling |
+| `PORTAL_API_ALLOWED_RETURN_PATHS` | `/,/system-status` | yes | no | Comma-separated local absolute paths |
+| `PORTAL_API_LOGIN_INTENT_TTL_SECONDS` | `300` | yes | no | At most 300 |
+| `PORTAL_API_LOGIN_TRANSACTION_TTL_SECONDS` | `300` | yes | no | At most 300 |
 | `PORTAL_API_PROVIDER_REFRESH_ENABLED` | `true` | no | no | Starts the non-blocking provider refresh worker when the security runtime is active |
 | `PORTAL_API_PROVIDER_REFRESH_THRESHOLD_SECONDS` | `120` | no | no | Proactive refresh window; 30-600 seconds |
 | `PORTAL_API_PROVIDER_REFRESH_SCAN_INTERVAL_SECONDS` | `5` | no | no | Durable due-work scan interval; 1-60 seconds |
@@ -56,7 +85,7 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_PROVIDER_LOGOUT_TIMEOUT_SECONDS` | `5` | no | no | Per-provider cleanup operation timeout; greater than 0 and at most 30 seconds |
 | `PORTAL_API_PROVIDER_LOGOUT_REPLAY_TTL_SECONDS` | `86400` | no | no | Durable back-channel logout-token replay fence; 300-86400 seconds |
 | `PORTAL_API_ABUSE_PROTECTION_ENABLED` | `false` | no | no | Enables Redis-backed enforcement and bounded operation-specific fallbacks |
-| `PORTAL_API_REDIS_URL` | none | when abuse protection enabled | yes | `redis://` locally; production requires `rediss://`; query and embedded logging forbidden |
+| `PORTAL_API_REDIS_URL` | none | when abuse protection enabled | yes | Host execution uses the published Redis port; Compose uses `redis://portal-redis:6379/0`; production requires `rediss://` |
 | `PORTAL_API_REDIS_CONNECT_TIMEOUT_SECONDS` | `0.5` | no | no | Greater than 0 and at most 5 seconds |
 | `PORTAL_API_REDIS_OPERATION_TIMEOUT_SECONDS` | `0.25` | no | no | Greater than 0 and at most 5 seconds |
 | `PORTAL_API_REDIS_MAX_CONNECTIONS` | `50` | no | no | 1-500 |
@@ -70,6 +99,8 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_IPV6_PREFIX_LENGTH` | `64` | no | no | 32-128 |
 | `PORTAL_API_ABUSE_LOCAL_FALLBACK_MAX_KEYS` | `10000` | no | no | 100-100000 bounded process-local keys |
 | `PORTAL_API_ABUSE_PROVIDER_MAX_CONCURRENCY` | `20` | no | no | 1-500 leased provider calls |
+| `PORTAL_API_ABUSE_PROVIDER_CONCURRENCY_LEASE_SECONDS` | `15` | no | no | 1-120 seconds |
+| `PORTAL_API_ABUSE_BACKEND_AUDIT_INTERVAL_SECONDS` | `60` | no | no | 1-3600 seconds |
 | `PORTAL_API_AUDIT_OUTBOX_ENABLED` | `false` | no | no | Enables the separate audit worker; Compose enables it locally |
 | `PORTAL_API_AUDIT_WORKER_DATABASE_URL` | none | when outbox enabled | yes | PostgreSQL URL for the least-privileged `portal_archive` role |
 | `PORTAL_API_AUDIT_OUTBOX_POLL_INTERVAL_SECONDS` | `1` | no | no | 0.1-60 seconds |
@@ -129,7 +160,10 @@ provider lifecycle, startup resolution, production restrictions, and bounded rot
 | Variable | Default | Phase | Secret |
 | --- | --- | --- | --- |
 | `PORTAL_WEB_PORT` | `3000` | runtime port mapping | no |
+| `PORTAL_WEB_HOST` | `0.0.0.0` | server runtime | no |
 | `PORTAL_API_INTERNAL_URL` | `http://127.0.0.1:8010` | server runtime | no |
+| `PORTAL_PUBLIC_ORIGIN` | `http://localhost:3000` | server runtime | no |
+| `PORTAL_IDP_PUBLIC_URL` | `http://portal-idp.localhost:8081` | build/CSP | no |
 | `NEXT_PUBLIC_PORTAL_ENV` | `local` | build | no |
 | `NEXT_PUBLIC_PORTAL_WEB_VERSION` | `0.1.0-dev` | build | no |
 | `NEXT_PUBLIC_PORTAL_BUILD_SHA` | `local` | build | no |
@@ -137,3 +171,69 @@ provider lifecycle, startup resolution, production restrictions, and bounded rot
 Only the three explicitly safe build labels are public. The API target is server-only and the
 browser always calls relative `/portal-api/*` paths. No token, credential, database URL, or
 telemetry secret may be introduced with a `NEXT_PUBLIC_*` name.
+
+## S06-03 configuration architecture
+
+The flat `PORTAL_API_*` namespace remains the compatibility boundary. It is parsed once and
+converted to immutable domain models. API, audit-worker and migration composition have separate
+role contracts. Raw environment secret values remain in `EnvironmentSecretInputs` and are consumed
+only by `EnvironmentSecretProvider`; runtime role aggregates contain provider and logical-reference
+metadata only.
+
+```text
+Environment/Profile + Process Role
+                |
+                v
+      Deterministic Config Loader
+                |
+                v
+       Frozen Typed Aggregate
+       /        |          \
+     API      Worker     Migration
+       \        |          /
+                v
+       Secret Reference Catalog
+                |
+                v
+          Secret Provider
+                |
+                v
+        Runtime Composition
+```
+
+Unknown `PORTAL_API_*` names fail deterministically in test, staging and production. Local and
+development retain compatibility and emit a safe warning containing variable names only. Unrelated
+operating-system variables are ignored.
+
+Portal Web uses three distinct typed surfaces:
+
+- `NEXT_PUBLIC_*` build labels are browser-safe and public;
+- server-runtime URLs and host/port values never enter the public configuration object;
+- Playwright/E2E flags are test-only configuration.
+
+### Environment profiles
+
+| Profile | Behavior |
+| --- | --- |
+| `local` | Safe local defaults; unknown Portal names warn |
+| `test` | Deterministic isolated validation; unknown Portal names fail |
+| `development` | HTTPS is required for external OIDC; unknown Portal names warn |
+| `staging` | HTTPS CORS and strict unknown-name rejection; security runtime remains blocked |
+| `production` | JSON logs, immutable build identity, HTTPS, strict unknown-name rejection; security runtime remains blocked |
+
+### Decision log
+
+- Configuration models are frozen after startup; dynamic reload is not part of S06-03.
+- Process roles receive narrow immutable aggregates while the flat loader remains a compatibility
+  facade.
+- Existing environment names are preserved and exposed through a machine-tested registry.
+- Secret values are excluded from role aggregates and diagnostics.
+- Staging/production reject unknown Portal-prefixed names; local/development warn.
+- No production callback or abuse policy is introduced by this task.
+
+### Production blockers
+
+Production configuration contract implemented; production security runtime authorization remains
+deferred. The security runtime guard, local/test/development callback policy and development abuse
+policy remain enforced and visible. A syntactically valid production configuration is not a fully
+operational production security runtime.

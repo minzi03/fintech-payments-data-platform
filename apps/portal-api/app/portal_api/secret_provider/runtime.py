@@ -235,14 +235,17 @@ def environment_secret_provider(
     catalog: PortalSecretCatalog | None = None,
 ) -> EnvironmentSecretProvider:
     selected_catalog = catalog or portal_secret_catalog(settings)
+    environment_inputs = settings.environment_secret_inputs
     configured: dict[PortalSecretId, SecretStr | None] = {
-        PortalSecretId.DATABASE_URL: settings.database_url,
-        PortalSecretId.AUDIT_WORKER_DATABASE_URL: settings.audit_worker_database_url,
-        PortalSecretId.OIDC_CLIENT_SECRET: settings.oidc_client_secret,
-        PortalSecretId.CLIENT_ADDRESS_HMAC_KEY: settings.client_address_hmac_secret,
-        PortalSecretId.REDIS_URL: settings.redis_url,
-        PortalSecretId.SECURITY_CURRENT_MASTER_KEY: settings.security_master_key,
-        PortalSecretId.SECURITY_PREVIOUS_MASTER_KEY: settings.security_previous_master_key,
+        PortalSecretId.DATABASE_URL: environment_inputs.database_url,
+        PortalSecretId.AUDIT_WORKER_DATABASE_URL: environment_inputs.audit_worker_database_url,
+        PortalSecretId.OIDC_CLIENT_SECRET: environment_inputs.oidc_client_secret,
+        PortalSecretId.CLIENT_ADDRESS_HMAC_KEY: environment_inputs.client_address_hmac_secret,
+        PortalSecretId.REDIS_URL: environment_inputs.redis_url,
+        PortalSecretId.SECURITY_CURRENT_MASTER_KEY: environment_inputs.security_master_key,
+        PortalSecretId.SECURITY_PREVIOUS_MASTER_KEY: (
+            environment_inputs.security_previous_master_key
+        ),
     }
     entries: dict[tuple[str, str], EnvironmentSecretEntry] = {}
     for secret_id, reference in selected_catalog.references.items():

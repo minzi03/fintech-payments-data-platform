@@ -26,6 +26,7 @@ from portal_api.audit.outbox_models import (
     RetryPolicy,
     attempt_bucket,
 )
+from portal_api.configuration import AuditWorkerRuntimeConfiguration, PortalProcessRole
 from portal_api.core.config import PortalApiSettings, get_settings
 from portal_api.core.logging import configure_logging
 from portal_api.db.engine import create_audit_worker_engine
@@ -389,6 +390,9 @@ def main(*, secret_provider: SecretProvider | None = None) -> int:
             extra={"event": "audit_worker_disabled"},
         )
         return 0
+    runtime_configuration = settings.for_role(PortalProcessRole.AUDIT_WORKER)
+    if not isinstance(runtime_configuration, AuditWorkerRuntimeConfiguration):
+        raise RuntimeError("Audit worker received an invalid process-role configuration")
     resolved_secret_provider = secret_provider or environment_secret_provider(settings)
     resolved_secret_provider.start()
     try:

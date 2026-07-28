@@ -4,14 +4,7 @@ import { Sdk, type SessionView } from "@fintech/portal-contracts";
 import { createClient } from "@fintech/portal-contracts/client";
 import { cookies } from "next/headers";
 
-function internalApiOrigin(): string {
-  const value = process.env.PORTAL_API_INTERNAL_URL?.trim() || "http://127.0.0.1:8010";
-  const url = new URL(value);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("PORTAL_API_INTERNAL_URL must use HTTP or HTTPS.");
-  }
-  return url.toString();
-}
+import { loadPortalWebRuntimeConfiguration } from "../../config/server";
 
 export async function currentServerSession(): Promise<SessionView | null> {
   try {
@@ -20,7 +13,7 @@ export async function currentServerSession(): Promise<SessionView | null> {
       return null;
     }
     const client = createClient({
-      baseUrl: internalApiOrigin(),
+      baseUrl: loadPortalWebRuntimeConfiguration().apiInternalUrl,
       credentials: "include",
       responseStyle: "fields",
       throwOnError: false,

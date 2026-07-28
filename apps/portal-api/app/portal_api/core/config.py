@@ -5,16 +5,46 @@ from __future__ import annotations
 import base64
 import binascii
 import ipaddress
+import os
 import re
+import warnings
 from datetime import datetime
 from enum import StrEnum
 from functools import lru_cache
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from portal_api.abuse.client_address import ForwardedHeaderMode
+from portal_api.configuration import (
+    AbuseConfiguration,
+    ApiRuntimeConfiguration,
+    AuditConfiguration,
+    AuditWorkerRuntimeConfiguration,
+    ConfigurationDiagnostic,
+    EnvironmentSecretInputs,
+    HealthConfiguration,
+    HttpServerConfiguration,
+    KeyRotationConfiguration,
+    LoggingConfiguration,
+    LoginPolicyConfiguration,
+    MigrationRuntimeConfiguration,
+    OidcConfiguration,
+    PortalConfigurationError,
+    PortalConfigurationWarning,
+    PortalProcessRole,
+    PortalRoleConfiguration,
+    ProviderLifecycleConfiguration,
+    ReleaseConfiguration,
+    SecretReferenceConfiguration,
+    SecurityRuntimeConfiguration,
+    SessionPolicyConfiguration,
+    TelemetryConfiguration,
+    supported_environment_aliases,
+    unknown_prefixed_environment_names,
+)
 
 
 class PortalEnvironment(StrEnum):
@@ -68,6 +98,7 @@ class PortalApiSettings(BaseSettings):
         env_prefix="PORTAL_API_",
         case_sensitive=False,
         extra="ignore",
+        frozen=True,
     )
 
     environment: PortalEnvironment = PortalEnvironment.LOCAL
@@ -185,6 +216,28 @@ class PortalApiSettings(BaseSettings):
     allowed_return_paths: str = "/,/system-status"
     login_intent_ttl_seconds: int = Field(default=300, gt=0, le=300)
     login_transaction_ttl_seconds: int = Field(default=300, gt=0, le=300)
+
+    def __init__(self, **values: Any) -> None:
+        super().__init__(**values)
+        self._validate_environment_surface()
+
+    @classmethod
+    def supported_environment_aliases(cls) -> frozenset[str]:
+        """Return the machine-tested flat compatibility surface."""
+        return supported_environment_aliases(cls.model_fields)
+
+    @property
+    def environment_secret_inputs(self) -> EnvironmentSecretInputs:
+        """Return the dedicated raw input model for the environment provider."""
+        return EnvironmentSecretInputs(
+            database_url=self.database_url,
+            audit_worker_database_url=self.audit_worker_database_url,
+            oidc_client_secret=self.oidc_client_secret,
+            client_address_hmac_secret=self.client_address_hmac_secret,
+            redis_url=self.redis_url,
+            security_master_key=self.security_master_key,
+            security_previous_master_key=self.security_previous_master_key,
+        )
 
     @property
     def allowed_origin_values(self) -> tuple[str, ...]:
@@ -307,6 +360,18 @@ class PortalApiSettings(BaseSettings):
             raise ValueError("PORTAL_API_LOG_FORMAT must be json or console")
         if re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", self.secret_provider) is None:
             raise ValueError("PORTAL_API_SECRET_PROVIDER must be a bounded safe identifier")
+        if (
+            self.secret_provider != "environment"
+            and self.environment_secret_inputs.configured_names
+        ):
+            names = ", ".join(
+                f"PORTAL_API_{name.upper()}"
+                for name in self.environment_secret_inputs.configured_names
+            )
+            raise ValueError(
+                "Non-environment secret providers reject conflicting inline environment "
+                f"secret inputs: {names}"
+            )
         self._validate_abuse_configuration()
         self._validate_audit_outbox_configuration()
         if self.telemetry_enabled:
@@ -381,7 +446,78 @@ class PortalApiSettings(BaseSettings):
                 raise ValueError("Production CORS origins must use HTTPS")
             if self.build_sha == "local" or self.build_time == "local":
                 raise ValueError("Production requires immutable build SHA and build time")
+        if self.environment is PortalEnvironment.STAGING and any(
+            origin.startswith("http://") for origin in self.allowed_origin_values
+        ):
+            raise ValueError("Staging CORS origins must use HTTPS")
+        self._report_deferred_production_policies()
         return self
+
+    def _validate_environment_surface(self) -> None:
+        unknown = unknown_prefixed_environment_names(
+            os.environ,
+            supported=self.supported_environment_aliases(),
+        )
+        if not unknown:
+            return
+        diagnostics = tuple(
+            ConfigurationDiagnostic(
+                code="PORTAL_CONFIG_UNKNOWN_VARIABLE",
+                profile=self.environment.value,
+                process_role=None,
+                field_path=name,
+                source="environment",
+                safe_reason="unsupported PORTAL_API_ variable",
+            )
+            for name in unknown
+        )
+        if self.environment in {
+            PortalEnvironment.TEST,
+            PortalEnvironment.STAGING,
+            PortalEnvironment.PRODUCTION,
+        }:
+            raise PortalConfigurationError(diagnostics)
+        warnings.warn(
+            "; ".join(item.render() for item in diagnostics),
+            PortalConfigurationWarning,
+            stacklevel=2,
+        )
+
+    def _report_deferred_production_policies(self) -> None:
+        if self.environment not in {
+            PortalEnvironment.STAGING,
+            PortalEnvironment.PRODUCTION,
+        }:
+            return
+        deferred: list[ConfigurationDiagnostic] = []
+        if self.callback_policy_revision.startswith("local-"):
+            deferred.append(
+                ConfigurationDiagnostic(
+                    code="PORTAL_CONFIG_DEFERRED_CALLBACK_POLICY",
+                    profile=self.environment.value,
+                    process_role=PortalProcessRole.API,
+                    field_path="callback_policy_revision",
+                    source="configuration",
+                    safe_reason="production callback policy remains deferred",
+                )
+            )
+        if self.abuse_policy_version.startswith("development-"):
+            deferred.append(
+                ConfigurationDiagnostic(
+                    code="PORTAL_CONFIG_DEFERRED_ABUSE_POLICY",
+                    profile=self.environment.value,
+                    process_role=PortalProcessRole.API,
+                    field_path="abuse_policy_version",
+                    source="configuration",
+                    safe_reason="production abuse policy remains deferred",
+                )
+            )
+        if deferred:
+            warnings.warn(
+                "; ".join(item.render() for item in deferred),
+                PortalConfigurationWarning,
+                stacklevel=2,
+            )
 
     def _validate_key_transition(self) -> None:
         transition_values = (
@@ -571,6 +707,223 @@ class PortalApiSettings(BaseSettings):
             raise ValueError(
                 "PORTAL_API_AUDIT_WORKER_DATABASE_URL must use PostgreSQL with psycopg"
             )
+
+    def for_role(self, role: PortalProcessRole) -> PortalRoleConfiguration:
+        """Build the immutable narrow configuration for one process role."""
+        if role is PortalProcessRole.API:
+            return self._api_configuration()
+        if role is PortalProcessRole.AUDIT_WORKER:
+            if not self.audit_outbox_enabled:
+                raise PortalConfigurationError(
+                    (
+                        ConfigurationDiagnostic(
+                            code="PORTAL_CONFIG_ROLE_REQUIRED_FIELD",
+                            profile=self.environment.value,
+                            process_role=role,
+                            field_path="audit_outbox_enabled",
+                            source="configuration",
+                            safe_reason="audit worker role requires the outbox",
+                        ),
+                    )
+                )
+            return AuditWorkerRuntimeConfiguration(
+                release=self._release_configuration(),
+                logging=self._logging_configuration(),
+                telemetry=self._telemetry_configuration(),
+                audit=self._audit_configuration(),
+                secret_references=self._secret_reference_configuration(
+                    ("portal/audit-worker-database-url",)
+                ),
+            )
+        if role is PortalProcessRole.MIGRATION:
+            return MigrationRuntimeConfiguration()
+        raise PortalConfigurationError(
+            (
+                ConfigurationDiagnostic(
+                    code="PORTAL_CONFIG_UNKNOWN_ROLE",
+                    profile=self.environment.value,
+                    process_role=None,
+                    field_path="process_role",
+                    source="composition",
+                    safe_reason="unsupported Portal process role",
+                ),
+            )
+        )
+
+    def _release_configuration(self) -> ReleaseConfiguration:
+        return ReleaseConfiguration(
+            environment=self.environment.value,
+            service_name=self.service_name,
+            service_version=self.service_version,
+            api_version=self.api_version,
+            contract_version=self.contract_version,
+            documentation_version=self.documentation_version,
+            build_sha=self.build_sha,
+            build_time=self.build_time,
+        )
+
+    def _logging_configuration(self) -> LoggingConfiguration:
+        return LoggingConfiguration(level=self.log_level, format=self.log_format)
+
+    def _telemetry_configuration(self) -> TelemetryConfiguration:
+        return TelemetryConfiguration(
+            enabled=self.telemetry_enabled,
+            metrics_exporter=self.telemetry_metrics_exporter.value,
+            trace_exporter=self.telemetry_trace_exporter.value,
+            trace_sampling_ratio=self.telemetry_trace_sampling_ratio,
+            export_interval_seconds=self.telemetry_export_interval_seconds,
+            export_timeout_seconds=self.telemetry_export_timeout_seconds,
+            otlp_endpoint=self.telemetry_otlp_endpoint,
+            prometheus_host=self.telemetry_prometheus_host,
+            prometheus_port=self.telemetry_prometheus_port,
+            resource_attributes=tuple(sorted(self.telemetry_resource_attribute_values.items())),
+        )
+
+    def _secret_reference_configuration(
+        self,
+        identities: tuple[str, ...] | None = None,
+    ) -> SecretReferenceConfiguration:
+        required: list[str] = list(identities or ())
+        if identities is None:
+            if self.security_runtime_enabled:
+                required.extend(
+                    (
+                        "portal/runtime-database-url",
+                        "portal/oidc-client-secret",
+                        "portal/security-master-key",
+                    )
+                )
+            if self.abuse_protection_enabled:
+                required.extend(
+                    (
+                        "portal/client-address-hmac-key",
+                        "portal/redis-url",
+                    )
+                )
+            if self.security_previous_key_version is not None:
+                required.append("portal/security-master-key:previous")
+        return SecretReferenceConfiguration(
+            provider_id=self.secret_provider,
+            required_identities=tuple(sorted(required)),
+            current_key_version=self.security_key_version,
+            previous_key_version=self.security_previous_key_version,
+            staged_future_key_version=self.security_future_key_version,
+        )
+
+    def _api_configuration(self) -> ApiRuntimeConfiguration:
+        return ApiRuntimeConfiguration(
+            release=self._release_configuration(),
+            logging=self._logging_configuration(),
+            server=HttpServerConfiguration(
+                host=self.host,
+                port=self.port,
+                allowed_origins=self.allowed_origin_values,
+                trusted_hosts=self.trusted_host_values,
+                openapi_enabled=self.openapi_enabled,
+                development_identity_enabled=self.development_identity_enabled,
+            ),
+            health=HealthConfiguration(
+                dependency_timeout_seconds=self.dependency_timeout_seconds,
+                readiness_timeout_seconds=self.readiness_timeout_seconds,
+                cache_ttl_seconds=self.health_cache_ttl_seconds,
+            ),
+            telemetry=self._telemetry_configuration(),
+            security=SecurityRuntimeConfiguration(
+                enabled=self.security_runtime_enabled,
+                secret_provider_id=self.secret_provider,
+            ),
+            oidc=OidcConfiguration(
+                provider_id=self.oidc_provider_id,
+                issuer=self.oidc_issuer,
+                discovery_url=self.oidc_discovery_url_value,
+                client_id=self.oidc_client_id,
+                redirect_uri=self.oidc_redirect_uri,
+                scopes=self.oidc_scope_values,
+                allowed_algorithms=self.oidc_allowed_algorithm_values,
+                group_claim_path=self.oidc_group_claim_path,
+                allowed_roles=self.oidc_allowed_role_values,
+                allowed_environment_ids=self.allowed_environment_id_values,
+                portal_tenant_id=self.portal_tenant_id,
+                identity_mapping_revision=self.identity_mapping_revision,
+                callback_policy_revision=self.callback_policy_revision,
+                capability_revision=self.capability_revision,
+                http_timeout_seconds=self.oidc_http_timeout_seconds,
+                cache_ttl_seconds=self.oidc_cache_ttl_seconds,
+                stale_ceiling_seconds=self.oidc_stale_ceiling_seconds,
+            ),
+            sessions=SessionPolicyConfiguration(
+                security_epoch=self.session_security_epoch,
+                idle_ttl_seconds=self.session_idle_ttl_seconds,
+                absolute_ttl_seconds=self.session_absolute_ttl_seconds,
+                identity_freshness_seconds=self.identity_freshness_seconds,
+                activity_write_interval_seconds=self.session_activity_write_interval_seconds,
+                maximum_active_sessions=self.maximum_active_sessions,
+            ),
+            login=LoginPolicyConfiguration(
+                allowed_return_paths=self.allowed_return_path_values,
+                intent_ttl_seconds=self.login_intent_ttl_seconds,
+                transaction_ttl_seconds=self.login_transaction_ttl_seconds,
+            ),
+            provider_lifecycle=ProviderLifecycleConfiguration(
+                refresh_enabled=self.provider_refresh_enabled,
+                refresh_threshold_seconds=self.provider_refresh_threshold_seconds,
+                refresh_scan_interval_seconds=self.provider_refresh_scan_interval_seconds,
+                refresh_retry_budget=self.provider_refresh_retry_budget,
+                refresh_initial_backoff_seconds=self.provider_refresh_initial_backoff_seconds,
+                refresh_max_backoff_seconds=self.provider_refresh_max_backoff_seconds,
+                refresh_lease_seconds=self.provider_refresh_lease_seconds,
+                refresh_batch_size=self.provider_refresh_batch_size,
+                logout_timeout_seconds=self.provider_logout_timeout_seconds,
+                logout_replay_ttl_seconds=self.provider_logout_replay_ttl_seconds,
+            ),
+            abuse=AbuseConfiguration(
+                enabled=self.abuse_protection_enabled,
+                trusted_proxy_cidrs=self.trusted_proxy_cidr_values,
+                forwarded_header_mode=self.forwarded_header_mode,
+                max_forwarded_hops=self.max_forwarded_hops,
+                ipv4_prefix_length=self.ipv4_prefix_length,
+                ipv6_prefix_length=self.ipv6_prefix_length,
+                redis_connect_timeout_seconds=self.redis_connect_timeout_seconds,
+                redis_operation_timeout_seconds=self.redis_operation_timeout_seconds,
+                redis_max_connections=self.redis_max_connections,
+                redis_key_prefix=self.redis_key_prefix,
+                policy_version=self.abuse_policy_version,
+                local_fallback_max_keys=self.abuse_local_fallback_max_keys,
+                provider_max_concurrency=self.abuse_provider_max_concurrency,
+                provider_concurrency_lease_seconds=(self.abuse_provider_concurrency_lease_seconds),
+                backend_audit_interval_seconds=self.abuse_backend_audit_interval_seconds,
+            ),
+            key_rotation=KeyRotationConfiguration(
+                current_version=self.security_key_version,
+                previous_version=self.security_previous_key_version,
+                staged_future_version=self.security_future_key_version,
+                transition_started_at=self.security_key_transition_started_at,
+                transition_expires_at=self.security_key_transition_expires_at,
+            ),
+            secret_references=self._secret_reference_configuration(),
+        )
+
+    def _audit_configuration(self) -> AuditConfiguration:
+        return AuditConfiguration(
+            enabled=self.audit_outbox_enabled,
+            poll_interval_seconds=self.audit_outbox_poll_interval_seconds,
+            batch_size=self.audit_outbox_batch_size,
+            worker_concurrency=self.audit_outbox_worker_concurrency,
+            lease_seconds=self.audit_outbox_lease_seconds,
+            max_attempts=self.audit_outbox_max_attempts,
+            base_backoff_seconds=self.audit_outbox_base_backoff_seconds,
+            max_backoff_seconds=self.audit_outbox_max_backoff_seconds,
+            destination=self.audit_outbox_destination,
+            delivery_timeout_seconds=self.audit_outbox_delivery_timeout_seconds,
+            outbox_retention_days=self.audit_outbox_retention_days,
+            dead_letter_retention_days=self.audit_dead_letter_retention_days,
+            maintenance_enabled=self.maintenance_enabled,
+            maintenance_interval_seconds=self.maintenance_interval_seconds,
+            maintenance_batch_size=self.maintenance_batch_size,
+            maintenance_max_runtime_seconds=self.maintenance_max_runtime_seconds,
+            replay_retention_buffer_seconds=self.replay_retention_buffer_seconds,
+            terminal_envelope_retention_days=self.terminal_envelope_retention_days,
+        )
 
 
 @lru_cache(maxsize=1)

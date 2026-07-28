@@ -1,5 +1,10 @@
 # Portal secrets provider boundary
 
+S06-03 keeps raw environment-backed values in the dedicated immutable
+`EnvironmentSecretInputs` model. API and audit-worker role aggregates contain only the provider ID,
+logical reference identities and rotation versions. A non-environment provider fails closed when
+conflicting inline environment secret values are present.
+
 ## Scope
 
 S06-02 establishes a synchronous, vendor-neutral boundary between typed Portal configuration and
