@@ -118,6 +118,25 @@ class PortalApiSettings(BaseSettings):
     abuse_provider_max_concurrency: int = Field(default=20, ge=1, le=500)
     abuse_provider_concurrency_lease_seconds: float = Field(default=15, ge=1, le=120)
     abuse_backend_audit_interval_seconds: float = Field(default=60, ge=1, le=3_600)
+    audit_outbox_enabled: bool = False
+    audit_worker_database_url: SecretStr | None = None
+    audit_outbox_poll_interval_seconds: float = Field(default=1, ge=0.1, le=60)
+    audit_outbox_batch_size: int = Field(default=100, ge=1, le=500)
+    audit_outbox_worker_concurrency: int = Field(default=4, ge=1, le=32)
+    audit_outbox_lease_seconds: float = Field(default=30, ge=5, le=600)
+    audit_outbox_max_attempts: int = Field(default=5, ge=1, le=25)
+    audit_outbox_base_backoff_seconds: float = Field(default=1, ge=0.1, le=300)
+    audit_outbox_max_backoff_seconds: float = Field(default=60, ge=1, le=3600)
+    audit_outbox_destination: str = "local_postgres"
+    audit_outbox_delivery_timeout_seconds: float = Field(default=5, gt=0, le=60)
+    audit_outbox_retention_days: int = Field(default=7, ge=1, le=365)
+    audit_dead_letter_retention_days: int = Field(default=30, ge=1, le=3650)
+    maintenance_enabled: bool = True
+    maintenance_interval_seconds: float = Field(default=60, ge=1, le=3600)
+    maintenance_batch_size: int = Field(default=100, ge=1, le=1000)
+    maintenance_max_runtime_seconds: float = Field(default=30, ge=1, le=300)
+    replay_retention_buffer_seconds: int = Field(default=300, ge=0, le=86400)
+    terminal_envelope_retention_days: int = Field(default=7, ge=1, le=365)
     security_master_key: SecretStr | None = None
     security_key_version: str = "local-development-v1"
     security_previous_master_key: SecretStr | None = None
@@ -284,6 +303,7 @@ class PortalApiSettings(BaseSettings):
         if self.log_format not in {"json", "console"}:
             raise ValueError("PORTAL_API_LOG_FORMAT must be json or console")
         self._validate_abuse_configuration()
+        self._validate_audit_outbox_configuration()
         if self.telemetry_enabled:
             if (
                 self.telemetry_metrics_exporter is TelemetryMetricsExporter.NONE
@@ -479,6 +499,29 @@ class PortalApiSettings(BaseSettings):
             raise ValueError("PORTAL_API_REDIS_URL must not contain query or fragment components")
         if self.is_production and parsed.scheme != "rediss":
             raise ValueError("Production abuse protection requires Redis TLS")
+
+    def _validate_audit_outbox_configuration(self) -> None:
+        if self.audit_outbox_base_backoff_seconds > self.audit_outbox_max_backoff_seconds:
+            raise ValueError("Audit outbox base backoff cannot exceed the maximum backoff")
+        if self.audit_outbox_lease_seconds <= self.audit_outbox_delivery_timeout_seconds:
+            raise ValueError("Audit outbox lease must exceed the delivery timeout")
+        if self.audit_outbox_destination != "local_postgres":
+            raise ValueError("PORTAL_API_AUDIT_OUTBOX_DESTINATION must be local_postgres")
+        if self.audit_dead_letter_retention_days < self.audit_outbox_retention_days:
+            raise ValueError(
+                "Dead-letter retention cannot be shorter than delivered outbox retention"
+            )
+        if not self.audit_outbox_enabled:
+            return
+        if self.audit_worker_database_url is None:
+            raise ValueError(
+                "PORTAL_API_AUDIT_WORKER_DATABASE_URL is required when the outbox worker is enabled"
+            )
+        database_url = self.audit_worker_database_url.get_secret_value()
+        if not database_url.startswith("postgresql+psycopg://"):
+            raise ValueError(
+                "PORTAL_API_AUDIT_WORKER_DATABASE_URL must use PostgreSQL with psycopg"
+            )
 
 
 @lru_cache(maxsize=1)

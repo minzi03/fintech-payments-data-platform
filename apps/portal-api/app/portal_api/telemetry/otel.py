@@ -84,6 +84,9 @@ class OpenTelemetryRuntime:
         self._dependency_states: dict[str, _DependencyState] = {}
         self._overall_readiness = "UNKNOWN"
         self._audit_outbox_backlog = 0
+        self._audit_dead_letter_backlog = 0
+        self._audit_oldest_pending_age_seconds = 0.0
+        self._maintenance_overdue: dict[str, int] = {}
 
         resource_attributes: dict[str, str] = {
             "service.name": settings.service_name,
@@ -357,6 +360,67 @@ class OpenTelemetryRuntime:
             description="Audit archive delivery outcomes",
             unit="{event}",
         )
+        self._audit_outbox_enqueued = self._meter.create_counter(
+            "portal.audit.outbox.enqueued",
+            description="Transactional audit outbox records created",
+            unit="{event}",
+        )
+        self._audit_outbox_claimed = self._meter.create_counter(
+            "portal.audit.outbox.claimed",
+            description="Audit outbox records claimed by workers",
+            unit="{event}",
+        )
+        self._audit_outbox_deliveries = self._meter.create_counter(
+            "portal.audit.outbox.deliveries",
+            description="Audit outbox delivery outcomes",
+            unit="{delivery}",
+        )
+        self._audit_outbox_delivery_duration = self._meter.create_histogram(
+            "portal.audit.outbox.delivery.duration",
+            description="Audit destination delivery latency",
+            unit="ms",
+        )
+        self._audit_outbox_retries = self._meter.create_counter(
+            "portal.audit.outbox.retries",
+            description="Audit delivery retries scheduled",
+            unit="{retry}",
+        )
+        self._audit_outbox_dead_lettered = self._meter.create_counter(
+            "portal.audit.outbox.dead_lettered",
+            description="Audit records moved to dead letter",
+            unit="{event}",
+        )
+        self._audit_outbox_lease_recovered = self._meter.create_counter(
+            "portal.audit.outbox.lease_recovered",
+            description="Expired audit worker leases recovered",
+            unit="{lease}",
+        )
+        self._maintenance_runs = self._meter.create_counter(
+            "portal.maintenance.runs",
+            description="Bounded maintenance job runs",
+            unit="{run}",
+        )
+        self._maintenance_duration = self._meter.create_histogram(
+            "portal.maintenance.duration",
+            description="Maintenance job duration",
+            unit="ms",
+        )
+        self._maintenance_rows = self._meter.create_counter(
+            "portal.maintenance.rows_processed",
+            description="Rows processed by bounded maintenance",
+            unit="{row}",
+        )
+        self._maintenance_failures = self._meter.create_counter(
+            "portal.maintenance.failures",
+            description="Maintenance job failures",
+            unit="{failure}",
+        )
+        self._meter.create_observable_gauge(
+            "portal.maintenance.overdue",
+            callbacks=[self._observe_maintenance_overdue],
+            description="Whether a bounded maintenance job is overdue",
+            unit="1",
+        )
         self._meter.create_observable_gauge(
             "portal.readiness.overall",
             callbacks=[self._observe_overall_readiness],
@@ -392,6 +456,12 @@ class OpenTelemetryRuntime:
             callbacks=[self._observe_audit_backlog],
             description="Undelivered audit archive outbox records",
             unit="{event}",
+        )
+        self._meter.create_observable_gauge(
+            "portal.audit.outbox.oldest_pending_age",
+            callbacks=[self._observe_audit_oldest_pending],
+            description="Age of the oldest pending audit delivery",
+            unit="s",
         )
 
     def start(self) -> None:
@@ -679,6 +749,76 @@ class OpenTelemetryRuntime:
             with self._lock:
                 self._audit_outbox_backlog = max(0, self._audit_outbox_backlog - 1)
 
+    def record_outbox(
+        self,
+        *,
+        operation: str,
+        destination: str,
+        result: str,
+        failure_class: str,
+        event_family: str,
+        attempt_bucket: str,
+        duration_ms: float,
+        count: int = 1,
+    ) -> None:
+        attributes = {
+            "destination": destination,
+            "result": result,
+            "failure_class": failure_class,
+            "event_family": event_family,
+            "attempt_bucket": attempt_bucket,
+        }
+        if operation == "enqueued":
+            self._audit_outbox_enqueued.add(count, attributes)
+        elif operation == "claimed":
+            self._audit_outbox_claimed.add(count, attributes)
+        elif operation == "retry":
+            self._audit_outbox_retries.add(count, attributes)
+        elif operation == "dead_lettered":
+            self._audit_outbox_dead_lettered.add(count, attributes)
+        elif operation == "lease_recovered":
+            self._audit_outbox_lease_recovered.add(count, attributes)
+        else:
+            self._audit_outbox_deliveries.add(count, attributes)
+            self._audit_outbox_delivery_duration.record(duration_ms, attributes)
+
+    def record_outbox_backlog(
+        self,
+        *,
+        pending: int,
+        dead_lettered: int,
+        oldest_pending_age_seconds: float,
+    ) -> None:
+        with self._lock:
+            self._audit_outbox_backlog = pending
+            self._audit_dead_letter_backlog = dead_lettered
+            self._audit_oldest_pending_age_seconds = oldest_pending_age_seconds
+
+    def record_maintenance(
+        self,
+        *,
+        job_name: str,
+        status: str,
+        rows_processed: int,
+        duration_ms: float,
+        failure_class: str,
+    ) -> None:
+        attributes = {
+            "job_name": job_name,
+            "status": status,
+            "failure_class": failure_class,
+        }
+        self._maintenance_runs.add(1, attributes)
+        self._maintenance_duration.record(duration_ms, attributes)
+        if rows_processed:
+            self._maintenance_rows.add(rows_processed, attributes)
+        if status == "failed":
+            self._maintenance_failures.add(1, attributes)
+
+    def record_maintenance_overdue(self, *, job_name: str, overdue: bool) -> None:
+        with self._lock:
+            self._maintenance_overdue[job_name] = int(overdue)
+
     def instrument_database(self, engine: Engine) -> None:
         if self._engine is engine:
             return
@@ -818,7 +958,23 @@ class OpenTelemetryRuntime:
     def _observe_audit_backlog(self, options: Any) -> list[Observation]:
         del options
         with self._lock:
-            return [Observation(self._audit_outbox_backlog, {"scope": "process"})]
+            return [
+                Observation(self._audit_outbox_backlog, {"status": "pending"}),
+                Observation(self._audit_dead_letter_backlog, {"status": "dead_lettered"}),
+            ]
+
+    def _observe_audit_oldest_pending(self, options: Any) -> list[Observation]:
+        del options
+        with self._lock:
+            return [Observation(self._audit_oldest_pending_age_seconds)]
+
+    def _observe_maintenance_overdue(self, options: Any) -> list[Observation]:
+        del options
+        with self._lock:
+            return [
+                Observation(value, {"job_name": job_name})
+                for job_name, value in sorted(self._maintenance_overdue.items())
+            ]
 
     def _database_scalar(self, statement: str) -> int | None:
         engine = self._engine

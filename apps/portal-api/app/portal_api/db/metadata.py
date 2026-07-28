@@ -347,25 +347,82 @@ security_audit_events = Table(
 audit_archive_outbox = Table(
     "audit_archive_outbox",
     metadata,
+    Column("outbox_id", UUID(as_uuid=True), primary_key=True),
     Column(
         "event_id",
         UUID(as_uuid=True),
         ForeignKey(f"{PORTAL_SCHEMA}.security_audit_events.event_id", ondelete="RESTRICT"),
-        primary_key=True,
+        nullable=False,
     ),
+    Column("event_type", String(128), nullable=False),
+    Column("payload_version", Integer, nullable=False, server_default=text("1")),
+    Column("payload", JSONB, nullable=False),
+    Column("destination", String(64), nullable=False),
     Column("publication_state", String(32), nullable=False),
     Column("attempt_count", Integer, nullable=False, server_default=text("0")),
+    Column("max_attempts", Integer, nullable=False, server_default=text("5")),
     Column("lease_owner", String(128), nullable=True),
+    Column("lease_token", UUID(as_uuid=True), nullable=True),
     Column("lease_expires_at", DateTime(timezone=True), nullable=True),
     Column("next_attempt_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+    Column("last_attempt_at", DateTime(timezone=True), nullable=True),
     Column("archive_reference", String(512), nullable=True),
     Column("archive_checksum", String(128), nullable=True),
+    Column("last_error_class", String(64), nullable=True),
+    Column("requeue_count", Integer, nullable=False, server_default=text("0")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
     Column("delivered_at", DateTime(timezone=True), nullable=True),
+    Column("dead_lettered_at", DateTime(timezone=True), nullable=True),
     CheckConstraint("attempt_count >= 0", name="outbox_attempt_count"),
+    CheckConstraint("max_attempts BETWEEN 1 AND 25", name="outbox_max_attempts"),
+    CheckConstraint("requeue_count BETWEEN 0 AND 10", name="outbox_requeue_count"),
+    CheckConstraint(
+        "publication_state IN ('PENDING', 'LEASED', 'RETRY_SCHEDULED', "
+        "'DELIVERED', 'DEAD_LETTERED', 'CANCELLED')",
+        name="outbox_publication_state",
+    ),
+    UniqueConstraint("event_id", "destination", name="audit_outbox_event_destination"),
 )
 Index(
     "ix_audit_archive_outbox_pending",
+    audit_archive_outbox.c.publication_state,
     audit_archive_outbox.c.next_attempt_at,
-    postgresql_where=audit_archive_outbox.c.publication_state.in_(("PENDING", "RETRY")),
+    postgresql_where=audit_archive_outbox.c.publication_state.in_(("PENDING", "RETRY_SCHEDULED")),
+)
+Index("ix_audit_archive_outbox_lease_expiry", audit_archive_outbox.c.lease_expires_at)
+Index("ix_audit_archive_outbox_delivered", audit_archive_outbox.c.delivered_at)
+Index("ix_audit_archive_outbox_dead_lettered", audit_archive_outbox.c.dead_lettered_at)
+
+audit_delivery_receipts = Table(
+    "audit_delivery_receipts",
+    metadata,
+    Column("idempotency_key", String(64), primary_key=True),
+    Column("event_id", UUID(as_uuid=True), nullable=False),
+    Column("destination", String(64), nullable=False),
+    Column("payload_checksum", String(64), nullable=False),
+    Column("delivered_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+)
+
+portal_maintenance_jobs = Table(
+    "portal_maintenance_jobs",
+    metadata,
+    Column("job_name", String(64), primary_key=True),
+    Column("status", String(32), nullable=False),
+    Column("last_started_at", DateTime(timezone=True), nullable=True),
+    Column("last_completed_at", DateTime(timezone=True), nullable=True),
+    Column("last_failed_at", DateTime(timezone=True), nullable=True),
+    Column("last_successful_run_id", UUID(as_uuid=True), nullable=True),
+    Column("lease_owner", String(128), nullable=True),
+    Column("lease_token", UUID(as_uuid=True), nullable=True),
+    Column("lease_expires_at", DateTime(timezone=True), nullable=True),
+    Column("last_rows_processed", Integer, nullable=False, server_default=text("0")),
+    Column("last_error_class", String(64), nullable=True),
+    Column("next_scheduled_at", DateTime(timezone=True), nullable=True),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+    CheckConstraint(
+        "status IN ('IDLE', 'RUNNING', 'SUCCEEDED', 'FAILED')",
+        name="maintenance_job_status",
+    ),
+    CheckConstraint("last_rows_processed >= 0", name="maintenance_rows_processed"),
 )

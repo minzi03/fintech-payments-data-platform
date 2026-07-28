@@ -63,7 +63,18 @@ class AuditLedger:
             if telemetry is not None
             else nullcontext()
         )
-        with span:
+        outbox_span = (
+            telemetry.span(
+                "audit.outbox.enqueue",
+                attributes={
+                    "audit.destination": "local_postgres",
+                    "audit.event_family": event.event_type.value.split(".", 1)[0],
+                },
+            )
+            if telemetry is not None and event.safe_metadata.get("local_only") is not True
+            else nullcontext()
+        )
+        with span, outbox_span:
             ledger_sequence = connection.execute(
                 text(
                     "SELECT portal_control.append_security_audit_event(:event_payload)"
@@ -72,6 +83,16 @@ class AuditLedger:
             ).scalar_one()
             if telemetry is not None:
                 telemetry.record_audit_event(event.event_type.value, event.outcome)
+                if event.safe_metadata.get("local_only") is not True:
+                    telemetry.record_outbox(
+                        operation="enqueued",
+                        destination="local_postgres",
+                        result="enqueued",
+                        failure_class="none",
+                        event_family=event.event_type.value.split(".", 1)[0],
+                        attempt_bucket="0",
+                        duration_ms=0,
+                    )
         return int(ledger_sequence)
 
     @staticmethod

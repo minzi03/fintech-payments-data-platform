@@ -97,6 +97,11 @@ all local family members fail closed, and the envelope is crypto-erased.
 The worker does not refresh provider tokens after the local session is idle-expired,
 absolute-expired, or has no active family member. Those envelopes are disposed instead.
 
+Old crypto-erased terminal envelopes are removed only by the bounded maintenance worker. Cleanup
+excludes any family that still contains an `ACTIVE` or `REFRESH_REQUIRED` session. Audit delivery
+and maintenance remain outside the provider call and request transactions; see
+[Audit outbox delivery and background maintenance](audit-outbox-and-maintenance.md).
+
 ### Retry and failure policy
 
 | Condition | Result |

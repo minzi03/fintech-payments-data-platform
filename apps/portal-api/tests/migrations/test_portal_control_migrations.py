@@ -15,11 +15,13 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError, ProgrammingError
 
 EXPECTED_TABLES = {
+    "audit_delivery_receipts",
     "audit_archive_outbox",
     "oidc_login_transactions",
     "portal_capability_definitions",
     "portal_capability_overrides",
     "portal_policy_revisions",
+    "portal_maintenance_jobs",
     "portal_principals",
     "portal_login_intents",
     "portal_provider_logout_receipts",
@@ -42,6 +44,13 @@ def _runtime_url() -> str:
     value = os.environ.get("PORTAL_TEST_RUNTIME_DATABASE_URL", "")
     if not value:
         pytest.skip("PORTAL_TEST_RUNTIME_DATABASE_URL is not configured")
+    return value
+
+
+def _archive_url() -> str:
+    value = os.environ.get("PORTAL_TEST_ARCHIVE_DATABASE_URL", "")
+    if not value:
+        pytest.skip("PORTAL_TEST_ARCHIVE_DATABASE_URL is not configured")
     return value
 
 
@@ -78,6 +87,7 @@ def test_upgrade_downgrade_and_authoritative_history() -> None:
                 "005_token_disposal_privilege",
                 "006_session_revocation_fence",
                 "007_provider_session_lifecycle",
+                "008_audit_outbox_and_maintenance",
             ]
             assert all(len(record.checksum) == 64 for record in records)
             assert all(record.application_compat == ">=0.1.0,<1.0.0" for record in records)
@@ -100,6 +110,46 @@ def test_runtime_role_cannot_read_history_or_execute_ddl() -> None:
             connection.execute(text("CREATE TABLE portal_control.forbidden_runtime_ddl(id int)"))
     finally:
         engine.dispose()
+
+
+@pytest.mark.integration
+def test_runtime_and_archive_roles_preserve_audit_authority_boundaries() -> None:
+    config = _alembic_config(_migration_url())
+    command.upgrade(config, "head")
+    runtime = create_engine(_runtime_url())
+    archive = create_engine(_archive_url())
+    try:
+        with runtime.connect() as connection, pytest.raises(ProgrammingError):
+            connection.execute(text("SELECT * FROM portal_control.audit_archive_outbox"))
+        with archive.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT has_table_privilege("
+                    "current_user, 'portal_control.audit_archive_outbox', 'SELECT,UPDATE,DELETE')"
+                )
+            ).scalar_one()
+            assert connection.execute(
+                text(
+                    "SELECT has_table_privilege("
+                    "current_user, 'portal_control.audit_delivery_receipts', 'SELECT,INSERT')"
+                )
+            ).scalar_one()
+        with archive.begin() as connection, pytest.raises(ProgrammingError):
+            connection.execute(
+                text(
+                    "UPDATE portal_control.security_audit_events SET outcome = outcome WHERE false"
+                )
+            )
+        with archive.begin() as connection, pytest.raises(ProgrammingError):
+            connection.execute(
+                text(
+                    "UPDATE portal_control.audit_delivery_receipts "
+                    "SET destination = destination WHERE false"
+                )
+            )
+    finally:
+        runtime.dispose()
+        archive.dispose()
 
 
 @pytest.mark.integration

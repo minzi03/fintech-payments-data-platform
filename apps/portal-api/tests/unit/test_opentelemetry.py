@@ -88,6 +88,40 @@ def test_prometheus_catalog_is_low_cardinality_and_complete() -> None:
         runtime.record_database_query("SELECT", "success", 1.2)
         runtime.record_audit_event("auth.login_succeeded.v1", "SUCCEEDED")
         runtime.record_archive("success")
+        runtime.record_outbox(
+            operation="enqueued",
+            destination="local_postgres",
+            result="enqueued",
+            failure_class="none",
+            event_family="auth",
+            attempt_bucket="0",
+            duration_ms=0,
+        )
+        runtime.record_outbox(
+            operation="delivery",
+            destination="local_postgres",
+            result="success",
+            failure_class="none",
+            event_family="auth",
+            attempt_bucket="1",
+            duration_ms=1.1,
+        )
+        runtime.record_outbox_backlog(
+            pending=3,
+            dead_lettered=1,
+            oldest_pending_age_seconds=2.5,
+        )
+        runtime.record_maintenance(
+            job_name="recover_outbox_leases",
+            status="succeeded",
+            rows_processed=2,
+            duration_ms=0.7,
+            failure_class="none",
+        )
+        runtime.record_maintenance_overdue(
+            job_name="recover_outbox_leases",
+            overdue=False,
+        )
         runtime.record_abuse(
             operation="login",
             decision="throttled",
@@ -124,7 +158,15 @@ def test_prometheus_catalog_is_low_cardinality_and_complete() -> None:
         "portal_db_query_duration",
         "portal_audit_events_total",
         "portal_audit_outbox_backlog",
+        "portal_audit_outbox_enqueued_total",
+        "portal_audit_outbox_deliveries_total",
+        "portal_audit_outbox_delivery_duration",
+        "portal_audit_outbox_oldest_pending_age",
         "portal_audit_archive_total",
+        "portal_maintenance_runs_total",
+        "portal_maintenance_duration",
+        "portal_maintenance_rows_processed_total",
+        "portal_maintenance_overdue",
         "portal_abuse_requests_total",
         "portal_abuse_decisions_total",
         "portal_abuse_backend_duration",
@@ -135,7 +177,8 @@ def test_prometheus_catalog_is_low_cardinality_and_complete() -> None:
         assert metric in rendered
     assert 'event="login_success"' in rendered
     assert 'event="callback_success"' in rendered
-    assert 'scope="process"' in rendered
+    assert 'status="pending"' in rendered
+    assert 'status="dead_lettered"' in rendered
     assert "request_id" not in rendered
     assert "trace_id" not in rendered
     assert "raw_ip" not in rendered

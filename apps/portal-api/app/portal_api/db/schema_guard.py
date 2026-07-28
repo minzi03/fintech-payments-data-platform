@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-SUPPORTED_SCHEMA_VERSION = "007_provider_session_lifecycle"
+SUPPORTED_SCHEMA_VERSION = "008_audit_outbox_and_maintenance"
 
 
 class SchemaCompatibilityError(RuntimeError):

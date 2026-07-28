@@ -47,6 +47,13 @@ class AuditEventType(StrEnum):
     ABUSE_FALLBACK_ACTIVATED = "security.abuse_fallback_activated.v1"
     ABUSE_PROVIDER_OPERATION_THROTTLED = "security.abuse_provider_operation_throttled.v1"
     ABUSE_REPLAY_FAST_REJECTED = "security.abuse_replay_fast_rejected.v1"
+    AUDIT_OUTBOX_DELIVERY_FAILED = "operations.audit_outbox_delivery_failed.v1"
+    AUDIT_OUTBOX_DEAD_LETTERED = "operations.audit_outbox_dead_lettered.v1"
+    AUDIT_OUTBOX_REQUEUED = "operations.audit_outbox_requeued.v1"
+    AUDIT_OUTBOX_LEASE_RECOVERED = "operations.audit_outbox_lease_recovered.v1"
+    MAINTENANCE_JOB_FAILED = "operations.maintenance_job_failed.v1"
+    MAINTENANCE_JOB_RECOVERED = "operations.maintenance_job_recovered.v1"
+    MAINTENANCE_DATA_REMOVED = "operations.maintenance_data_removed.v1"
 
 
 @dataclass(frozen=True)

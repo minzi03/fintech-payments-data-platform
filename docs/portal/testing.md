@@ -86,6 +86,22 @@ load run performs 10,000 multi-dimensional evaluations with 100 workers and fail
 provider concurrency overflow, or leaked keys. Redis restart and combined provider/Redis outage
 procedures are documented in [Distributed abuse protection](abuse-protection.md).
 
+The PostgreSQL audit outbox suite and distributed delivery load harness are:
+
+```bash
+cd apps/portal-api
+python -m pytest tests/integration/test_audit_outbox_worker.py
+python scripts/validate_audit_outbox_load.py
+```
+
+The integration suite covers transactional enqueue, privacy-safe versioned payloads, local-only
+recursion prevention, `SKIP LOCKED` claims, lease recovery and stale fencing, idempotent delivery,
+dead-letter/requeue, retention boundaries, and distributed maintenance locking. The default load
+run commits 10,000 events and drains them with eight competing workers; it fails on duplicate
+receipts, incomplete work, stale finalization, latency-budget violations, or excessive traced
+allocation. Operational outage and recovery procedures are documented in
+[Audit outbox delivery and background maintenance](audit-outbox-and-maintenance.md).
+
 ## Container security and smoke checks
 
 CI builds both images, asserts configured users are non-root, starts the isolated Portal services,

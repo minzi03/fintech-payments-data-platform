@@ -245,7 +245,7 @@ Console mode is intentionally verbose and is not a production default.
   database is unavailable; dependency/readiness metrics continue to describe the outage.
 
 The Portal API intentionally does not broaden the least-privileged runtime database role to read the
-archive outbox. Its `portal.audit.outbox.backlog{scope="process"}` gauge is therefore the bounded
-process-observed delta: successful audit writes increment it and successful archive notifications
-decrement it. A future archive worker, running with the archive role, remains responsible for the
-authoritative durable backlog across API restarts and replicas.
+archive outbox. The separate `portal-audit-worker` uses the archive role and exports authoritative
+durable backlog, oldest-age, delivery, retry, dead-letter, lease-recovery, and maintenance metrics.
+API-process observations remain useful for enqueue-rate diagnostics but are not the durable backlog
+authority. See [Audit outbox delivery and background maintenance](audit-outbox-and-maintenance.md).

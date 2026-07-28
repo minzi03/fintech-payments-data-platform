@@ -131,6 +131,39 @@ class TelemetryRecorder(Protocol):
 
     def record_archive(self, outcome: str) -> None: ...
 
+    def record_outbox(
+        self,
+        *,
+        operation: str,
+        destination: str,
+        result: str,
+        failure_class: str,
+        event_family: str,
+        attempt_bucket: str,
+        duration_ms: float,
+        count: int = 1,
+    ) -> None: ...
+
+    def record_outbox_backlog(
+        self,
+        *,
+        pending: int,
+        dead_lettered: int,
+        oldest_pending_age_seconds: float,
+    ) -> None: ...
+
+    def record_maintenance(
+        self,
+        *,
+        job_name: str,
+        status: str,
+        rows_processed: int,
+        duration_ms: float,
+        failure_class: str,
+    ) -> None: ...
+
+    def record_maintenance_overdue(self, *, job_name: str, overdue: bool) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class TelemetrySnapshot:
@@ -315,6 +348,55 @@ class InMemoryTelemetry:
         with self._lock:
             self._archive_events[outcome] += 1
 
+    def record_outbox(
+        self,
+        *,
+        operation: str,
+        destination: str,
+        result: str,
+        failure_class: str,
+        event_family: str,
+        attempt_bucket: str,
+        duration_ms: float,
+        count: int = 1,
+    ) -> None:
+        with self._lock:
+            self._archive_events[
+                f"outbox:{operation}:{destination}:{result}:{failure_class}:"
+                f"{event_family}:{attempt_bucket}"
+            ] += count
+            self._durations[f"outbox:{operation}"].append(duration_ms)
+
+    def record_outbox_backlog(
+        self,
+        *,
+        pending: int,
+        dead_lettered: int,
+        oldest_pending_age_seconds: float,
+    ) -> None:
+        with self._lock:
+            self._archive_events["outbox:backlog:pending"] = pending
+            self._archive_events["outbox:backlog:dead_lettered"] = dead_lettered
+            self._durations["outbox:oldest_pending_age"] = [oldest_pending_age_seconds]
+
+    def record_maintenance(
+        self,
+        *,
+        job_name: str,
+        status: str,
+        rows_processed: int,
+        duration_ms: float,
+        failure_class: str,
+    ) -> None:
+        with self._lock:
+            self._archive_events[f"maintenance:{job_name}:{status}:{failure_class}"] += 1
+            self._archive_events[f"maintenance:{job_name}:rows"] += rows_processed
+            self._durations[f"maintenance:{job_name}"].append(duration_ms)
+
+    def record_maintenance_overdue(self, *, job_name: str, overdue: bool) -> None:
+        with self._lock:
+            self._archive_events[f"maintenance:{job_name}:overdue"] = int(overdue)
+
     def snapshot(self) -> TelemetrySnapshot:
         with self._lock:
             return TelemetrySnapshot(
@@ -437,4 +519,41 @@ class NoopTelemetry:
         return None
 
     def record_archive(self, outcome: str) -> None:
+        return None
+
+    def record_outbox(
+        self,
+        *,
+        operation: str,
+        destination: str,
+        result: str,
+        failure_class: str,
+        event_family: str,
+        attempt_bucket: str,
+        duration_ms: float,
+        count: int = 1,
+    ) -> None:
+        return None
+
+    def record_outbox_backlog(
+        self,
+        *,
+        pending: int,
+        dead_lettered: int,
+        oldest_pending_age_seconds: float,
+    ) -> None:
+        return None
+
+    def record_maintenance(
+        self,
+        *,
+        job_name: str,
+        status: str,
+        rows_processed: int,
+        duration_ms: float,
+        failure_class: str,
+    ) -> None:
+        return None
+
+    def record_maintenance_overdue(self, *, job_name: str, overdue: bool) -> None:
         return None

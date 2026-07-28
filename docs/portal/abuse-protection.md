@@ -1,5 +1,10 @@
 # Distributed abuse protection
 
+Abuse decisions that are selectively audited commit to the same PostgreSQL ledger and
+transactional outbox as other security evidence. Redis remains only the fast enforcement
+boundary: it is neither the audit delivery authority nor a retention worker dependency. See
+[Audit outbox delivery and background maintenance](audit-outbox-and-maintenance.md).
+
 The Portal authentication surface uses Redis for atomic, short-lived abuse enforcement while
 PostgreSQL remains the authority for sessions, provider lifecycle transitions, durable logout-token
 replay receipts, audit records, and crypto-erasure. Redis loss can reduce the strength of distributed

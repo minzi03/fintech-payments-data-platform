@@ -68,6 +68,25 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_IPV6_PREFIX_LENGTH` | `64` | no | no | 32-128 |
 | `PORTAL_API_ABUSE_LOCAL_FALLBACK_MAX_KEYS` | `10000` | no | no | 100-100000 bounded process-local keys |
 | `PORTAL_API_ABUSE_PROVIDER_MAX_CONCURRENCY` | `20` | no | no | 1-500 leased provider calls |
+| `PORTAL_API_AUDIT_OUTBOX_ENABLED` | `false` | no | no | Enables the separate audit worker; Compose enables it locally |
+| `PORTAL_API_AUDIT_WORKER_DATABASE_URL` | none | when outbox enabled | yes | PostgreSQL URL for the least-privileged `portal_archive` role |
+| `PORTAL_API_AUDIT_OUTBOX_POLL_INTERVAL_SECONDS` | `1` | no | no | 0.1-60 seconds |
+| `PORTAL_API_AUDIT_OUTBOX_BATCH_SIZE` | `100` | no | no | 1-500 records per claim |
+| `PORTAL_API_AUDIT_OUTBOX_WORKER_CONCURRENCY` | `4` | no | no | 1-32 concurrent deliveries |
+| `PORTAL_API_AUDIT_OUTBOX_LEASE_SECONDS` | `30` | no | no | 5-600 seconds and greater than delivery timeout |
+| `PORTAL_API_AUDIT_OUTBOX_MAX_ATTEMPTS` | `5` | no | no | 1-25 attempts |
+| `PORTAL_API_AUDIT_OUTBOX_BASE_BACKOFF_SECONDS` | `1` | no | no | 0.1-300 seconds |
+| `PORTAL_API_AUDIT_OUTBOX_MAX_BACKOFF_SECONDS` | `60` | no | no | 1-3600 seconds and not below base delay |
+| `PORTAL_API_AUDIT_OUTBOX_DESTINATION` | `local_postgres` | no | no | Only the bounded built-in destination is currently accepted |
+| `PORTAL_API_AUDIT_OUTBOX_DELIVERY_TIMEOUT_SECONDS` | `5` | no | no | Greater than 0, at most 60 seconds |
+| `PORTAL_API_AUDIT_OUTBOX_RETENTION_DAYS` | `7` | no | no | Delivered mutable-state retention |
+| `PORTAL_API_AUDIT_DEAD_LETTER_RETENTION_DAYS` | `30` | no | no | Cannot be shorter than delivered retention |
+| `PORTAL_API_MAINTENANCE_ENABLED` | `true` | no | no | Runs bounded jobs in the audit worker |
+| `PORTAL_API_MAINTENANCE_INTERVAL_SECONDS` | `60` | no | no | 1-3600 seconds |
+| `PORTAL_API_MAINTENANCE_BATCH_SIZE` | `100` | no | no | 1-1000 rows per action |
+| `PORTAL_API_MAINTENANCE_MAX_RUNTIME_SECONDS` | `30` | no | no | 1-300 seconds per job |
+| `PORTAL_API_REPLAY_RETENTION_BUFFER_SECONDS` | `300` | no | no | 0-86400 seconds after replay expiry |
+| `PORTAL_API_TERMINAL_ENVELOPE_RETENTION_DAYS` | `7` | no | no | Crypto-erased terminal envelopes only |
 
 The test environment may omit the master key to obtain isolated ephemeral authority. Local and
 development security runtimes require an explicit key so valid sessions and pending authentication
@@ -96,6 +115,9 @@ provider configuration, refresh/revocation/logout operations, and incident proce
 
 See [Distributed abuse protection](abuse-protection.md) before configuring trusted proxies,
 production Redis, operation policies, or degradation behavior.
+
+See [Audit outbox delivery and background maintenance](audit-outbox-and-maintenance.md) before
+configuring archive-role credentials, delivery retry, retention, or maintenance schedules.
 
 ## Portal Web
 
