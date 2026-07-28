@@ -24,6 +24,23 @@ class PortalEnvironment(StrEnum):
     PRODUCTION = "production"
 
 
+class TelemetryMetricsExporter(StrEnum):
+    """Supported vendor-neutral metrics export pipelines."""
+
+    NONE = "none"
+    CONSOLE = "console"
+    OTLP = "otlp"
+    PROMETHEUS = "prometheus"
+
+
+class TelemetryTraceExporter(StrEnum):
+    """Supported trace export pipelines."""
+
+    NONE = "none"
+    CONSOLE = "console"
+    OTLP = "otlp"
+
+
 def _csv_values(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
@@ -68,6 +85,15 @@ class PortalApiSettings(BaseSettings):
     readiness_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     health_cache_ttl_seconds: float = Field(default=2.0, ge=0, le=60)
     telemetry_enabled: bool = False
+    telemetry_metrics_exporter: TelemetryMetricsExporter = TelemetryMetricsExporter.PROMETHEUS
+    telemetry_trace_exporter: TelemetryTraceExporter = TelemetryTraceExporter.NONE
+    telemetry_trace_sampling_ratio: float = Field(default=0.1, ge=0, le=1)
+    telemetry_export_interval_seconds: float = Field(default=30, ge=1, le=300)
+    telemetry_export_timeout_seconds: float = Field(default=10, gt=0, le=30)
+    telemetry_otlp_endpoint: str = "http://localhost:4318"
+    telemetry_prometheus_host: str = "127.0.0.1"
+    telemetry_prometheus_port: int = Field(default=9464, ge=1024, le=65535)
+    telemetry_resource_attributes: str = ""
     openapi_enabled: bool = True
     development_identity_enabled: bool = False
     security_runtime_enabled: bool = False
@@ -105,6 +131,16 @@ class PortalApiSettings(BaseSettings):
     oidc_http_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     oidc_cache_ttl_seconds: int = Field(default=900, ge=900, le=900)
     oidc_stale_ceiling_seconds: int = Field(default=3600, ge=3600, le=3600)
+    provider_refresh_enabled: bool = True
+    provider_refresh_threshold_seconds: int = Field(default=120, ge=30, le=600)
+    provider_refresh_scan_interval_seconds: float = Field(default=5, ge=1, le=60)
+    provider_refresh_retry_budget: int = Field(default=3, ge=1, le=10)
+    provider_refresh_initial_backoff_seconds: float = Field(default=1, ge=0.1, le=30)
+    provider_refresh_max_backoff_seconds: float = Field(default=30, ge=1, le=300)
+    provider_refresh_lease_seconds: int = Field(default=30, ge=10, le=300)
+    provider_refresh_batch_size: int = Field(default=25, ge=1, le=100)
+    provider_logout_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    provider_logout_replay_ttl_seconds: int = Field(default=86400, ge=300, le=86400)
     allowed_return_paths: str = "/,/system-status"
     login_intent_ttl_seconds: int = Field(default=300, gt=0, le=300)
     login_transaction_ttl_seconds: int = Field(default=300, gt=0, le=300)
@@ -150,6 +186,30 @@ class PortalApiSettings(BaseSettings):
         return _csv_values(self.allowed_environment_ids)
 
     @property
+    def telemetry_resource_attribute_values(self) -> dict[str, str]:
+        """Return bounded non-secret resource attributes."""
+        attributes: dict[str, str] = {}
+        for item in _csv_values(self.telemetry_resource_attributes):
+            key, separator, value = item.partition("=")
+            if (
+                separator != "="
+                or re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", key) is None
+                or not value
+                or len(value) > 128
+                or any(
+                    secret_word in key.casefold()
+                    for secret_word in ("password", "secret", "token", "credential", "cookie")
+                )
+            ):
+                raise ValueError(
+                    "PORTAL_API_TELEMETRY_RESOURCE_ATTRIBUTES must contain bounded key=value pairs"
+                )
+            attributes[key] = value
+        if len(attributes) > 16:
+            raise ValueError("PORTAL_API_TELEMETRY_RESOURCE_ATTRIBUTES supports at most 16 entries")
+        return attributes
+
+    @property
     def security_master_key_bytes(self) -> bytes | None:
         return _decode_master_key(
             self.security_master_key,
@@ -190,6 +250,33 @@ class PortalApiSettings(BaseSettings):
                 raise ValueError("PORTAL_API_ALLOWED_ORIGINS entries must not contain paths")
         if self.log_format not in {"json", "console"}:
             raise ValueError("PORTAL_API_LOG_FORMAT must be json or console")
+        if self.telemetry_enabled:
+            if (
+                self.telemetry_metrics_exporter is TelemetryMetricsExporter.NONE
+                and self.telemetry_trace_exporter is TelemetryTraceExporter.NONE
+            ):
+                raise ValueError(
+                    "Telemetry requires at least one metrics or trace exporter when enabled"
+                )
+            if (
+                self.telemetry_metrics_exporter is TelemetryMetricsExporter.OTLP
+                or self.telemetry_trace_exporter is TelemetryTraceExporter.OTLP
+            ):
+                endpoint = urlsplit(self.telemetry_otlp_endpoint)
+                if endpoint.scheme not in {"http", "https"} or not endpoint.netloc:
+                    raise ValueError(
+                        "PORTAL_API_TELEMETRY_OTLP_ENDPOINT must be an absolute HTTP(S) URL"
+                    )
+                if endpoint.username is not None or endpoint.password is not None:
+                    raise ValueError(
+                        "PORTAL_API_TELEMETRY_OTLP_ENDPOINT must not contain credentials"
+                    )
+                if self.is_production and endpoint.scheme != "https":
+                    raise ValueError("Production OTLP export requires HTTPS")
+            if not self.telemetry_prometheus_host.strip():
+                raise ValueError("PORTAL_API_TELEMETRY_PROMETHEUS_HOST must not be empty")
+            _ = self.telemetry_resource_attribute_values
+        self._validate_provider_lifecycle_configuration()
         if self.security_runtime_enabled:
             if self.database_url is None:
                 raise ValueError(
@@ -311,6 +398,18 @@ class PortalApiSettings(BaseSettings):
             )
             if any(value.startswith("http://") for value in external_urls):
                 raise ValueError("Non-local OIDC configuration requires HTTPS")
+
+    def _validate_provider_lifecycle_configuration(self) -> None:
+        if (
+            self.provider_refresh_initial_backoff_seconds
+            > self.provider_refresh_max_backoff_seconds
+        ):
+            raise ValueError("Provider refresh initial backoff cannot exceed the maximum backoff")
+        if self.provider_refresh_lease_seconds <= max(
+            self.oidc_http_timeout_seconds,
+            self.provider_logout_timeout_seconds,
+        ):
+            raise ValueError("Provider refresh lease must exceed the configured provider timeout")
 
 
 @lru_cache(maxsize=1)

@@ -82,4 +82,5 @@ class ConfiguredPrincipalResolver(PrincipalResolverPort):
             assurance=identity.assurance,
             authenticated_at=identity.authenticated_at,
             token_expires_at=identity.token_expires_at,
+            provider_session=identity.provider_session,
         )

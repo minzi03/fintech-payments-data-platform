@@ -18,6 +18,8 @@ class ProtectedPurpose(StrEnum):
     SESSION = "session"
     CSRF_DERIVE = "csrf-derive"
     CSRF_LOOKUP = "csrf-lookup"
+    PROVIDER_REFRESH_TOKEN = "provider-refresh-token"
+    PROVIDER_LOGOUT_JTI = "provider-logout-jti"
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,8 @@ class EphemeralSecurityMaterial:
             ProtectedPurpose.SESSION: self.session_lookup_key,
             ProtectedPurpose.CSRF_DERIVE: self.csrf_derive_key,
             ProtectedPurpose.CSRF_LOOKUP: self.csrf_lookup_key,
+            ProtectedPurpose.PROVIDER_REFRESH_TOKEN: self.session_lookup_key,
+            ProtectedPurpose.PROVIDER_LOGOUT_JTI: self.state_lookup_key,
         }
         domain_separated = purpose.value.encode("ascii") + b"\x00" + value.encode("ascii")
         return hmac.new(keys[purpose], domain_separated, hashlib.sha256).digest()

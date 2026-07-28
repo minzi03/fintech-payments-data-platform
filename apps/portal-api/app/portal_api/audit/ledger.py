@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import datetime
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from sqlalchemy.engine import Connection
 
 from portal_api.audit.models import AuditEvent
 from portal_api.audit.redaction import assert_audit_safe
+from portal_api.telemetry.database import telemetry_for_engine
 
 
 class AuditLedger:
@@ -18,6 +20,7 @@ class AuditLedger:
 
     def append(self, connection: Connection, event: AuditEvent) -> int:
         assert_audit_safe(event.safe_metadata)
+        telemetry = telemetry_for_engine(connection.engine)
         payload = {
             field: self._json_value(getattr(event, field))
             for field in (
@@ -49,12 +52,26 @@ class AuditLedger:
             )
         }
         payload["event_type"] = event.event_type.value
-        ledger_sequence = connection.execute(
-            text("SELECT portal_control.append_security_audit_event(:event_payload)").bindparams(
-                bindparam("event_payload", type_=JSONB)
-            ),
-            {"event_payload": payload},
-        ).scalar_one()
+        span = (
+            telemetry.span(
+                "portal.audit.persist",
+                attributes={
+                    "audit.event.type": event.event_type.value,
+                    "audit.outcome": event.outcome,
+                },
+            )
+            if telemetry is not None
+            else nullcontext()
+        )
+        with span:
+            ledger_sequence = connection.execute(
+                text(
+                    "SELECT portal_control.append_security_audit_event(:event_payload)"
+                ).bindparams(bindparam("event_payload", type_=JSONB)),
+                {"event_payload": payload},
+            ).scalar_one()
+            if telemetry is not None:
+                telemetry.record_audit_event(event.event_type.value, event.outcome)
         return int(ledger_sequence)
 
     @staticmethod

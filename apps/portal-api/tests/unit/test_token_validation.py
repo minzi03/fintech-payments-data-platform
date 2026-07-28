@@ -14,6 +14,7 @@ from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
 from portal_api.auth.token_validation import PyJwtTokenValidator, TokenValidationError
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
+from portal_api.telemetry.metrics import InMemoryTelemetry
 
 
 class JwksOnlyProvider:
@@ -160,10 +161,12 @@ async def test_unknown_signing_key_refreshes_once_then_fails_closed() -> None:
         algorithm="RS256",
         headers={"kid": "unknown-key", "typ": "JWT"},
     )
+    telemetry = InMemoryTelemetry()
     validator = PyJwtTokenValidator(
         settings=_settings(),
         provider=provider,
         security_material=material,
+        telemetry=telemetry,
     )
 
     with pytest.raises(TokenValidationError):
@@ -176,6 +179,9 @@ async def test_unknown_signing_key_refreshes_once_then_fails_closed() -> None:
         )
 
     assert provider.refreshes == [False, True]
+    snapshot = telemetry.snapshot()
+    assert snapshot.oidc_operations["jwks:unknown_kid_refresh"] == 1
+    assert snapshot.oidc_operations["validation:id_token"] == 1
 
 
 @pytest.mark.asyncio

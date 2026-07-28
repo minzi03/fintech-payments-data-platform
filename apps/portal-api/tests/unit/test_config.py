@@ -3,7 +3,12 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from portal_api.core.config import PortalApiSettings, PortalEnvironment
+from portal_api.core.config import (
+    PortalApiSettings,
+    PortalEnvironment,
+    TelemetryMetricsExporter,
+    TelemetryTraceExporter,
+)
 from pydantic import ValidationError
 
 TEST_SECURITY_MASTER_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
@@ -194,9 +199,11 @@ def test_security_runtime_rejects_unsafe_oidc_configuration() -> None:
 
     with pytest.raises(ValidationError, match="OIDC_CLIENT_SECRET is required"):
         PortalApiSettings(
+            _env_file=None,
             environment=PortalEnvironment.TEST,
             security_runtime_enabled=True,
             database_url="postgresql+psycopg://portal_runtime:secret@localhost/portal_control",
+            oidc_client_secret=None,
         )
 
 
@@ -216,3 +223,99 @@ def test_oidc_discovery_and_cache_policy_are_frozen() -> None:
         PortalApiSettings(oidc_cache_ttl_seconds=901)
     with pytest.raises(ValidationError):
         PortalApiSettings(oidc_stale_ceiling_seconds=3599)
+
+
+def test_provider_session_lifecycle_configuration_is_bounded() -> None:
+    settings = PortalApiSettings(
+        provider_refresh_threshold_seconds=90,
+        provider_refresh_scan_interval_seconds=2,
+        provider_refresh_retry_budget=4,
+        provider_refresh_initial_backoff_seconds=0.5,
+        provider_refresh_max_backoff_seconds=20,
+        provider_refresh_lease_seconds=31,
+        provider_refresh_batch_size=50,
+        provider_logout_timeout_seconds=6,
+        provider_logout_replay_ttl_seconds=3600,
+    )
+
+    assert settings.provider_refresh_enabled
+    assert settings.provider_refresh_threshold_seconds == 90
+    assert settings.provider_refresh_batch_size == 50
+
+    with pytest.raises(ValidationError, match="initial backoff"):
+        PortalApiSettings(
+            provider_refresh_initial_backoff_seconds=20,
+            provider_refresh_max_backoff_seconds=10,
+        )
+    with pytest.raises(ValidationError, match="lease must exceed"):
+        PortalApiSettings(
+            oidc_http_timeout_seconds=15,
+            provider_refresh_lease_seconds=15,
+        )
+    with pytest.raises(ValidationError):
+        PortalApiSettings(provider_refresh_batch_size=101)
+
+
+def test_telemetry_configuration_is_explicit_and_bounded() -> None:
+    settings = PortalApiSettings(
+        _env_file=None,
+        telemetry_enabled=True,
+        telemetry_metrics_exporter="otlp",
+        telemetry_trace_exporter="otlp",
+        telemetry_otlp_endpoint="https://collector.example",
+        telemetry_trace_sampling_ratio=0.25,
+        telemetry_resource_attributes="service.namespace=fintech,platform.region=local",
+    )
+
+    assert settings.telemetry_metrics_exporter is TelemetryMetricsExporter.OTLP
+    assert settings.telemetry_trace_exporter is TelemetryTraceExporter.OTLP
+    assert settings.telemetry_trace_sampling_ratio == 0.25
+    assert settings.telemetry_resource_attribute_values == {
+        "service.namespace": "fintech",
+        "platform.region": "local",
+    }
+
+    with pytest.raises(ValidationError, match="at least one metrics or trace exporter"):
+        PortalApiSettings(
+            _env_file=None,
+            telemetry_enabled=True,
+            telemetry_metrics_exporter="none",
+            telemetry_trace_exporter="none",
+        )
+    with pytest.raises(ValidationError, match="absolute HTTP"):
+        PortalApiSettings(
+            _env_file=None,
+            telemetry_enabled=True,
+            telemetry_metrics_exporter="otlp",
+            telemetry_otlp_endpoint="collector:4318",
+        )
+    with pytest.raises(ValidationError, match="must not contain credentials"):
+        PortalApiSettings(
+            _env_file=None,
+            telemetry_enabled=True,
+            telemetry_metrics_exporter="otlp",
+            telemetry_otlp_endpoint="https://username:password@collector.example",
+        )
+    with pytest.raises(ValidationError, match="bounded key=value"):
+        PortalApiSettings(
+            _env_file=None,
+            telemetry_enabled=True,
+            telemetry_resource_attributes="secret.token=must-not-be-a-resource",
+        )
+
+
+def test_production_otlp_requires_tls() -> None:
+    with pytest.raises(ValidationError, match="OTLP export requires HTTPS"):
+        PortalApiSettings(
+            _env_file=None,
+            environment=PortalEnvironment.PRODUCTION,
+            openapi_enabled=False,
+            log_format="json",
+            trusted_hosts="portal-api.example",
+            allowed_origins="https://portal.example",
+            build_sha="abc123",
+            build_time="2026-07-24T00:00:00Z",
+            telemetry_enabled=True,
+            telemetry_metrics_exporter="otlp",
+            telemetry_otlp_endpoint="http://collector.internal:4318",
+        )

@@ -10,6 +10,11 @@ from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 from starlette.concurrency import run_in_threadpool
 
+from portal_api.adapters.oidc import OIDC_ADAPTER_ID, OidcReadinessAdapter
+from portal_api.adapters.postgresql import (
+    POSTGRESQL_ADAPTER_ID,
+    PostgreSqlReadinessAdapter,
+)
 from portal_api.adapters.registry import AdapterRegistry
 from portal_api.api.health import router as health_router
 from portal_api.api.v1.access import router as access_router
@@ -19,6 +24,7 @@ from portal_api.api.v1.system import router as system_router
 from portal_api.auth.authorization import AuthorizationService
 from portal_api.auth.callback import CallbackOrchestrator
 from portal_api.auth.login_intent import LoginInitiationService
+from portal_api.auth.logout_token import ProviderLogoutTokenValidator
 from portal_api.auth.oidc_provider import HttpxOidcProvider
 from portal_api.auth.policy import LocalDevelopmentCallbackPolicy
 from portal_api.auth.ports import OidcProviderPort
@@ -28,7 +34,13 @@ from portal_api.auth.protected_value import (
     EphemeralEnvelopeCipher,
     ProtectedValueCipher,
 )
+from portal_api.auth.provider_session import (
+    ProviderRefreshWorker,
+    ProviderSessionLifecycleService,
+    ProviderSessionRepository,
+)
 from portal_api.auth.recovery import CallbackRecovery
+from portal_api.auth.refresh_token_validation import ProviderRefreshIdentityValidator
 from portal_api.auth.security_material import (
     EphemeralSecurityMaterial,
     derive_security_key,
@@ -44,9 +56,11 @@ from portal_api.core.security import configure_security_middleware
 from portal_api.db.engine import create_runtime_engine
 from portal_api.db.schema_guard import validate_runtime_schema
 from portal_api.health.service import HealthService
-from portal_api.telemetry.metrics import NoopTelemetry, TelemetryRecorder
+from portal_api.telemetry.metrics import TelemetryRecorder
+from portal_api.telemetry.otel import build_telemetry
 
 LOGGER = logging.getLogger("portal_api.lifecycle")
+REQUIRED_SECURITY_ADAPTER_IDS = (POSTGRESQL_ADAPTER_ID, OIDC_ADAPTER_ID)
 
 
 def _security_components(
@@ -119,7 +133,7 @@ def create_app(
     """Create an isolated Portal API without import-time infrastructure calls."""
     resolved_settings = settings or get_settings()
     configure_logging(resolved_settings)
-    resolved_telemetry = telemetry or NoopTelemetry()
+    resolved_telemetry = telemetry or build_telemetry(resolved_settings)
     registry = adapter_registry or AdapterRegistry()
     owned_database_engine = (
         create_runtime_engine(resolved_settings)
@@ -127,10 +141,15 @@ def create_app(
         else None
     )
     resolved_database_engine = database_engine or owned_database_engine
+    if resolved_database_engine is not None:
+        resolved_telemetry.instrument_database(resolved_database_engine)
     security_material, protected_value_cipher = _security_components(resolved_settings)
     provider: OidcProviderPort | None = None
     if resolved_settings.security_runtime_enabled:
-        provider = oidc_provider or HttpxOidcProvider(resolved_settings)
+        provider = oidc_provider or HttpxOidcProvider(
+            resolved_settings,
+            telemetry=resolved_telemetry,
+        )
     login_initiation_service = (
         LoginInitiationService(
             engine=resolved_database_engine,
@@ -152,6 +171,9 @@ def create_app(
     callback_recovery: CallbackRecovery | None = None
     session_service: SessionService | None = None
     authorization_service: AuthorizationService | None = None
+    provider_session_service: ProviderSessionLifecycleService | None = None
+    provider_logout_token_validator: ProviderLogoutTokenValidator | None = None
+    provider_refresh_worker: ProviderRefreshWorker | None = None
     if (
         resolved_settings.security_runtime_enabled
         and resolved_database_engine is not None
@@ -170,6 +192,7 @@ def create_app(
                 settings=resolved_settings,
                 provider=provider,
                 security_material=security_material,
+                telemetry=resolved_telemetry,
             ),
             principal_resolver=ConfiguredPrincipalResolver(
                 engine=resolved_database_engine,
@@ -193,27 +216,105 @@ def create_app(
             engine=resolved_database_engine,
             settings=resolved_settings,
         )
+        provider_session_service = ProviderSessionLifecycleService(
+            repository=ProviderSessionRepository(
+                engine=resolved_database_engine,
+                settings=resolved_settings,
+                security_material=security_material,
+                protected_value_cipher=protected_value_cipher,
+            ),
+            provider=provider,
+            settings=resolved_settings,
+            telemetry=resolved_telemetry,
+            refresh_identity_validator=ProviderRefreshIdentityValidator(
+                settings=resolved_settings,
+                provider=provider,
+                telemetry=resolved_telemetry,
+            ),
+        )
+        provider_logout_token_validator = ProviderLogoutTokenValidator(
+            settings=resolved_settings,
+            provider=provider,
+            telemetry=resolved_telemetry,
+        )
+        if resolved_settings.provider_refresh_enabled:
+            provider_refresh_worker = ProviderRefreshWorker(
+                service=provider_session_service,
+                settings=resolved_settings,
+            )
+        if not registry.contains(POSTGRESQL_ADAPTER_ID):
+            registry.register(PostgreSqlReadinessAdapter(resolved_database_engine))
+        if not registry.contains(OIDC_ADAPTER_ID):
+            registry.register(
+                OidcReadinessAdapter(
+                    settings=resolved_settings,
+                    provider=provider,
+                )
+            )
+
+    required_adapter_ids = (
+        REQUIRED_SECURITY_ADAPTER_IDS if resolved_settings.security_runtime_enabled else ()
+    )
+    health_service = HealthService(
+        registry=registry,
+        settings=resolved_settings,
+        telemetry=resolved_telemetry,
+        required_dependency_ids=required_adapter_ids,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        if resolved_settings.security_runtime_enabled:
-            if resolved_database_engine is None:
-                raise RuntimeError("Portal security database engine is not configured")
-            validate_runtime_schema(resolved_database_engine)
-            if callback_recovery is None:
-                raise RuntimeError("Portal callback recovery is not configured")
-            await run_in_threadpool(callback_recovery.recover_expired_claims)
+        resolved_telemetry.start()
         LOGGER.info(
-            "portal api started",
+            "telemetry runtime configured",
             extra={
-                "event": "application_started",
-                "version": resolved_settings.service_version,
-                "build_sha": resolved_settings.build_sha,
+                "event": "telemetry_runtime_configured",
+                "telemetry_enabled": resolved_settings.telemetry_enabled,
+                "metrics_exporter": resolved_settings.telemetry_metrics_exporter.value,
+                "trace_exporter": resolved_settings.telemetry_trace_exporter.value,
+                "trace_sampling_ratio": resolved_settings.telemetry_trace_sampling_ratio,
             },
         )
         try:
+            if resolved_settings.security_runtime_enabled:
+                missing_adapters = registry.missing_required(required_adapter_ids)
+                if missing_adapters:
+                    LOGGER.error(
+                        "required readiness adapter configuration is incomplete",
+                        extra={
+                            "event": "readiness_adapter_configuration_invalid",
+                            "missing_dependencies": list(missing_adapters),
+                        },
+                    )
+                    registry.validate_required(required_adapter_ids)
+                LOGGER.info(
+                    "required readiness adapters configured",
+                    extra={
+                        "event": "readiness_adapters_configured",
+                        "required_dependencies": list(required_adapter_ids),
+                    },
+                )
+                if resolved_database_engine is None:
+                    raise RuntimeError("Portal security database engine is not configured")
+                validate_runtime_schema(resolved_database_engine)
+                if callback_recovery is None:
+                    raise RuntimeError("Portal callback recovery is not configured")
+                await run_in_threadpool(callback_recovery.recover_expired_claims)
+                if provider_refresh_worker is not None:
+                    provider_refresh_worker.start()
+            LOGGER.info(
+                "portal api started",
+                extra={
+                    "event": "application_started",
+                    "version": resolved_settings.service_version,
+                    "build_sha": resolved_settings.build_sha,
+                },
+            )
             yield
         finally:
+            if provider_refresh_worker is not None:
+                await provider_refresh_worker.stop()
+            resolved_telemetry.shutdown()
             if owned_database_engine is not None:
                 owned_database_engine.dispose()
             LOGGER.info("portal api stopped", extra={"event": "application_stopped"})
@@ -239,11 +340,7 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.adapter_registry = registry
     app.state.telemetry = resolved_telemetry
-    app.state.health_service = HealthService(
-        registry=registry,
-        settings=resolved_settings,
-        telemetry=resolved_telemetry,
-    )
+    app.state.health_service = health_service
     app.state.database_engine = resolved_database_engine
     app.state.oidc_provider = provider
     app.state.login_initiation_service = login_initiation_service
@@ -251,6 +348,9 @@ def create_app(
     app.state.callback_recovery = callback_recovery
     app.state.session_service = session_service
     app.state.authorization_service = authorization_service
+    app.state.provider_session_service = provider_session_service
+    app.state.provider_logout_token_validator = provider_logout_token_validator
+    app.state.provider_refresh_worker = provider_refresh_worker
     app.state.security_material = security_material
     app.state.protected_value_cipher = protected_value_cipher
     register_error_handlers(app)

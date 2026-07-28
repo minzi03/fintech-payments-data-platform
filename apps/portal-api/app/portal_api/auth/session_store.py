@@ -104,6 +104,14 @@ class CallbackSessionStore:
             principal.token_expires_at,
             absolute_expires_at,
         )
+        provider_expires_at = (
+            min(
+                principal.token_expires_at,
+                now + timedelta(seconds=token_set.expires_in),
+            )
+            if token_set.expires_in is not None
+            else principal.token_expires_at
+        )
 
         with local_transaction(self._engine) as connection:
             transaction = (
@@ -200,7 +208,7 @@ class CallbackSessionStore:
                     last_activity_at=now,
                     idle_expires_at=idle_expires_at,
                     absolute_expires_at=absolute_expires_at,
-                    provider_expires_at=principal.token_expires_at,
+                    provider_expires_at=provider_expires_at,
                     identity_verified_until=identity_verified_until,
                     client_signal_classification={},
                     audit_correlation_id=correlation_id,
@@ -220,6 +228,9 @@ class CallbackSessionStore:
                 connection=connection,
                 session_family_id=session_family_id,
                 token_set=token_set,
+                provider_subject=principal.subject_reference,
+                provider_session=principal.provider_session,
+                provider_expires_at=provider_expires_at,
                 now=now,
             )
             consumed = connection.execute(
@@ -348,11 +359,15 @@ class CallbackSessionStore:
         connection: Connection,
         session_family_id: UUID,
         token_set: ProviderTokenSet,
+        provider_subject: str,
+        provider_session: str | None,
+        provider_expires_at: datetime,
         now: datetime,
     ) -> None:
         retained = {
             key: value
             for key, value in {
+                "id_token": token_set.id_token,
                 "access_token": token_set.access_token,
                 "refresh_token": token_set.refresh_token,
             }.items()
@@ -371,6 +386,10 @@ class CallbackSessionStore:
             insert(portal_token_envelopes).values(
                 envelope_id=uuid4(),
                 session_family_id=session_family_id,
+                provider_id=self._settings.oidc_provider_id,
+                provider_subject=provider_subject,
+                provider_session=provider_session,
+                lifecycle_state="ACTIVE",
                 ciphertext=combined_ciphertext[:-AUTH_TAG_BYTES],
                 nonce=base64.urlsafe_b64decode(protected.nonce.encode("ascii")),
                 authentication_tag=combined_ciphertext[-AUTH_TAG_BYTES:],
@@ -382,6 +401,23 @@ class CallbackSessionStore:
                 ),
                 kms_key_id=protected.key_reference,
                 token_generation=1,
+                refresh_token_fingerprint=(
+                    self._security_material.protect(
+                        token_set.refresh_token,
+                        purpose=ProtectedPurpose.PROVIDER_REFRESH_TOKEN,
+                    )
+                    if token_set.refresh_token is not None
+                    else None
+                ),
+                refresh_failures=0,
+                issued_at=now,
+                expires_at=provider_expires_at,
+                refresh_expires_at=(
+                    now + timedelta(seconds=token_set.refresh_expires_in)
+                    if token_set.refresh_expires_in is not None
+                    else None
+                ),
                 created_at=now,
+                updated_at=now,
             )
         )

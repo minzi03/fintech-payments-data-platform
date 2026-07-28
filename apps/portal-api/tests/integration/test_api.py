@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC, datetime
+from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from portal_api.adapters.models import (
@@ -13,7 +15,12 @@ from portal_api.adapters.models import (
     AdapterIdentity,
     DependencyStatus,
 )
-from portal_api.adapters.registry import AdapterRegistry
+from portal_api.adapters.registry import (
+    AdapterRegistry,
+    RequiredAdapterConfigurationError,
+)
+from portal_api.auth.ports import ProviderTokenSet
+from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
 from portal_api.main import create_app
 
@@ -54,6 +61,55 @@ class SlowRequiredAdapter:
         )
 
 
+class MisconfiguredPostgresqlAdapter:
+    identity = AdapterIdentity(
+        adapter_id="portal-postgresql",
+        display_name="Misconfigured PostgreSQL",
+        dependency_type="database",
+        required=False,
+        version="test-v1",
+    )
+
+    async def check_health(self) -> AdapterHealthResult:
+        return AdapterHealthResult(
+            identity=self.identity,
+            status=DependencyStatus.UP,
+            observed_at=datetime.now(UTC),
+        )
+
+
+class HealthyReadinessProvider:
+    def __init__(self, settings: PortalApiSettings) -> None:
+        self._settings = settings
+
+    async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
+        assert force_refresh
+        return OidcProviderConfig(
+            provider_id=self._settings.oidc_provider_id,
+            issuer=self._settings.oidc_issuer,
+            client_id=self._settings.oidc_client_id,
+            authorization_endpoint=f"{self._settings.oidc_issuer}/auth",
+            token_endpoint=f"{self._settings.oidc_issuer}/token",
+            jwks_uri=f"{self._settings.oidc_issuer}/certs",
+            redirect_uri=self._settings.oidc_redirect_uri,
+            scopes=self._settings.oidc_scope_values,
+        )
+
+    async def get_jwks(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        assert force_refresh
+        return {"keys": [{"kid": "readiness-key"}]}
+
+    async def exchange_code(
+        self,
+        *,
+        code: str,
+        verifier: str,
+        redirect_uri: str,
+    ) -> ProviderTokenSet:
+        del code, verifier, redirect_uri
+        raise AssertionError("Readiness must not exchange authorization codes")
+
+
 def test_liveness_is_safe_and_correlation_aware(client: TestClient) -> None:
     response = client.get("/health/live", headers={"X-Correlation-ID": "e2e-portal-1"})
 
@@ -75,8 +131,8 @@ def test_readiness_is_public_but_dependency_detail_requires_security_runtime(
     ready = client.get("/health/ready")
     dependencies = client.get("/v1/system/dependencies")
 
-    assert ready.status_code == 200
-    assert ready.json()["status"] == "READY"
+    assert ready.status_code == 503
+    assert ready.json()["status"] == "NOT_READY"
     assert ready.json()["dependencies"] == []
     assert dependencies.status_code == 503
     assert dependencies.json()["error_code"] == "SERVICE_NOT_READY"
@@ -224,6 +280,7 @@ def test_security_runtime_starts_only_after_schema_compatibility_check(
         {
             "security_runtime_enabled": True,
             "database_url": database_url,
+            "oidc_client_secret": "test-client-secret",
         }
     )
     secured_settings = PortalApiSettings(**values)
@@ -232,3 +289,59 @@ def test_security_runtime_starts_only_after_schema_compatibility_check(
         response = secured_client.get("/health/live")
 
     assert response.status_code == 200
+
+
+def test_security_runtime_readiness_registers_live_postgresql_and_oidc(
+    settings: PortalApiSettings,
+) -> None:
+    database_url = os.environ.get("PORTAL_TEST_RUNTIME_DATABASE_URL", "")
+    if not database_url:
+        return
+    secured_settings = PortalApiSettings(
+        **{
+            **settings.model_dump(),
+            "security_runtime_enabled": True,
+            "database_url": database_url,
+            "oidc_client_secret": "test-client-secret",
+        }
+    )
+    app = create_app(
+        settings=secured_settings,
+        oidc_provider=HealthyReadinessProvider(secured_settings),
+    )
+
+    with TestClient(app) as secured_client:
+        response = secured_client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "READY"
+    assert {
+        dependency["dependency_id"]: dependency["status"]
+        for dependency in response.json()["dependencies"]
+    } == {
+        "portal-oidc-provider": "UP",
+        "portal-postgresql": "UP",
+    }
+
+
+def test_security_runtime_startup_rejects_misconfigured_required_adapter(
+    settings: PortalApiSettings,
+) -> None:
+    secured_settings = PortalApiSettings(
+        **{
+            **settings.model_dump(),
+            "security_runtime_enabled": True,
+            "database_url": (
+                "postgresql+psycopg://portal_runtime:secret@127.0.0.1:1/portal_control"
+            ),
+            "oidc_client_secret": "test-client-secret",
+        }
+    )
+    app = create_app(
+        settings=secured_settings,
+        adapter_registry=AdapterRegistry((MisconfiguredPostgresqlAdapter(),)),
+        oidc_provider=HealthyReadinessProvider(secured_settings),
+    )
+
+    with pytest.raises(RequiredAdapterConfigurationError), TestClient(app):
+        pass

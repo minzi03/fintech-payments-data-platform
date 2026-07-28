@@ -19,6 +19,10 @@ class OidcProviderConfig:
     jwks_uri: str
     redirect_uri: str
     scopes: tuple[str, ...]
+    revocation_endpoint: str | None = None
+    end_session_endpoint: str | None = None
+    backchannel_logout_supported: bool = False
+    frontchannel_logout_supported: bool = False
 
     @classmethod
     def from_discovery(
@@ -45,6 +49,16 @@ class OidcProviderConfig:
             "jwks_uri",
             issuer=issuer,
         )
+        revocation_endpoint = _optional_provider_endpoint(
+            metadata,
+            "revocation_endpoint",
+            issuer=issuer,
+        )
+        end_session_endpoint = _optional_provider_endpoint(
+            metadata,
+            "end_session_endpoint",
+            issuer=issuer,
+        )
         token_auth_methods = metadata.get("token_endpoint_auth_methods_supported")
         if (
             not isinstance(token_auth_methods, list)
@@ -64,6 +78,12 @@ class OidcProviderConfig:
             jwks_uri=jwks_uri,
             redirect_uri=settings.oidc_redirect_uri,
             scopes=settings.oidc_scope_values,
+            revocation_endpoint=revocation_endpoint,
+            end_session_endpoint=end_session_endpoint,
+            backchannel_logout_supported=metadata.get("backchannel_logout_session_supported")
+            is True,
+            frontchannel_logout_supported=metadata.get("frontchannel_logout_session_supported")
+            is True,
         )
 
 
@@ -84,7 +104,9 @@ def _validated_provider_endpoint(
     endpoint = urlsplit(value)
     issuer_url = urlsplit(issuer)
     if (
-        endpoint.scheme not in {"http", "https"}
+        "\r" in value
+        or "\n" in value
+        or endpoint.scheme not in {"http", "https"}
         or not endpoint.netloc
         or endpoint.username is not None
         or endpoint.password is not None
@@ -94,6 +116,20 @@ def _validated_provider_endpoint(
     if _origin(endpoint) != _origin(issuer_url):
         raise ValueError(f"OIDC discovery field {field_name} is outside the configured issuer")
     return value
+
+
+def _optional_provider_endpoint(
+    metadata: dict[str, Any],
+    field_name: str,
+    *,
+    issuer: str,
+) -> str | None:
+    value = metadata.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"OIDC discovery field {field_name} is invalid")
+    return _validated_provider_endpoint(metadata, field_name, issuer=issuer)
 
 
 def _origin(value: SplitResult) -> tuple[str, str | None, int | None]:

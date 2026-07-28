@@ -13,7 +13,12 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from portal_api.auth.oidc_provider import HttpxOidcProvider
-from portal_api.auth.ports import ProviderExchangeFailure, ProviderFailureKind
+from portal_api.auth.ports import (
+    ProviderExchangeFailure,
+    ProviderFailureKind,
+    ProviderOperationStatus,
+    ProviderTokenKind,
+)
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
 from portal_api.auth.token_validation import PyJwtTokenValidator, TokenValidationError
 from portal_api.core.config import PortalApiSettings, PortalEnvironment
@@ -23,6 +28,8 @@ DISCOVERY_URL = f"{ISSUER}/.well-known/openid-configuration"
 AUTHORIZATION_ENDPOINT = f"{ISSUER}/protocol/openid-connect/auth"
 TOKEN_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token"
 JWKS_URI = f"{ISSUER}/protocol/openid-connect/certs"
+REVOCATION_ENDPOINT = f"{ISSUER}/protocol/openid-connect/revoke"
+END_SESSION_ENDPOINT = f"{ISSUER}/protocol/openid-connect/logout"
 CLIENT_SECRET = "integration-client-secret"
 
 
@@ -51,6 +58,10 @@ def _discovery(**updates: object) -> dict[str, object]:
         "authorization_endpoint": AUTHORIZATION_ENDPOINT,
         "token_endpoint": TOKEN_ENDPOINT,
         "jwks_uri": JWKS_URI,
+        "revocation_endpoint": REVOCATION_ENDPOINT,
+        "end_session_endpoint": END_SESSION_ENDPOINT,
+        "backchannel_logout_session_supported": True,
+        "frontchannel_logout_session_supported": True,
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
     }
     metadata.update(updates)
@@ -104,6 +115,8 @@ async def test_validated_discovery_is_the_only_endpoint_authority() -> None:
     assert config.authorization_endpoint == AUTHORIZATION_ENDPOINT
     assert config.token_endpoint == TOKEN_ENDPOINT
     assert config.jwks_uri == JWKS_URI
+    assert config.revocation_endpoint == REVOCATION_ENDPOINT
+    assert config.end_session_endpoint == END_SESSION_ENDPOINT
 
 
 @pytest.mark.integration
@@ -320,3 +333,150 @@ async def test_invalid_confidential_client_authentication_fails_closed() -> None
         )
 
     assert captured.value.kind is ProviderFailureKind.AUTHORITATIVE_REJECTION
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_refresh_rotation_uses_confidential_client_and_bounded_response() -> None:
+    refresh_request: httpx.Request | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal refresh_request
+        if str(request.url) == DISCOVERY_URL:
+            return httpx.Response(200, json=_discovery(), request=request)
+        if str(request.url) == TOKEN_ENDPOINT:
+            refresh_request = request
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "rotated-access",
+                    "refresh_token": "rotated-refresh",
+                    "id_token": "rotated-id",
+                    "token_type": "Bearer",
+                    "expires_in": 300,
+                    "refresh_expires_in": 1800,
+                },
+                request=request,
+            )
+        raise AssertionError(f"Unexpected provider request: {request.url}")
+
+    provider = HttpxOidcProvider(
+        _settings(),
+        transport=httpx.MockTransport(handler),
+    )
+    refreshed = await provider.refresh_tokens(refresh_token="original-refresh")
+
+    assert refresh_request is not None
+    body = parse_qs(refresh_request.content.decode("ascii"))
+    assert body == {
+        "grant_type": ["refresh_token"],
+        "refresh_token": ["original-refresh"],
+    }
+    assert "client_secret" not in body
+    assert refresh_request.headers["Authorization"].startswith("Basic ")
+    assert refreshed.access_token == "rotated-access"
+    assert refreshed.refresh_token == "rotated-refresh"
+    assert refreshed.refresh_expires_in == 1800
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_revoked_refresh_token_is_classified_as_invalid_grant() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == DISCOVERY_URL:
+            return httpx.Response(200, json=_discovery(), request=request)
+        if str(request.url) == TOKEN_ENDPOINT:
+            return httpx.Response(
+                400,
+                json={"error": "invalid_grant"},
+                request=request,
+            )
+        raise AssertionError(f"Unexpected provider request: {request.url}")
+
+    provider = HttpxOidcProvider(
+        _settings(),
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ProviderExchangeFailure) as captured:
+        await provider.refresh_tokens(refresh_token="revoked-refresh")
+
+    assert captured.value.kind is ProviderFailureKind.AUTHORITATIVE_REJECTION
+    assert captured.value.reason_code == "INVALID_GRANT"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_access_refresh_revocation_and_provider_logout_are_supported() -> None:
+    posted: list[tuple[str, dict[str, list[str]]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == DISCOVERY_URL:
+            return httpx.Response(200, json=_discovery(), request=request)
+        posted.append(
+            (
+                str(request.url),
+                parse_qs(request.content.decode("ascii")),
+            )
+        )
+        return httpx.Response(204, request=request)
+
+    provider = HttpxOidcProvider(
+        _settings(),
+        transport=httpx.MockTransport(handler),
+    )
+    access = await provider.revoke_token(
+        token="access-value",
+        token_kind=ProviderTokenKind.ACCESS_TOKEN,
+    )
+    refresh = await provider.revoke_token(
+        token="refresh-value",
+        token_kind=ProviderTokenKind.REFRESH_TOKEN,
+    )
+    logout = await provider.logout_provider_session(refresh_token="refresh-value")
+
+    assert access.status is ProviderOperationStatus.SUCCEEDED
+    assert refresh.status is ProviderOperationStatus.SUCCEEDED
+    assert logout.status is ProviderOperationStatus.SUCCEEDED
+    assert posted == [
+        (
+            REVOCATION_ENDPOINT,
+            {
+                "token": ["access-value"],
+                "token_type_hint": ["access_token"],
+            },
+        ),
+        (
+            REVOCATION_ENDPOINT,
+            {
+                "token": ["refresh-value"],
+                "token_type_hint": ["refresh_token"],
+            },
+        ),
+        (END_SESSION_ENDPOINT, {"refresh_token": ["refresh-value"]}),
+    ]
+    assert await provider.front_channel_logout_url() == END_SESSION_ENDPOINT
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_provider_without_revocation_or_logout_endpoints_is_gracefully_unsupported() -> None:
+    metadata = _discovery()
+    metadata.pop("revocation_endpoint")
+    metadata.pop("end_session_endpoint")
+
+    provider = HttpxOidcProvider(
+        _settings(),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=metadata, request=request)
+        ),
+    )
+
+    revoked = await provider.revoke_token(
+        token="access-value",
+        token_kind=ProviderTokenKind.ACCESS_TOKEN,
+    )
+    logout = await provider.logout_provider_session(refresh_token="refresh-value")
+
+    assert revoked.status is ProviderOperationStatus.UNSUPPORTED
+    assert logout.status is ProviderOperationStatus.UNSUPPORTED
+    assert await provider.front_channel_logout_url() is None

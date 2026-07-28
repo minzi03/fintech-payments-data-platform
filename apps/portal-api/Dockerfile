@@ -33,9 +33,9 @@ COPY --chown=10001:10001 apps/portal-api/migrations /app/migrations
 
 USER 10001:10001
 WORKDIR /app
-EXPOSE 8010
+EXPOSE 8010 9464
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s \
-  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health/live', timeout=2)"]
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health/ready', timeout=2)"]
 
 CMD ["uvicorn", "portal_api.main:app", "--host", "0.0.0.0", "--port", "8010", "--no-access-log"]

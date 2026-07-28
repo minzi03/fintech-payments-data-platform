@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import threading
 from collections.abc import Iterator
@@ -23,12 +24,21 @@ from portal_api.auth.ports import (
     PolicyOutcome,
     ProviderExchangeFailure,
     ProviderFailureKind,
+    ProviderOperationResult,
+    ProviderOperationStatus,
+    ProviderRefreshTokenSet,
+    ProviderTokenKind,
     ProviderTokenSet,
     ResolvedPrincipal,
     ValidatedIdentity,
 )
 from portal_api.auth.principal import ConfiguredPrincipalResolver
 from portal_api.auth.provider_config import OidcProviderConfig
+from portal_api.auth.provider_session import (
+    ProviderLogoutReplayError,
+    ProviderSessionLifecycleService,
+    ProviderSessionRepository,
+)
 from portal_api.auth.recovery import CallbackRecovery
 from portal_api.auth.security_material import EphemeralSecurityMaterial
 from portal_api.auth.session import SessionAuthenticationError, SessionService
@@ -60,6 +70,7 @@ def callback_database() -> Iterator[tuple[Engine, str]]:
 
 def _clear_callback_state(engine: Engine) -> None:
     with engine.begin() as connection:
+        connection.execute(text("DELETE FROM portal_control.portal_provider_logout_receipts"))
         connection.execute(text("DELETE FROM portal_control.portal_token_envelopes"))
         connection.execute(text("DELETE FROM portal_control.portal_sessions"))
         connection.execute(text("DELETE FROM portal_control.portal_principals"))
@@ -97,6 +108,7 @@ def _settings(
         oidc_issuer="http://identity.test/realms/portal",
         oidc_client_secret="test-client-secret",
         oidc_redirect_uri="http://portal.test/portal-api/v1/auth/callback",
+        provider_refresh_enabled=False,
     )
 
 
@@ -104,6 +116,7 @@ class TransactionBoundaryProvider:
     def __init__(self, inspection_engine: Engine) -> None:
         self._inspection_engine = inspection_engine
         self.calls = 0
+        self.refresh_calls = 0
 
     async def get_config(self, *, force_refresh: bool = False) -> OidcProviderConfig:
         del force_refresh
@@ -148,6 +161,41 @@ class TransactionBoundaryProvider:
     async def get_jwks(self, *, force_refresh: bool = False) -> dict[str, object]:
         raise AssertionError("The fake validator does not fetch JWKS")
 
+    async def refresh_tokens(self, *, refresh_token: str) -> ProviderRefreshTokenSet:
+        assert refresh_token == "server-only-refresh-token"
+        self.refresh_calls += 1
+        return ProviderRefreshTokenSet(
+            access_token="server-only-refreshed-access-token",
+            refresh_token="server-only-rotated-refresh-token",
+            id_token=None,
+            token_type="Bearer",
+            expires_in=300,
+        )
+
+    async def revoke_token(
+        self,
+        *,
+        token: str,
+        token_kind: ProviderTokenKind,
+    ) -> ProviderOperationResult:
+        assert token
+        assert token_kind in {
+            ProviderTokenKind.ACCESS_TOKEN,
+            ProviderTokenKind.REFRESH_TOKEN,
+        }
+        return ProviderOperationResult(ProviderOperationStatus.SUCCEEDED)
+
+    async def logout_provider_session(
+        self,
+        *,
+        refresh_token: str | None,
+    ) -> ProviderOperationResult:
+        assert refresh_token == "server-only-refresh-token"
+        return ProviderOperationResult(ProviderOperationStatus.SUCCEEDED)
+
+    async def front_channel_logout_url(self) -> str | None:
+        return "http://identity.test/logout"
+
 
 class FailedExchangeProvider(TransactionBoundaryProvider):
     def __init__(self, inspection_engine: Engine, kind: ProviderFailureKind) -> None:
@@ -167,6 +215,65 @@ class FailedExchangeProvider(TransactionBoundaryProvider):
             redirect_uri=redirect_uri,
         )
         raise ProviderExchangeFailure(self._kind)
+
+
+class FailedRefreshProvider(TransactionBoundaryProvider):
+    def __init__(
+        self,
+        inspection_engine: Engine,
+        *,
+        failure: ProviderExchangeFailure,
+    ) -> None:
+        super().__init__(inspection_engine)
+        self.failure = failure
+
+    async def refresh_tokens(self, *, refresh_token: str) -> ProviderRefreshTokenSet:
+        assert refresh_token == "server-only-refresh-token"
+        self.refresh_calls += 1
+        raise self.failure
+
+
+class SequenceRefreshProvider(TransactionBoundaryProvider):
+    def __init__(self, inspection_engine: Engine) -> None:
+        super().__init__(inspection_engine)
+        self._responses = (
+            ("server-only-refresh-token", "server-only-rotated-refresh-token"),
+            ("server-only-rotated-refresh-token", "server-only-refresh-token"),
+        )
+
+    async def refresh_tokens(self, *, refresh_token: str) -> ProviderRefreshTokenSet:
+        expected, rotated = self._responses[self.refresh_calls]
+        assert refresh_token == expected
+        self.refresh_calls += 1
+        return ProviderRefreshTokenSet(
+            access_token=f"access-{self.refresh_calls}",
+            refresh_token=rotated,
+            id_token=None,
+            token_type="Bearer",
+            expires_in=300,
+        )
+
+
+class RecoveringRefreshProvider(TransactionBoundaryProvider):
+    def __init__(self, inspection_engine: Engine) -> None:
+        super().__init__(inspection_engine)
+        self.available = False
+
+    async def refresh_tokens(self, *, refresh_token: str) -> ProviderRefreshTokenSet:
+        assert refresh_token == "server-only-refresh-token"
+        self.refresh_calls += 1
+        if not self.available:
+            raise ProviderExchangeFailure(
+                ProviderFailureKind.AMBIGUOUS,
+                reason_code="PROVIDER_UNAVAILABLE",
+            )
+        return ProviderRefreshTokenSet(
+            access_token="recovered-access",
+            refresh_token="recovered-refresh",
+            id_token=None,
+            token_type="Bearer",
+            expires_in=300,
+        )
 
 
 class FixedTokenValidator:
@@ -255,6 +362,18 @@ def _replace_orchestrator(
             protected_value_cipher=cipher,
             audit_ledger=final_audit,
         ),
+    )
+    app.state.oidc_provider = selected_provider
+    app.state.provider_session_service = ProviderSessionLifecycleService(
+        repository=ProviderSessionRepository(
+            engine=runtime_engine,
+            settings=settings,
+            security_material=material,
+            protected_value_cipher=cipher,
+        ),
+        provider=selected_provider,
+        settings=settings,
+        telemetry=app.state.telemetry,
     )
     assert isinstance(selected_provider, TransactionBoundaryProvider)
     return selected_provider
@@ -927,9 +1046,9 @@ def test_session_csrf_environment_rotation_and_logout_lifecycle(
                 "WHERE event_type = 'auth.csrf_rejected.v1'"
             )
         ).scalar_one()
-        token_envelope_count = connection.execute(
-            text("SELECT count(*) FROM portal_control.portal_token_envelopes")
-        ).scalar_one()
+        token_envelope = connection.execute(
+            text("SELECT lifecycle_state, disposed_at FROM portal_control.portal_token_envelopes")
+        ).one()
     assert len(sessions) == 2
     assert sessions[0].status == "TERMINATED"
     assert sessions[1].status == "TERMINATED"
@@ -937,7 +1056,8 @@ def test_session_csrf_environment_rotation_and_logout_lifecycle(
     assert sessions[1].absolute_expires_at == sessions[0].absolute_expires_at
     assert sessions[1].csrf_generation == sessions[0].csrf_generation + 1
     assert csrf_denials >= 3
-    assert token_envelope_count == 0
+    assert token_envelope.lifecycle_state == "DISPOSED"
+    assert token_envelope.disposed_at is not None
 
 
 @pytest.mark.integration
@@ -1235,3 +1355,360 @@ def test_logout_all_fence_rejects_or_revokes_concurrent_callback_session(
     assert active == 0
     assert fence is not None
     assert envelopes == 0
+
+
+@pytest.mark.integration
+def test_provider_refresh_is_atomic_rotated_and_duplicate_safe(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    provider = _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET expires_at = CURRENT_TIMESTAMP + INTERVAL '10 seconds'"
+                )
+            )
+
+        service = app.state.provider_session_service
+
+        async def refresh_concurrently() -> tuple[int, int]:
+            first, second = await asyncio.gather(
+                service.refresh_due(worker_id="integration-refresh-1"),
+                service.refresh_due(worker_id="integration-refresh-2"),
+            )
+            return first, second
+
+        processed = asyncio.run(refresh_concurrently())
+
+    assert sorted(processed) == [0, 1]
+    assert provider.refresh_calls == 1
+    with migration_engine.connect() as connection:
+        envelope = connection.execute(
+            text(
+                "SELECT lifecycle_state, token_generation, refreshed_at, rotated_at, "
+                "refresh_failures, refresh_token_fingerprint, "
+                "previous_refresh_token_fingerprint "
+                "FROM portal_control.portal_token_envelopes"
+            )
+        ).one()
+        session = connection.execute(
+            text(
+                "SELECT status, last_refresh_at, provider_expires_at "
+                "FROM portal_control.portal_sessions WHERE status = 'ACTIVE'"
+            )
+        ).one()
+        events = (
+            connection.execute(
+                text(
+                    "SELECT event_type FROM portal_control.security_audit_events "
+                    "WHERE event_type IN "
+                    "('auth.provider_refresh_started.v1', "
+                    "'auth.provider_refresh_succeeded.v1', "
+                    "'auth.session_refreshed.v1')"
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert envelope.lifecycle_state == "ACTIVE"
+    assert envelope.token_generation == 2
+    assert envelope.refreshed_at is not None
+    assert envelope.rotated_at is not None
+    assert envelope.refresh_failures == 0
+    assert envelope.refresh_token_fingerprint != envelope.previous_refresh_token_fingerprint
+    assert session.status == "ACTIVE"
+    assert session.last_refresh_at is not None
+    assert session.provider_expires_at > datetime.now(UTC)
+    assert set(events) == {
+        "auth.provider_refresh_started.v1",
+        "auth.provider_refresh_succeeded.v1",
+        "auth.session_refreshed.v1",
+    }
+
+
+@pytest.mark.integration
+def test_revoked_provider_refresh_fails_closed_and_disposes_tokens(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    provider = FailedRefreshProvider(
+        migration_engine,
+        failure=ProviderExchangeFailure(
+            ProviderFailureKind.AUTHORITATIVE_REJECTION,
+            reason_code="INVALID_GRANT",
+        ),
+    )
+    app = create_app(settings=settings, oidc_provider=provider)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+        provider=provider,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET expires_at = CURRENT_TIMESTAMP + INTERVAL '10 seconds'"
+                )
+            )
+        processed = asyncio.run(
+            app.state.provider_session_service.refresh_due(worker_id="revoked-refresh")
+        )
+        session_response = client.get("/v1/session")
+
+    assert processed == 1
+    assert session_response.status_code == 401
+    with migration_engine.connect() as connection:
+        envelope = connection.execute(
+            text(
+                "SELECT lifecycle_state, disposed_at, refresh_token_fingerprint "
+                "FROM portal_control.portal_token_envelopes"
+            )
+        ).one()
+        session_status = connection.execute(
+            text("SELECT status FROM portal_control.portal_sessions")
+        ).scalar_one()
+        failure_events = connection.execute(
+            text(
+                "SELECT count(*) FROM portal_control.security_audit_events "
+                "WHERE event_type = 'auth.provider_refresh_failed.v1' "
+                "AND reason_code = 'INVALID_GRANT'"
+            )
+        ).scalar_one()
+    assert envelope.lifecycle_state == "DISPOSED"
+    assert envelope.disposed_at is not None
+    assert envelope.refresh_token_fingerprint is None
+    assert session_status == "PROVIDER_REVOKED"
+    assert failure_events >= 1
+
+
+@pytest.mark.integration
+def test_provider_refresh_disposes_tokens_after_local_session_expiration(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    provider = _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_sessions "
+                    "SET idle_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET expires_at = CURRENT_TIMESTAMP + INTERVAL '10 seconds'"
+                )
+            )
+        processed = asyncio.run(
+            app.state.provider_session_service.refresh_due(worker_id="expired-session")
+        )
+
+    assert processed == 0
+    assert provider.refresh_calls == 0
+    with migration_engine.connect() as connection:
+        envelope = connection.execute(
+            text("SELECT lifecycle_state, disposed_at FROM portal_control.portal_token_envelopes")
+        ).one()
+        session = connection.execute(
+            text("SELECT status, revoked_reason FROM portal_control.portal_sessions")
+        ).one()
+    assert envelope.lifecycle_state == "DISPOSED"
+    assert envelope.disposed_at is not None
+    assert session.status == "EXPIRED_IDLE"
+    assert session.revoked_reason == "SESSION_IDLE_EXPIRED"
+
+
+@pytest.mark.integration
+def test_refresh_token_reuse_is_detected_after_rotation(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    provider = SequenceRefreshProvider(migration_engine)
+    app = create_app(settings=settings, oidc_provider=provider)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+        provider=provider,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET expires_at = CURRENT_TIMESTAMP + INTERVAL '10 seconds'"
+                )
+            )
+        first = asyncio.run(app.state.provider_session_service.refresh_due(worker_id="rotation-1"))
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET expires_at = CURRENT_TIMESTAMP + INTERVAL '10 seconds'"
+                )
+            )
+        second = asyncio.run(app.state.provider_session_service.refresh_due(worker_id="rotation-2"))
+
+    assert first == 1
+    assert second == 1
+    assert provider.refresh_calls == 2
+    with migration_engine.connect() as connection:
+        envelope = connection.execute(
+            text("SELECT lifecycle_state, disposed_at FROM portal_control.portal_token_envelopes")
+        ).one()
+        session_status = connection.execute(
+            text("SELECT status FROM portal_control.portal_sessions")
+        ).scalar_one()
+        reuse_events = connection.execute(
+            text(
+                "SELECT count(*) FROM portal_control.security_audit_events "
+                "WHERE event_type = 'auth.provider_refresh_reuse_detected.v1'"
+            )
+        ).scalar_one()
+    assert envelope.lifecycle_state == "DISPOSED"
+    assert envelope.disposed_at is not None
+    assert session_status == "PROVIDER_REVOKED"
+    assert reuse_events >= 1
+
+
+@pytest.mark.integration
+def test_provider_refresh_recovers_after_transient_provider_restart(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    provider = RecoveringRefreshProvider(migration_engine)
+    app = create_app(settings=settings, oidc_provider=provider)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+        provider=provider,
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET expires_at = CURRENT_TIMESTAMP + INTERVAL '10 seconds'"
+                )
+            )
+        failed = asyncio.run(app.state.provider_session_service.refresh_due(worker_id="outage"))
+        with migration_engine.connect() as connection:
+            failed_state = connection.execute(
+                text(
+                    "SELECT lifecycle_state, refresh_failures "
+                    "FROM portal_control.portal_token_envelopes"
+                )
+            ).one()
+            active_during_retry = connection.execute(
+                text("SELECT status FROM portal_control.portal_sessions")
+            ).scalar_one()
+        provider.available = True
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE portal_control.portal_token_envelopes "
+                    "SET next_refresh_attempt_at = CURRENT_TIMESTAMP"
+                )
+            )
+        recovered = asyncio.run(
+            app.state.provider_session_service.refresh_due(worker_id="recovery")
+        )
+
+    assert failed == 1
+    assert failed_state.lifecycle_state == "REFRESH_FAILED"
+    assert failed_state.refresh_failures == 1
+    assert active_during_retry == "ACTIVE"
+    assert recovered == 1
+    with migration_engine.connect() as connection:
+        recovered_state = connection.execute(
+            text(
+                "SELECT lifecycle_state, refresh_failures, token_generation "
+                "FROM portal_control.portal_token_envelopes"
+            )
+        ).one()
+        session_status = connection.execute(
+            text("SELECT status FROM portal_control.portal_sessions")
+        ).scalar_one()
+    assert recovered_state.lifecycle_state == "ACTIVE"
+    assert recovered_state.refresh_failures == 0
+    assert recovered_state.token_generation == 2
+    assert session_status == "ACTIVE"
+
+
+@pytest.mark.integration
+def test_backchannel_logout_receipt_rejects_replay(
+    callback_database: tuple[Engine, str],
+) -> None:
+    migration_engine, runtime_url = callback_database
+    settings = _settings(runtime_url)
+    app = create_app(settings=settings)
+    _replace_orchestrator(
+        app,
+        settings=settings,
+        inspection_engine=migration_engine,
+    )
+    issued_at = datetime.now(UTC)
+    with TestClient(app, follow_redirects=False) as client:
+        _complete_login(client)
+        service = app.state.provider_session_service
+        first = asyncio.run(
+            service.backchannel_logout(
+                provider_session=None,
+                provider_subject="subject-123",
+                token_identifier="logout-replay-1",
+                issued_at=issued_at,
+                correlation_id="backchannel-1",
+                request_id="backchannel-1",
+            )
+        )
+        with pytest.raises(ProviderLogoutReplayError):
+            asyncio.run(
+                service.backchannel_logout(
+                    provider_session=None,
+                    provider_subject="subject-123",
+                    token_identifier="logout-replay-1",
+                    issued_at=issued_at,
+                    correlation_id="backchannel-2",
+                    request_id="backchannel-2",
+                )
+            )
+
+    assert first == 1
+    with migration_engine.connect() as connection:
+        receipt_count = connection.execute(
+            text("SELECT count(*) FROM portal_control.portal_provider_logout_receipts")
+        ).scalar_one()
+        session_status = connection.execute(
+            text("SELECT status FROM portal_control.portal_sessions")
+        ).scalar_one()
+    assert receipt_count == 1
+    assert session_status == "PROVIDER_REVOKED"

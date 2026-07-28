@@ -25,7 +25,16 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_DEPENDENCY_TIMEOUT_SECONDS` | `2` | yes | no | Greater than 0, at most 30 |
 | `PORTAL_API_READINESS_TIMEOUT_SECONDS` | `5` | yes | no | Greater than 0, at most 60 |
 | `PORTAL_API_HEALTH_CACHE_TTL_SECONDS` | `2` | yes | no | 0–60 |
-| `PORTAL_API_TELEMETRY_ENABLED` | `false` | no | no | Uses the no-op recorder until a safe exporter is configured |
+| `PORTAL_API_TELEMETRY_ENABLED` | `false` | no | no | Uses the no-op recorder when disabled |
+| `PORTAL_API_TELEMETRY_METRICS_EXPORTER` | `prometheus` | when telemetry enabled | no | `none`, `console`, `otlp`, `prometheus` |
+| `PORTAL_API_TELEMETRY_TRACE_EXPORTER` | `none` | when telemetry enabled | no | `none`, `console`, `otlp` |
+| `PORTAL_API_TELEMETRY_TRACE_SAMPLING_RATIO` | `0.1` | no | no | 0 through 1; parent-based |
+| `PORTAL_API_TELEMETRY_EXPORT_INTERVAL_SECONDS` | `30` | no | no | 1 through 300; periodic exporters only |
+| `PORTAL_API_TELEMETRY_EXPORT_TIMEOUT_SECONDS` | `10` | no | no | Greater than 0, at most 30 |
+| `PORTAL_API_TELEMETRY_OTLP_ENDPOINT` | `http://localhost:4318` | for OTLP | no | Absolute HTTP(S) base URL; production HTTPS only; embedded credentials forbidden |
+| `PORTAL_API_TELEMETRY_PROMETHEUS_HOST` | `127.0.0.1` | for Prometheus | no | Compose sets `0.0.0.0` inside the container |
+| `PORTAL_API_TELEMETRY_PROMETHEUS_PORT` | `9464` | for Prometheus | no | 1024 through 65535 |
+| `PORTAL_API_TELEMETRY_RESOURCE_ATTRIBUTES` | empty | no | no | At most 16 bounded `key=value` pairs; secret-like keys forbidden |
 | `PORTAL_API_OPENAPI_ENABLED` | `true` | no | no | Must be false in production |
 | `PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED` | `false` | no | no | Forbidden in production; no identity behavior exists yet |
 | `PORTAL_API_SECURITY_MASTER_KEY` | none | when local/development security runtime is enabled | yes | Base64url-encoded 256-bit key; keep stable across normal restart |
@@ -34,6 +43,16 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_SECURITY_PREVIOUS_KEY_VERSION` | none | with previous key | no | Explicit version of the previous key; must differ from the current version |
 | `PORTAL_API_SECURITY_KEY_TRANSITION_STARTED_AT` | none | with previous key | no | Timezone-aware start of previous-key acceptance |
 | `PORTAL_API_SECURITY_KEY_TRANSITION_EXPIRES_AT` | none | with previous key | no | Exclusive deterministic expiry; the window cannot exceed one absolute session lifetime |
+| `PORTAL_API_PROVIDER_REFRESH_ENABLED` | `true` | no | no | Starts the non-blocking provider refresh worker when the security runtime is active |
+| `PORTAL_API_PROVIDER_REFRESH_THRESHOLD_SECONDS` | `120` | no | no | Proactive refresh window; 30-600 seconds |
+| `PORTAL_API_PROVIDER_REFRESH_SCAN_INTERVAL_SECONDS` | `5` | no | no | Durable due-work scan interval; 1-60 seconds |
+| `PORTAL_API_PROVIDER_REFRESH_RETRY_BUDGET` | `3` | no | no | Maximum bounded ambiguous failures before the session fails closed; 1-10 |
+| `PORTAL_API_PROVIDER_REFRESH_INITIAL_BACKOFF_SECONDS` | `1` | no | no | Initial retry delay; 0.1-30 seconds |
+| `PORTAL_API_PROVIDER_REFRESH_MAX_BACKOFF_SECONDS` | `30` | no | no | Exponential-backoff ceiling; 1-300 seconds and not below the initial delay |
+| `PORTAL_API_PROVIDER_REFRESH_LEASE_SECONDS` | `30` | no | no | Database refresh-claim lease; 10-300 seconds and greater than provider timeouts |
+| `PORTAL_API_PROVIDER_REFRESH_BATCH_SIZE` | `25` | no | no | Maximum claims per worker scan; 1-100 |
+| `PORTAL_API_PROVIDER_LOGOUT_TIMEOUT_SECONDS` | `5` | no | no | Per-provider cleanup operation timeout; greater than 0 and at most 30 seconds |
+| `PORTAL_API_PROVIDER_LOGOUT_REPLAY_TTL_SECONDS` | `86400` | no | no | Durable back-channel logout-token replay fence; 300-86400 seconds |
 
 The test environment may omit the master key to obtain isolated ephemeral authority. Local and
 development security runtimes require an explicit key so valid sessions and pending authentication
@@ -53,6 +72,12 @@ Validate without starting the server:
 ```bash
 make portal-config-check
 ```
+
+See [Portal telemetry and observability](observability.md) for the metrics catalog, trace model,
+exporter setup, and operational validation.
+
+See [Provider-backed session lifecycle](provider-session-lifecycle.md) for state transitions,
+provider configuration, refresh/revocation/logout operations, and incident procedures.
 
 ## Portal Web
 

@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "portal_policy_revisions",
     "portal_principals",
     "portal_login_intents",
+    "portal_provider_logout_receipts",
     "portal_security_epochs",
     "portal_sessions",
     "portal_token_envelopes",
@@ -76,6 +77,7 @@ def test_upgrade_downgrade_and_authoritative_history() -> None:
                 "004_session_csrf_authority",
                 "005_token_disposal_privilege",
                 "006_session_revocation_fence",
+                "007_provider_session_lifecycle",
             ]
             assert all(len(record.checksum) == 64 for record in records)
             assert all(record.application_compat == ">=0.1.0,<1.0.0" for record in records)

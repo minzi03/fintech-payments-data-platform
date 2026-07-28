@@ -187,6 +187,10 @@ portal_token_envelopes = Table(
     metadata,
     Column("envelope_id", UUID(as_uuid=True), primary_key=True),
     Column("session_family_id", UUID(as_uuid=True), nullable=False, unique=True),
+    Column("provider_id", String(128), nullable=False),
+    Column("provider_subject", String(512), nullable=False),
+    Column("provider_session", String(512), nullable=True),
+    Column("lifecycle_state", String(32), nullable=False, server_default=text("'ACTIVE'")),
     Column("ciphertext", LargeBinary, nullable=False),
     Column("nonce", LargeBinary, nullable=False),
     Column("authentication_tag", LargeBinary, nullable=False),
@@ -194,10 +198,52 @@ portal_token_envelopes = Table(
     Column("wrapped_data_key_nonce", LargeBinary, nullable=False),
     Column("kms_key_id", String(512), nullable=False),
     Column("token_generation", Integer, nullable=False),
+    Column("refresh_token_fingerprint", LargeBinary, nullable=True),
+    Column("previous_refresh_token_fingerprint", LargeBinary, nullable=True),
+    Column("refresh_failures", Integer, nullable=False, server_default=text("0")),
+    Column("refresh_lease_owner", String(128), nullable=True),
+    Column("refresh_lease_expires_at", DateTime(timezone=True), nullable=True),
+    Column("next_refresh_attempt_at", DateTime(timezone=True), nullable=True),
+    Column("last_failure_code", String(128), nullable=True),
+    Column("issued_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=True),
+    Column("refresh_expires_at", DateTime(timezone=True), nullable=True),
+    Column("refreshed_at", DateTime(timezone=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
     Column("rotated_at", DateTime(timezone=True), nullable=True),
     Column("disposed_at", DateTime(timezone=True), nullable=True),
     CheckConstraint("token_generation > 0", name="token_generation"),
+    CheckConstraint("refresh_failures >= 0", name="token_refresh_failures"),
+    CheckConstraint(
+        "lifecycle_state IN ('ACTIVE', 'REFRESH_PENDING', 'REFRESHING', "
+        "'REFRESH_REQUIRED', 'REFRESH_FAILED', 'EXPIRED', 'LOGGED_OUT', "
+        "'REVOKED', 'DISPOSED')",
+        name="token_lifecycle_state",
+    ),
+)
+Index(
+    "ix_portal_token_envelopes_refresh_due",
+    portal_token_envelopes.c.next_refresh_attempt_at,
+    portal_token_envelopes.c.expires_at,
+    postgresql_where=portal_token_envelopes.c.lifecycle_state.in_(
+        ("ACTIVE", "REFRESH_FAILED", "REFRESH_REQUIRED", "REFRESHING")
+    ),
+)
+
+portal_provider_logout_receipts = Table(
+    "portal_provider_logout_receipts",
+    metadata,
+    Column("receipt_id", UUID(as_uuid=True), primary_key=True),
+    Column("provider_id", String(128), nullable=False),
+    Column("jti_hash", LargeBinary, nullable=False, unique=True),
+    Column("issued_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=UTC_NOW),
+)
+Index(
+    "ix_portal_provider_logout_receipts_expiry",
+    portal_provider_logout_receipts.c.expires_at,
 )
 
 portal_security_epochs = Table(

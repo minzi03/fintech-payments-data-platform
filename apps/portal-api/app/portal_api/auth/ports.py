@@ -18,9 +18,15 @@ class ProviderFailureKind(StrEnum):
 
 
 class ProviderExchangeFailure(RuntimeError):
-    def __init__(self, kind: ProviderFailureKind) -> None:
+    def __init__(
+        self,
+        kind: ProviderFailureKind,
+        *,
+        reason_code: str = "PROVIDER_REQUEST_FAILED",
+    ) -> None:
         super().__init__("The configured identity provider exchange failed")
         self.kind = kind
+        self.reason_code = reason_code
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,32 @@ class ProviderTokenSet:
     refresh_token: str | None
     token_type: str
     expires_in: int | None
+    refresh_expires_in: int | None = None
+
+
+@dataclass(frozen=True)
+class ProviderRefreshTokenSet:
+    access_token: str
+    refresh_token: str | None
+    id_token: str | None
+    token_type: str
+    expires_in: int
+    refresh_expires_in: int | None = None
+
+
+class ProviderTokenKind(StrEnum):
+    ACCESS_TOKEN = "access_token"
+    REFRESH_TOKEN = "refresh_token"
+
+
+class ProviderOperationStatus(StrEnum):
+    SUCCEEDED = "SUCCEEDED"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+@dataclass(frozen=True)
+class ProviderOperationResult:
+    status: ProviderOperationStatus
 
 
 class OidcProviderPort(Protocol):
@@ -45,6 +77,23 @@ class OidcProviderPort(Protocol):
 
     async def get_jwks(self, *, force_refresh: bool = False) -> dict[str, Any]: ...
 
+    async def refresh_tokens(self, *, refresh_token: str) -> ProviderRefreshTokenSet: ...
+
+    async def revoke_token(
+        self,
+        *,
+        token: str,
+        token_kind: ProviderTokenKind,
+    ) -> ProviderOperationResult: ...
+
+    async def logout_provider_session(
+        self,
+        *,
+        refresh_token: str | None,
+    ) -> ProviderOperationResult: ...
+
+    async def front_channel_logout_url(self) -> str | None: ...
+
 
 @dataclass(frozen=True)
 class ValidatedIdentity:
@@ -56,6 +105,7 @@ class ValidatedIdentity:
     assurance: str
     authenticated_at: datetime
     token_expires_at: datetime
+    provider_session: str | None = None
 
 
 class TokenValidatorPort(Protocol):
@@ -81,6 +131,7 @@ class ResolvedPrincipal:
     assurance: str
     authenticated_at: datetime
     token_expires_at: datetime
+    provider_session: str | None = None
 
 
 class PrincipalResolverPort(Protocol):

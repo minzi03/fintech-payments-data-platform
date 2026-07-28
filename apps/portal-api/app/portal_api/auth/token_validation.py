@@ -8,10 +8,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import jwt
+from opentelemetry.trace import SpanKind
 
 from portal_api.auth.ports import OidcProviderPort, TokenValidatorPort, ValidatedIdentity
 from portal_api.auth.security_material import EphemeralSecurityMaterial, ProtectedPurpose
 from portal_api.core.config import PortalApiSettings
+from portal_api.telemetry.metrics import NoopTelemetry, TelemetryRecorder
 
 MAX_CLAIMS_BYTES = 32 * 1024
 MAX_GROUPS = 100
@@ -31,12 +33,34 @@ class PyJwtTokenValidator(TokenValidatorPort):
         settings: PortalApiSettings,
         provider: OidcProviderPort,
         security_material: EphemeralSecurityMaterial,
+        telemetry: TelemetryRecorder | None = None,
     ) -> None:
         self._settings = settings
         self._provider = provider
         self._security_material = security_material
+        self._telemetry = telemetry or NoopTelemetry()
 
     async def validate(
+        self,
+        *,
+        id_token: str,
+        expected_nonce_hash: bytes,
+    ) -> ValidatedIdentity:
+        with self._telemetry.span(
+            "oidc.token_validation",
+            kind=SpanKind.INTERNAL,
+            attributes={"oidc.operation": "token_validation"},
+        ):
+            try:
+                return await self._validate(
+                    id_token=id_token,
+                    expected_nonce_hash=expected_nonce_hash,
+                )
+            except TokenValidationError:
+                self._telemetry.record_oidc_validation_failure("id_token")
+                raise
+
+    async def _validate(
         self,
         *,
         id_token: str,
@@ -113,6 +137,13 @@ class PyJwtTokenValidator(TokenValidatorPort):
         ):
             raise TokenValidationError("Display attribute is invalid")
         assurance = self._assurance(claims)
+        provider_session = claims.get("sid")
+        if provider_session is not None and (
+            not isinstance(provider_session, str)
+            or not provider_session
+            or len(provider_session) > 512
+        ):
+            raise TokenValidationError("Provider session claim is invalid")
         authenticated_at = datetime.fromtimestamp(
             int(claims.get("auth_time", claims["iat"])),
             tz=UTC,
@@ -126,10 +157,13 @@ class PyJwtTokenValidator(TokenValidatorPort):
             assurance=assurance,
             authenticated_at=authenticated_at,
             token_expires_at=datetime.fromtimestamp(int(claims["exp"]), tz=UTC),
+            provider_session=provider_session,
         )
 
     async def _resolve_key(self, *, key_id: str, algorithm: str) -> jwt.PyJWK:
         for force_refresh in (False, True):
+            if force_refresh:
+                self._telemetry.record_oidc_unknown_kid_refresh()
             jwks = await self._provider.get_jwks(force_refresh=force_refresh)
             for candidate in jwks.get("keys", []):
                 if (

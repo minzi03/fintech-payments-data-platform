@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-SUPPORTED_SCHEMA_VERSION = "006_session_revocation_fence"
+SUPPORTED_SCHEMA_VERSION = "007_provider_session_lifecycle"
 
 
 class SchemaCompatibilityError(RuntimeError):
