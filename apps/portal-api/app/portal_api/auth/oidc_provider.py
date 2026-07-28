@@ -24,6 +24,7 @@ from portal_api.auth.ports import (
 )
 from portal_api.auth.provider_config import OidcProviderConfig
 from portal_api.core.config import PortalApiSettings
+from portal_api.secret_provider import PortalSecretId, ResolvedSecret, resolve_environment_secrets
 from portal_api.telemetry.metrics import NoopTelemetry, TelemetryRecorder
 
 MAX_PROVIDER_RESPONSE_BYTES = 64 * 1024
@@ -48,14 +49,16 @@ class HttpxOidcProvider(OidcProviderPort):
         self,
         settings: PortalApiSettings,
         *,
+        client_secret: ResolvedSecret | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         clock: Callable[[], float] = monotonic,
         telemetry: TelemetryRecorder | None = None,
     ) -> None:
-        if settings.oidc_client_secret is None:
-            raise RuntimeError("Validated OIDC client credentials are unavailable")
+        resolved_client_secret = client_secret or resolve_environment_secrets(settings).require(
+            PortalSecretId.OIDC_CLIENT_SECRET
+        )
         self._settings = settings
-        self._client_secret = settings.oidc_client_secret.get_secret_value()
+        self._client_secret = resolved_client_secret.reveal_text()
         self._timeout = httpx.Timeout(settings.oidc_http_timeout_seconds)
         self._transport = transport
         self._clock = clock

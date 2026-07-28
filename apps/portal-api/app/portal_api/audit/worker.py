@@ -30,6 +30,12 @@ from portal_api.core.config import PortalApiSettings, get_settings
 from portal_api.core.logging import configure_logging
 from portal_api.db.engine import create_audit_worker_engine
 from portal_api.db.schema_guard import validate_runtime_schema
+from portal_api.secret_provider import (
+    ResolvedPortalSecrets,
+    SecretProvider,
+    environment_secret_provider,
+    resolve_portal_secrets,
+)
 from portal_api.telemetry.metrics import TelemetryRecorder
 from portal_api.telemetry.otel import build_telemetry
 
@@ -320,8 +326,13 @@ def _healthcheck(engine: Engine, settings: PortalApiSettings) -> int:
     return 1 if status == "DOWN" else 0
 
 
-async def _run(settings: PortalApiSettings, *, once: bool) -> int:
-    engine = create_audit_worker_engine(settings)
+async def _run(
+    settings: PortalApiSettings,
+    secrets: ResolvedPortalSecrets,
+    *,
+    once: bool,
+) -> int:
+    engine = create_audit_worker_engine(settings, secrets=secrets)
     validate_runtime_schema(engine)
     telemetry = build_telemetry(settings)
     telemetry.instrument_database(engine)
@@ -363,7 +374,7 @@ async def _run(settings: PortalApiSettings, *, once: bool) -> int:
         engine.dispose()
 
 
-def main() -> int:
+def main(*, secret_provider: SecretProvider | None = None) -> int:
     parser = argparse.ArgumentParser(description="Portal audit outbox operator")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--healthcheck", action="store_true")
@@ -378,14 +389,27 @@ def main() -> int:
             extra={"event": "audit_worker_disabled"},
         )
         return 0
+    resolved_secret_provider = secret_provider or environment_secret_provider(settings)
+    resolved_secret_provider.start()
+    try:
+        secrets = resolve_portal_secrets(settings, resolved_secret_provider)
+    finally:
+        resolved_secret_provider.close()
+    LOGGER.info(
+        "runtime secret references resolved",
+        extra={
+            "event": "secret_provider_resolved",
+            **secrets.evidence.log_fields(),
+        },
+    )
     if arguments.healthcheck:
-        engine = create_audit_worker_engine(settings)
+        engine = create_audit_worker_engine(settings, secrets=secrets)
         try:
             return _healthcheck(engine, settings)
         finally:
             engine.dispose()
     if arguments.list_dead_letter or arguments.requeue is not None:
-        engine = create_audit_worker_engine(settings)
+        engine = create_audit_worker_engine(settings, secrets=secrets)
         try:
             repository = AuditOutboxRepository(engine)
             if arguments.requeue is not None:
@@ -401,7 +425,7 @@ def main() -> int:
             return 0
         finally:
             engine.dispose()
-    return asyncio.run(_run(settings, once=arguments.once))
+    return asyncio.run(_run(settings, secrets, once=arguments.once))
 
 
 if __name__ == "__main__":

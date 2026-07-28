@@ -100,6 +100,7 @@ class PortalApiSettings(BaseSettings):
     openapi_enabled: bool = True
     development_identity_enabled: bool = False
     security_runtime_enabled: bool = False
+    secret_provider: str = "environment"
     database_url: SecretStr | None = None
     abuse_protection_enabled: bool = False
     trusted_proxy_cidrs: str = ""
@@ -141,6 +142,7 @@ class PortalApiSettings(BaseSettings):
     security_key_version: str = "local-development-v1"
     security_previous_master_key: SecretStr | None = None
     security_previous_key_version: str | None = None
+    security_future_key_version: str | None = None
     security_key_transition_started_at: datetime | None = None
     security_key_transition_expires_at: datetime | None = None
     oidc_provider_id: str = "local-keycloak"
@@ -278,6 +280,7 @@ class PortalApiSettings(BaseSettings):
         "redis_url",
         "security_previous_master_key",
         "security_previous_key_version",
+        "security_future_key_version",
         "security_key_transition_started_at",
         "security_key_transition_expires_at",
         mode="before",
@@ -302,6 +305,8 @@ class PortalApiSettings(BaseSettings):
                 raise ValueError("PORTAL_API_ALLOWED_ORIGINS entries must not contain paths")
         if self.log_format not in {"json", "console"}:
             raise ValueError("PORTAL_API_LOG_FORMAT must be json or console")
+        if re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", self.secret_provider) is None:
+            raise ValueError("PORTAL_API_SECRET_PROVIDER must be a bounded safe identifier")
         self._validate_abuse_configuration()
         self._validate_audit_outbox_configuration()
         if self.telemetry_enabled:
@@ -332,19 +337,24 @@ class PortalApiSettings(BaseSettings):
             _ = self.telemetry_resource_attribute_values
         self._validate_provider_lifecycle_configuration()
         if self.security_runtime_enabled:
-            if self.database_url is None:
+            if self.database_url is None and self.secret_provider == "environment":
                 raise ValueError(
                     "PORTAL_API_DATABASE_URL is required when the security runtime is enabled"
                 )
-            database_url = self.database_url.get_secret_value()
-            if not database_url.startswith("postgresql+psycopg://"):
-                raise ValueError("PORTAL_API_DATABASE_URL must use PostgreSQL with psycopg")
+            if self.database_url is not None:
+                database_url = self.database_url.get_secret_value()
+                if not database_url.startswith("postgresql+psycopg://"):
+                    raise ValueError("PORTAL_API_DATABASE_URL must use PostgreSQL with psycopg")
             if self.environment in {PortalEnvironment.STAGING, PortalEnvironment.PRODUCTION}:
                 raise ValueError(
                     "Portal security runtime is authorized only for local/development environments"
                 )
             self._validate_oidc_configuration()
-            if self.environment is not PortalEnvironment.TEST and self.security_master_key is None:
+            if (
+                self.environment is not PortalEnvironment.TEST
+                and self.security_master_key is None
+                and self.secret_provider == "environment"
+            ):
                 raise ValueError(
                     "PORTAL_API_SECURITY_MASTER_KEY is required for restart-safe "
                     "local/development security runtime"
@@ -381,21 +391,28 @@ class PortalApiSettings(BaseSettings):
             self.security_key_transition_expires_at,
         )
         if not any(value is not None for value in transition_values):
+            self._validate_future_key_version()
             return
-        if not all(value is not None for value in transition_values):
+        required_transition_values = (
+            self.security_previous_key_version,
+            self.security_key_transition_started_at,
+            self.security_key_transition_expires_at,
+        )
+        if not all(value is not None for value in required_transition_values) or (
+            self.secret_provider == "environment" and self.security_previous_master_key is None
+        ):
             raise ValueError(
                 "Previous security key configuration requires key, version, start, and expiry"
             )
-        previous_key = self.security_previous_master_key_bytes
+        previous_key = (
+            self.security_previous_master_key_bytes
+            if self.security_previous_master_key is not None
+            else None
+        )
         previous_version = self.security_previous_key_version
         started_at = self.security_key_transition_started_at
         expires_at = self.security_key_transition_expires_at
-        if (
-            previous_key is None
-            or previous_version is None
-            or started_at is None
-            or expires_at is None
-        ):
+        if previous_version is None or started_at is None or expires_at is None:
             raise ValueError("Previous security key transition is incomplete")
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", previous_version) is None:
             raise ValueError(
@@ -412,6 +429,29 @@ class PortalApiSettings(BaseSettings):
             raise ValueError(
                 "Security key transition window cannot exceed the absolute session lifetime"
             )
+        if (
+            previous_key is not None
+            and self.security_master_key_bytes is not None
+            and previous_key == self.security_master_key_bytes
+        ):
+            raise ValueError("Current and previous security master keys must differ")
+        self._validate_future_key_version()
+
+    def _validate_future_key_version(self) -> None:
+        future_version = self.security_future_key_version
+        if future_version is None:
+            return
+        if not self.security_runtime_enabled:
+            raise ValueError("PORTAL_API_SECURITY_FUTURE_KEY_VERSION requires the security runtime")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", future_version) is None:
+            raise ValueError(
+                "PORTAL_API_SECURITY_FUTURE_KEY_VERSION must be a bounded safe identifier"
+            )
+        if future_version in {
+            self.security_key_version,
+            self.security_previous_key_version,
+        }:
+            raise ValueError("Current, previous, and staged security key versions must differ")
 
     def _validate_oidc_configuration(self) -> None:
         if not self.allowed_return_path_values or any(
@@ -429,7 +469,11 @@ class PortalApiSettings(BaseSettings):
             raise ValueError("PORTAL_API_ALLOWED_ENVIRONMENT_IDS must not be empty")
         if self.session_idle_ttl_seconds > self.session_absolute_ttl_seconds:
             raise ValueError("Portal session idle lifetime cannot exceed absolute lifetime")
-        if self.oidc_client_secret is None or not self.oidc_client_secret.get_secret_value():
+        if self.oidc_client_secret is None and self.secret_provider == "environment":
+            raise ValueError(
+                "PORTAL_API_OIDC_CLIENT_SECRET is required for confidential-client authentication"
+            )
+        if self.oidc_client_secret is not None and not self.oidc_client_secret.get_secret_value():
             raise ValueError(
                 "PORTAL_API_OIDC_CLIENT_SECRET is required for confidential-client authentication"
             )
@@ -485,13 +529,16 @@ class PortalApiSettings(BaseSettings):
             raise ValueError("Forwarded headers require at least one explicit trusted proxy CIDR")
         if not self.abuse_protection_enabled:
             return
-        if self.client_address_hmac_secret is None:
+        if self.client_address_hmac_secret is None and self.secret_provider == "environment":
             raise ValueError(
                 "PORTAL_API_CLIENT_ADDRESS_HMAC_SECRET is required when abuse protection is enabled"
             )
-        _ = self.client_address_hmac_secret_bytes
-        if self.redis_url is None:
+        if self.client_address_hmac_secret is not None:
+            _ = self.client_address_hmac_secret_bytes
+        if self.redis_url is None and self.secret_provider == "environment":
             raise ValueError("PORTAL_API_REDIS_URL is required when abuse protection is enabled")
+        if self.redis_url is None:
+            return
         parsed = urlsplit(self.redis_url.get_secret_value())
         if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
             raise ValueError("PORTAL_API_REDIS_URL must be a valid redis:// or rediss:// URL")
@@ -513,10 +560,12 @@ class PortalApiSettings(BaseSettings):
             )
         if not self.audit_outbox_enabled:
             return
-        if self.audit_worker_database_url is None:
+        if self.audit_worker_database_url is None and self.secret_provider == "environment":
             raise ValueError(
                 "PORTAL_API_AUDIT_WORKER_DATABASE_URL is required when the outbox worker is enabled"
             )
+        if self.audit_worker_database_url is None:
+            return
         database_url = self.audit_worker_database_url.get_secret_value()
         if not database_url.startswith("postgresql+psycopg://"):
             raise ValueError(

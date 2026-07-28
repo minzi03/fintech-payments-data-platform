@@ -6,14 +6,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from portal_api.core.config import PortalApiSettings
+from portal_api.secret_provider import (
+    PortalSecretId,
+    ResolvedPortalSecrets,
+    resolve_environment_secrets,
+)
 
 
-def create_runtime_engine(settings: PortalApiSettings) -> Engine:
+def create_runtime_engine(
+    settings: PortalApiSettings,
+    *,
+    secrets: ResolvedPortalSecrets | None = None,
+) -> Engine:
     """Create a bounded runtime engine without connecting or applying migrations."""
-    if settings.database_url is None:
-        raise RuntimeError("Portal security database URL is not configured")
+    resolved = secrets or resolve_environment_secrets(settings)
     return create_engine(
-        settings.database_url.get_secret_value(),
+        resolved.require_text(PortalSecretId.DATABASE_URL),
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=5,
@@ -22,12 +30,15 @@ def create_runtime_engine(settings: PortalApiSettings) -> Engine:
     )
 
 
-def create_audit_worker_engine(settings: PortalApiSettings) -> Engine:
+def create_audit_worker_engine(
+    settings: PortalApiSettings,
+    *,
+    secrets: ResolvedPortalSecrets | None = None,
+) -> Engine:
     """Create the least-privilege worker engine without sharing request pools."""
-    if settings.audit_worker_database_url is None:
-        raise RuntimeError("Portal audit worker database URL is not configured")
+    resolved = secrets or resolve_environment_secrets(settings)
     return create_engine(
-        settings.audit_worker_database_url.get_secret_value(),
+        resolved.require_text(PortalSecretId.AUDIT_WORKER_DATABASE_URL),
         pool_pre_ping=True,
         pool_size=max(2, settings.audit_outbox_worker_concurrency),
         max_overflow=2,

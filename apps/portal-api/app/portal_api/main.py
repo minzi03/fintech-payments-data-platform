@@ -67,6 +67,13 @@ from portal_api.core.security import configure_security_middleware
 from portal_api.db.engine import create_runtime_engine
 from portal_api.db.schema_guard import validate_runtime_schema
 from portal_api.health.service import HealthService
+from portal_api.secret_provider import (
+    PortalSecretId,
+    ResolvedPortalSecrets,
+    SecretProvider,
+    environment_secret_provider,
+    resolve_portal_secrets,
+)
 from portal_api.telemetry.metrics import TelemetryRecorder
 from portal_api.telemetry.otel import build_telemetry
 
@@ -76,28 +83,27 @@ REQUIRED_SECURITY_ADAPTER_IDS = (POSTGRESQL_ADAPTER_ID, OIDC_ADAPTER_ID)
 
 def _security_components(
     settings: PortalApiSettings,
+    secrets: ResolvedPortalSecrets,
 ) -> tuple[EphemeralSecurityMaterial | None, ProtectedValueCipher | None]:
     if not settings.security_runtime_enabled:
         return None, None
-    master_key = settings.security_master_key_bytes
-    if master_key is None:
+    current = secrets.get(PortalSecretId.SECURITY_CURRENT_MASTER_KEY)
+    if current is None:
         return EphemeralSecurityMaterial.generate(), EphemeralEnvelopeCipher()
-    key_version = settings.security_key_version
+    master_key = current.reveal_bytes()
+    key_version = current.reference.version
     security_material = EphemeralSecurityMaterial.from_master_key(
         master_key,
         key_version=key_version,
     )
-    previous_master_key = settings.security_previous_master_key_bytes
+    previous = secrets.get(PortalSecretId.SECURITY_PREVIOUS_MASTER_KEY)
     previous_wrapping_key: bytes | None = None
-    if previous_master_key is not None:
-        previous_version = settings.security_previous_key_version
+    if previous is not None:
+        previous_master_key = previous.reveal_bytes()
+        previous_version = previous.reference.version
         transition_started_at = settings.security_key_transition_started_at
         transition_expires_at = settings.security_key_transition_expires_at
-        if (
-            previous_version is None
-            or transition_started_at is None
-            or transition_expires_at is None
-        ):
+        if transition_started_at is None or transition_expires_at is None:
             raise RuntimeError("Validated security key transition is incomplete")
         security_material = security_material.with_previous(
             EphemeralSecurityMaterial.from_master_key(
@@ -140,14 +146,31 @@ def create_app(
     telemetry: TelemetryRecorder | None = None,
     database_engine: Engine | None = None,
     oidc_provider: OidcProviderPort | None = None,
+    secret_provider: SecretProvider | None = None,
 ) -> FastAPI:
     """Create an isolated Portal API without import-time infrastructure calls."""
     resolved_settings = settings or get_settings()
     configure_logging(resolved_settings)
+    resolved_secret_provider = secret_provider or environment_secret_provider(resolved_settings)
+    resolved_secret_provider.start()
+    try:
+        resolved_secrets = resolve_portal_secrets(
+            resolved_settings,
+            resolved_secret_provider,
+        )
+    finally:
+        resolved_secret_provider.close()
+    LOGGER.info(
+        "runtime secret references resolved",
+        extra={
+            "event": "secret_provider_resolved",
+            **resolved_secrets.evidence.log_fields(),
+        },
+    )
     resolved_telemetry = telemetry or build_telemetry(resolved_settings)
     registry = adapter_registry or AdapterRegistry()
     owned_database_engine = (
-        create_runtime_engine(resolved_settings)
+        create_runtime_engine(resolved_settings, secrets=resolved_secrets)
         if resolved_settings.security_runtime_enabled and database_engine is None
         else None
     )
@@ -156,10 +179,8 @@ def create_app(
         resolved_telemetry.instrument_database(resolved_database_engine)
     abuse_protection_service: AbuseProtectionService | None = None
     if resolved_settings.abuse_protection_enabled:
-        fingerprint_key = resolved_settings.client_address_hmac_secret_bytes
-        redis_url = resolved_settings.redis_url
-        if fingerprint_key is None or redis_url is None:
-            raise RuntimeError("Validated abuse-protection configuration is incomplete")
+        fingerprint_key = resolved_secrets.require_bytes(PortalSecretId.CLIENT_ADDRESS_HMAC_KEY)
+        redis_url = resolved_secrets.require_text(PortalSecretId.REDIS_URL)
         abuse_resolver = TrustedClientAddressResolver(
             ClientAddressSettings(
                 trusted_proxy_cidrs=resolved_settings.trusted_proxy_cidr_values,
@@ -175,7 +196,7 @@ def create_app(
             resolver=abuse_resolver,
             policies=AbusePolicyRegistry.development_defaults(),
             distributed_store=RedisAbuseStore(
-                url=redis_url.get_secret_value(),
+                url=redis_url,
                 connect_timeout_seconds=resolved_settings.redis_connect_timeout_seconds,
                 operation_timeout_seconds=resolved_settings.redis_operation_timeout_seconds,
                 maximum_connections=resolved_settings.redis_max_connections,
@@ -190,11 +211,15 @@ def create_app(
                 else None
             ),
         )
-    security_material, protected_value_cipher = _security_components(resolved_settings)
+    security_material, protected_value_cipher = _security_components(
+        resolved_settings,
+        resolved_secrets,
+    )
     provider: OidcProviderPort | None = None
     if resolved_settings.security_runtime_enabled:
         provider = oidc_provider or HttpxOidcProvider(
             resolved_settings,
+            client_secret=resolved_secrets.require(PortalSecretId.OIDC_CLIENT_SECRET),
             telemetry=resolved_telemetry,
         )
     login_initiation_service = (
@@ -406,6 +431,7 @@ def create_app(
     app.state.abuse_protection_service = abuse_protection_service
     app.state.security_material = security_material
     app.state.protected_value_cipher = protected_value_cipher
+    app.state.secret_resolution_evidence = resolved_secrets.evidence
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(system_router)

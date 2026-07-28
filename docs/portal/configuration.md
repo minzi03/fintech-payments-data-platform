@@ -37,12 +37,14 @@ examples. Production values must be supplied by the deployment environment; secr
 | `PORTAL_API_TELEMETRY_RESOURCE_ATTRIBUTES` | empty | no | no | At most 16 bounded `key=value` pairs; secret-like keys forbidden |
 | `PORTAL_API_OPENAPI_ENABLED` | `true` | no | no | Must be false in production |
 | `PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED` | `false` | no | no | Forbidden in production; no identity behavior exists yet |
+| `PORTAL_API_SECRET_PROVIDER` | `environment` | yes | no | Bounded provider ID; environment adapter is forbidden for secret-bearing production features |
 | `PORTAL_API_SECURITY_MASTER_KEY` | none | when local/development security runtime is enabled | yes | Base64url-encoded 256-bit key; keep stable across normal restart |
 | `PORTAL_API_SECURITY_KEY_VERSION` | `local-development-v1` | with security master key | no | Bounded identifier attached to derived lookup keys and protected envelopes |
 | `PORTAL_API_SECURITY_PREVIOUS_MASTER_KEY` | none | during a controlled key transition | yes | Previous 256-bit key; accepted only inside the declared transition window |
 | `PORTAL_API_SECURITY_PREVIOUS_KEY_VERSION` | none | with previous key | no | Explicit version of the previous key; must differ from the current version |
 | `PORTAL_API_SECURITY_KEY_TRANSITION_STARTED_AT` | none | with previous key | no | Timezone-aware start of previous-key acceptance |
 | `PORTAL_API_SECURITY_KEY_TRANSITION_EXPIRES_AT` | none | with previous key | no | Exclusive deterministic expiry; the window cannot exceed one absolute session lifetime |
+| `PORTAL_API_SECURITY_FUTURE_KEY_VERSION` | none | no | no | Metadata-only staged version; must differ from current and previous versions |
 | `PORTAL_API_PROVIDER_REFRESH_ENABLED` | `true` | no | no | Starts the non-blocking provider refresh worker when the security runtime is active |
 | `PORTAL_API_PROVIDER_REFRESH_THRESHOLD_SECONDS` | `120` | no | no | Proactive refresh window; 30-600 seconds |
 | `PORTAL_API_PROVIDER_REFRESH_SCAN_INTERVAL_SECONDS` | `5` | no | no | Durable due-work scan interval; 1-60 seconds |
@@ -118,6 +120,9 @@ production Redis, operation policies, or degradation behavior.
 
 See [Audit outbox delivery and background maintenance](audit-outbox-and-maintenance.md) before
 configuring archive-role credentials, delivery retry, retention, or maintenance schedules.
+
+See [Portal secrets provider boundary](secrets-provider-boundary.md) for logical references,
+provider lifecycle, startup resolution, production restrictions, and bounded rotation.
 
 ## Portal Web
 
