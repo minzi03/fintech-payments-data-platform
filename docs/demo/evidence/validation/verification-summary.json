@@ -1,0 +1,29 @@
+{
+  "schema_version": "demo-verification-summary/v1",
+  "provenance": "derived-from-recorded-verification",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "recorded_results": {
+    "portal_backend": {
+      "passed": 272,
+      "skipped": 41,
+      "destructive_deselected": 6
+    },
+    "disposable_portal_integration_passed": 56,
+    "disposable_migration_validation_passed": 6,
+    "foundation": {
+      "passed": 289,
+      "skipped": 2,
+      "deselected": 34
+    },
+    "real_redis_integration_passed": 4,
+    "portal_web_tests_passed": 29,
+    "openapi_sha256": "9fab4ac5b9e41dab87f648d2e797a99caefe51fefacacf4407df97f694471fb2",
+    "alembic_head": "008_audit_outbox_and_maintenance",
+    "container_hardening": "PASS"
+  },
+  "limitations": [
+    "These are checkpoint results, not a claim that every suite reran during FF-05.",
+    "Remote CI is not claimed because the branch has not been pushed."
+  ]
+}

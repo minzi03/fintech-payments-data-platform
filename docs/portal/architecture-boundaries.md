@@ -1,62 +1,139 @@
 # Portal architecture boundaries
 
-## Purpose
+## Status and authority
 
-PR-PORTAL-001 introduces an independently deployable web shell and Backend for Frontend (BFF).
-It establishes safe control-plane boundaries; it does not implement operational platform
-capabilities.
+The Portal Web/API foundation and PR-PORTAL-002 security runtime are implemented. This document
+describes the current boundary; the original design-freeze and ADR documents remain historical
+decision evidence.
+
+The Portal is a separate identity, session, abuse-protection, audit, and operational-status
+runtime. It is not the data platform's operational control plane and has no implemented adapter for
+Kafka, MinIO, Airflow, or Silver.
+
+See the [current platform architecture](../architecture/current-state.md) and
+[canonical claims](../architecture/claims.md).
+
+## Current trust boundary
 
 ```mermaid
 flowchart LR
-    Browser["Browser"] --> Web["Portal Web<br/>Next.js"]
-    Web --> API["Portal API<br/>FastAPI /v1"]
-    API --> Registry["Explicit adapter registry"]
-    Registry -. future, versioned .-> Services["Approved platform APIs<br/>or read models"]
+    Browser["Untrusted browser"] -->|"same-origin routes / opaque cookie"| Web["Portal Web<br/>Next.js"]
+    Web -->|"versioned /v1 API"| API["Portal API<br/>FastAPI"]
+
+    subgraph SecurityAuthority["Portal security authority"]
+        Postgres["Portal PostgreSQL<br/>sessions, replay, audit, outbox"]
+        Redis["Redis<br/>reconstructible abuse state"]
+        Worker["Audit delivery worker"]
+    end
+
+    API -->|"OIDC code + PKCE / provider lifecycle"| OIDC["Keycloak / OIDC provider"]
+    API --> Postgres
+    API --> Redis
+    Worker --> Postgres
+
+    Platform["Kafka / MinIO / Airflow / Silver"]
+    API -. "no operational adapter" .-> Platform
 ```
 
-The Portal is a client of authoritative platform state. It is not a replacement source of truth.
+The dotted edge is a non-integration marker, not a request path.
 
-## Enforced boundaries
+## Implemented boundary
 
-- Browser requests use the Portal Web origin. API traffic is forwarded through the explicit
-  `/portal-api/*` rewrite to the BFF.
-- Browser bundles contain no PostgreSQL, Kafka, Kafka Connect, MinIO, Airflow, warehouse, or
-  control-database credentials.
-- Frontend code imports only generated Portal API contracts. Infrastructure response shapes end
-  at future adapter boundaries.
-- The BFF has no database, arbitrary proxy, Docker socket, infrastructure client, or mutation
-  endpoint.
-- The adapter registry is empty by default. An absent health check is never reported as healthy.
-- Liveness is process-local. Readiness aggregates only enabled adapters and distinguishes optional
-  degradation from required dependency failure.
+- Browser bundles receive only validated public configuration and never provider tokens or
+  infrastructure credentials.
+- Portal Web is a BFF-facing Next.js application; browser API requests remain same-origin.
+- Portal API performs OIDC Authorization Code with PKCE and exact token validation.
+- Browser sessions are opaque; server-side lifecycle and encrypted provider-token envelopes live
+  under PostgreSQL authority.
+- Provider refresh, rotation/reuse detection, revocation, logout, back-channel logout, fencing,
+  replay defense, and crypto-erasure are implemented.
+- Redis provides distributed abuse enforcement and bounded penalties, but is not session,
+  provider-token, logout, or durable replay authority.
+- Security audit and outbox rows commit transactionally; the worker delivers asynchronously with
+  leases, fencing, retries, receipts, and explicit dead-letter/requeue behavior.
+- Readiness requires PostgreSQL and OIDC when security runtime is enabled. Redis is optional and
+  observable.
+- Configuration, secret-reference, resolved-secret, runtime-state, and persisted-state boundaries
+  are explicit.
+- First-party containers and security scanning have bounded hardening/policy evidence.
 
-Next.js App Router emits inline bootstrap scripts, so the foundation CSP permits inline scripts in
-both modes and adds `unsafe-eval` only for development tooling. A nonce-based dynamic CSP is
-deferred until the authentication/session boundary is introduced; production already excludes
-`unsafe-eval`, external scripts, frames, objects, and non-self connections.
+## Authority model
 
-## Explicitly prohibited
+| Concern                                | Authority                              | Not authoritative          |
+| -------------------------------------- | -------------------------------------- | -------------------------- |
+| External identity and provider session | OIDC provider                          | Browser claims             |
+| Local principal/session/token envelope | Portal PostgreSQL                      | Redis or browser           |
+| Durable logout/replay evidence         | Portal PostgreSQL                      | Redis fast hint            |
+| Abuse counters and penalties           | Redis with bounded local fallback      | Session database           |
+| Authorization decision                 | Portal API policy + server-owned state | Hidden/visible UI          |
+| Security audit                         | Append-only Portal PostgreSQL ledger   | Application logs           |
+| Archive delivery lifecycle             | PostgreSQL outbox/receipts             | In-memory worker state     |
+| Data-platform operations               | Owning data-plane components           | Portal (no adapter exists) |
 
-The browser and BFF must not bypass application state machines, connect to infrastructure
-databases, execute arbitrary SQL, return upstream bodies, expose raw financial records, or derive
-authoritative state from browser input.
+## Frontend boundary
 
-## Scope of this release
+- Public variables are typed and explicitly allowlisted.
+- Internal Portal API URL and server runtime configuration are not exposed to browser bundles.
+- Provider access, ID, and refresh tokens never enter the browser.
+- Cookies use the documented HTTP-only, secure, same-site, path, expiry, rotation, and CSRF
+  contracts.
+- UI permission projection improves usability but is not authorization.
+- Problem Details, logs, and browser telemetry exclude credentials and raw identity/provider data.
 
-Implemented: application shell, health/status UI, FastAPI BFF, `/v1` contract, generated client,
-Problem Details, correlation, structured logging, telemetry abstractions, security headers,
-containers, tests, and local operations.
+## Backend boundary
 
-Deferred: authentication, authorization, capability registry business logic, sources, datasets,
-pipelines, CDC administration, object browsing, previews, SQL, backfills, recovery, DLQ, approvals,
-and all platform mutations.
+- Public application APIs use the versioned `/v1` contract; health endpoints remain outside it.
+- The API does not expose arbitrary proxy, SQL, object-store, Docker socket, or infrastructure
+  administration behavior.
+- PostgreSQL roles separate migration, runtime, audit, and archive responsibilities.
+- Missing/incompatible required readiness adapters fail closed.
+- Callback and refresh transactions use deterministic sequencing and recovery/fencing.
+- Logout and local crypto-erasure do not depend on Redis or provider availability.
 
-## Frozen PR-PORTAL-002 security design
+## Data-platform boundary
 
-The architecture contract for future authentication, server sessions, authorization, capability
-projection, environment/tenant context, and append-only security audit is accepted in
-[`pr-portal-002-design-freeze.md`](pr-portal-002-design-freeze.md). It is design evidence only:
-none of those runtime capabilities exists until PR-PORTAL-002 is implemented and its merge gates
-pass. Bounded implementation is authorized with conditions by
-[`GD-001`](../governance/decisions/GD-001-portal-002-implementation-exception.md); that decision
-grants no production deployment authority.
+The Portal cannot currently:
+
+- administer Kafka topics, groups, or connectors;
+- browse or mutate MinIO Bronze/Silver objects;
+- trigger or inspect Airflow beyond external/manual repository workflows;
+- query Silver datasets;
+- run backfill, redrive, reconciliation, warehouse, dbt, or dashboard operations.
+
+Those capabilities remain deferred until versioned backend APIs/read models, state machines,
+authorization, idempotency, recovery, and audit contracts exist.
+
+## Readiness and degradation
+
+- `READY` requires every required dependency to pass.
+- An empty dependency registry is `NOT_READY`.
+- PostgreSQL and OIDC are required for the enabled security runtime.
+- Redis failure is optional/degraded and activates operation-specific bounded behavior.
+- Audit worker `DEGRADED` is operationally available when database, destination, and outbox are
+  `UP` but bounded degraded evidence exists.
+- One intentional poison event remains dead-lettered and must not be removed to make a demo green.
+
+## Production boundary
+
+The runtime is production-oriented but not production-authorized:
+
+- staging/production security runtime authorization remains guarded;
+- callback and abuse production policies remain deferred;
+- no production workload identity, external secret-provider adapter, deployment target, HA/DR, or
+  promotion process is approved;
+- security findings are governed with bounded exceptions, not absent.
+
+Do not describe the Portal or repository as production-ready.
+
+## Historical design relationship
+
+The PR-PORTAL-002 design freeze, threat model, authorization/failure matrices, implementation
+prompt, and Portal ADRs record the original design and review intent. Implemented behavior has
+advanced beyond statements that authentication/session runtime did not yet exist.
+
+When historical wording conflicts with current behavior, use:
+
+1. tracked implementation and tests;
+2. [current architecture](../architecture/current-state.md);
+3. current subsystem documentation;
+4. historical design as rationale, not runtime status.

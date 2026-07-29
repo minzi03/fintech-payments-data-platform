@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { PortalApiError } from "@/api/problem";
+import { PortalSessionProvider } from "@/features/auth/session-context";
 
 function retryDelay(attempt: number): number {
   return Math.min(500 * 2 ** attempt, 4_000);
@@ -41,5 +42,9 @@ function createQueryClient(): QueryClient {
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(createQueryClient);
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PortalSessionProvider>{children}</PortalSessionProvider>
+    </QueryClientProvider>
+  );
 }

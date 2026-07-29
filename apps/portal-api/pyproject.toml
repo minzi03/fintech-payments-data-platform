@@ -8,15 +8,25 @@ version = "0.1.0"
 description = "Backend for Frontend foundation for the Fintech Data Platform Portal."
 requires-python = ">=3.11"
 dependencies = [
+  "alembic>=1.14,<2.0",
+  "cryptography>=48.0.1,<49",
   "fastapi==0.139.2",
+  "httpx==0.28.1",
+  "opentelemetry-api==1.43.0",
+  "opentelemetry-exporter-otlp-proto-http==1.43.0",
+  "opentelemetry-exporter-prometheus==0.64b0",
+  "opentelemetry-sdk==1.43.0",
+  "PyJWT[crypto]>=2.10,<3.0",
   "pydantic==2.13.4",
   "pydantic-settings==2.14.2",
+  "psycopg[binary]>=3.2,<4.0",
+  "redis==7.4.1",
+  "sqlalchemy>=2.0,<3.0",
   "uvicorn==0.51.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx==0.28.1",
   "mypy==2.3.0",
   "pytest==9.1.1",
   "pytest-asyncio==1.3.0",
@@ -29,8 +39,9 @@ where = ["app"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
-pythonpath = ["app"]
+pythonpath = ["app", "test_support"]
 markers = [
+  "destructive_migration: explicit disposable-database migration validation",
   "integration: Portal API integration tests",
 ]
 

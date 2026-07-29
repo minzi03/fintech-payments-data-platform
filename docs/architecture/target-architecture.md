@@ -1,106 +1,161 @@
-# Target Architecture
+# Target and optional architecture
 
-## Purpose and truthful status
+## Purpose and status
 
-The target supports near-real-time payment operations and daily settlement reconciliation. Through
-Phase 7, the source/generator, settlement batch intake, selectable local/MinIO raw storage,
-PostgreSQL-to-Kafka transport, reliable CDC-to-Bronze consumption, and Bronze-to-Silver processing
-plus Airflow orchestration/control are implemented. Warehouse analytics remain planned.
+This document describes possible future expansion. It is not a statement of implemented
+capability, an approved production topology, or a committed delivery schedule.
 
-| Component | Status |
-| --- | --- |
-| PostgreSQL OLTP source and realistic generator | Implemented in Phase 1 |
-| Settlement contract, validation, manifest, and local storage | Implemented in Phase 2 |
-| Shared storage interface and private MinIO Bronze/quarantine | Implemented in Phase 3 |
-| PostgreSQL logical replication, Debezium, Kafka CDC topics | Implemented in Phase 4 |
-| Reliable CDC consumer to immutable Bronze Parquet | Implemented in Phase 5 |
-| Silver processing and data quality | Implemented in Phase 6 |
-| Airflow orchestration and central control schema | Implemented in Phase 7 |
-| Production-readiness blocker design | In progress; ADR-001 frozen, ADR-002 through ADR-005 proposed |
-| Snowflake, executable dbt models, BI, observability | Planned for Phases 8-10 |
-| Enterprise Data Platform Portal | Target product architecture only; no Portal runtime implemented |
+The authoritative implemented view is [current-state.md](current-state.md). External wording must
+follow the [canonical claim matrix](claims.md).
 
-## Architecture principles
+Status terms used here:
 
-1. Preserve raw source bytes/envelopes before downstream transformation.
-2. Keep transactional workflow state in SQLite/PostgreSQL, not object metadata.
-3. Preserve source LSN, transaction/time metadata, Kafka position, and the Debezium envelope.
-4. Use fixed-precision money and timezone-aware timestamps end to end.
-5. Separate domain behavior from infrastructure clients with small typed boundaries.
-6. Keep credentials outside source control and redact inspection/log output.
-7. Add one bounded, independently testable infrastructure responsibility per phase.
+| Status                   | Meaning                                                             |
+| ------------------------ | ------------------------------------------------------------------- |
+| **Implemented**          | Tracked executable assets and verification exist now                |
+| **Optional extension**   | A plausible addition that requires a separate decision and evidence |
+| **Deferred**             | Intentionally outside the current feature-frozen implementation     |
+| **Out of current scope** | Not part of the present repository commitment                       |
 
-## Implemented local architecture
+## Current foundation
 
 ```mermaid
 flowchart LR
-    GEN["Deterministic payment generator"] --> PG["PostgreSQL payments OLTP"]
-    PG -->|"logical WAL / pgoutput"| DBZ["Debezium PostgreSQL connector"]
-    DBZ --> KAFKA["Kafka CDC topics"]
-    KAFKA --> CONSUMER["Manual-commit CDC consumer"]
-    CONSUMER --> CDCMANIFEST["SQLite CDC batch manifest"]
-    CONSUMER --> MINIO
-    CSV["Partner settlement CSV"] --> BATCH["Contract + record validation"]
-    BATCH --> MANIFEST["SQLite manifest"]
-    BATCH --> STORE["Settlement storage interface"]
-    STORE --> LOCAL["Local Bronze / quarantine"]
-    STORE --> MINIO["Private MinIO Bronze / quarantine"]
+    subgraph Implemented["Implemented local/reference foundation"]
+        PG["Payments PostgreSQL"] --> CDC["Debezium + Kafka"]
+        CDC --> Consumer["Manual CDC consumer"]
+        CSV["Settlement CSV"] --> Batch["Contract validation"]
+        Consumer --> Bronze["Immutable Bronze"]
+        Batch --> Bronze
+        Bronze --> Silver["PyArrow Silver"]
+        Airflow["Airflow"] --> Batch
+        Airflow --> Silver
+
+        Browser["Browser"] --> Web["Portal Web"]
+        Web --> API["Portal API"]
+        API --> Identity["Keycloak / OIDC"]
+        API --> PortalDB["Portal PostgreSQL"]
+        API --> Redis["Redis abuse state"]
+    end
+
+    subgraph Possible["Possible target direction — not implemented"]
+        Warehouse["Warehouse + dbt"]
+        Products["Gold / reconciliation products"]
+        BI["Semantic layer / dashboards"]
+        Adapters["Portal data-plane adapters"]
+        Production["Production deployment + HA/DR"]
+        Attestation["SBOM / signing / provenance"]
+
+        Silver -.-> Warehouse
+        Warehouse -.-> Products
+        Products -.-> BI
+        API -.-> Adapters
+        Adapters -.-> Bronze
+        Production -.-> Implemented
+        Attestation -.-> Production
+    end
 ```
 
-Kafka and Kafka Connect are single-node local services. Kafka persists records and Connect internal
-state in a named Kafka volume. `connector-init` reconciles the PostgreSQL role/publication and
-connector config after health dependencies are satisfied. It is an idempotent one-shot service.
+Dotted target edges express possible direction only. In particular, no Portal adapter currently
+connects the API to Kafka, MinIO, Airflow, or Silver.
 
-## Planned production-like flow
+## Capability status
 
-```mermaid
-flowchart LR
-    PG["PostgreSQL OLTP - implemented"] --> CDC["Debezium CDC - implemented"]
-    CDC --> KAFKA["Kafka CDC topics - implemented"]
-    FILES["Partner settlement CSV"] --> BATCH["Python batch - implemented"]
-    KAFKA --> CONSUMER["CDC consumer - implemented"]
-    BATCH --> BRONZE["Shared MinIO Bronze - batch implemented"]
-    CONSUMER --> BRONZE
-    BRONZE --> SILVER["Silver processing - implemented"]
-    SILVER --> WH["Snowflake + dbt - Phase 8"]
-    WH --> OPS["Operations analytics - Phase 10"]
-    WH --> RECON["Reconciliation product - Phase 9"]
-    PORTAL["Enterprise Portal - target design"] -. governed APIs .-> AIRFLOW
-    PORTAL -. governed APIs .-> CONSUMER
-    PORTAL -. metadata and publications .-> SILVER
-    AIRFLOW["Airflow - implemented Phase 7"] -. orchestrates .-> BATCH
-    AIRFLOW -. orchestrates .-> SILVER
+| Capability                                                 | Status               | Evidence or boundary                                    |
+| ---------------------------------------------------------- | -------------------- | ------------------------------------------------------- |
+| Deterministic payments source and generator                | Implemented          | PostgreSQL contracts, generator, tests                  |
+| Settlement batch validation and quarantine                 | Implemented          | Versioned contract, ingestion code, fixtures            |
+| PostgreSQL logical WAL, Debezium, Kafka CDC                | Implemented          | Compose services, connector scripts, integration tests  |
+| Manual CDC consumer to immutable Bronze                    | Implemented          | Consumer, manifests, MinIO tests                        |
+| PyArrow Silver history/current/quality outputs             | Implemented          | Processing code, schemas, lineage tests                 |
+| Airflow orchestration and control state                    | Implemented          | DAGs, PostgreSQL control repository, tests              |
+| Portal OIDC/session/provider lifecycle                     | Implemented          | API/Web code, migrations, tests                         |
+| Portal distributed abuse and audit/outbox                  | Implemented          | Redis enforcement, audit worker, telemetry              |
+| Reproducible inputs, hardened first-party images, scanning | Implemented          | Locks, build manifest, Docker verification, policy      |
+| External secret manager adapter                            | Optional extension   | Provider interface exists; no vendor adapter selected   |
+| Warehouse and executable dbt models                        | Deferred             | No executable warehouse/dbt assets                      |
+| Gold/reconciliation data product                           | Deferred             | Intake evidence exists; classification/product does not |
+| Semantic layer and dashboard                               | Deferred             | Empty placeholders are not implementation               |
+| Portal operational data-plane adapters                     | Deferred             | No Kafka/MinIO/Airflow/Silver adapter                   |
+| Production identity topology and policies                  | Deferred             | Local Keycloak and guarded development policies only    |
+| Full platform observability/incident delivery              | Deferred             | Subsystem telemetry and evidence only                   |
+| SBOM, signing, provenance, release attestation             | Deferred             | Not implemented by the reproducible-build task          |
+| Production deployment, promotion, and rollback             | Deferred             | No approved deployment target                           |
+| HA, multi-region, and DR                                   | Deferred             | No topology or recovery-objective evidence              |
+| Service mesh or Kubernetes platform                        | Out of current scope | No repository evidence or approved need                 |
+
+## Possible data-product direction
+
+A future data-product expansion could add:
+
+```text
+Silver
+  → governed warehouse staging
+  → versioned transformations
+  → reconciliation/Gold products
+  → semantic and presentation surfaces
 ```
 
-## Layer responsibilities
+Each arrow would require its own source contract, authority model, quality gates, recovery
+semantics, cost model, security controls, and executable verification. Naming a warehouse or BI
+technology here does not commit the repository to it.
 
-| Layer | Responsibility | Current state |
-| --- | --- | --- |
-| Source | Authoritative payment state/events and partner evidence | Implemented locally |
-| CDC transport | Schema-aware row changes, source offsets, restart continuity | Implemented to Kafka |
-| Batch ingestion | Contract validation and idempotent partner-file intake | Implemented |
-| Bronze/quarantine | Immutable raw bytes/envelopes and rejected evidence | Batch raw + CDC Parquet in MinIO |
-| Control | Transactional lifecycle and coordination | Component SQLite manifests + PostgreSQL control schema + Airflow metadata |
-| Silver | Normalize, deduplicate, apply CDC, quality gates | Implemented |
-| Warehouse/dbt | Dimensions, facts, SCD2, reconciliation marts | Planned |
-| Orchestration | Scheduling, bounded health signals, retries, backfill | Implemented locally |
-| Portal | Capability-aware discovery, operations, governance, and audit through supported APIs | Target design only |
+## Possible Portal direction
 
-## Portal boundary
+The implemented Portal is currently a security/runtime surface, not the platform control plane. A
+future operational Portal could consume explicitly versioned application APIs or read models for:
 
-The target [Enterprise Data Platform Portal](../product/enterprise-data-platform-portal.md) is a
-governed interface over application APIs. It is not an alternative source of truth and it must not
-connect browsers directly to PostgreSQL, Kafka, MinIO, Airflow metadata tables, or administration
-endpoints. The Portal exposes implemented capabilities only; Gold, warehouse, transformation,
-catalog, lineage, recovery, DLQ redrive, and enterprise IAM surfaces remain unavailable until their
-backends and production contracts exist.
+- dataset discovery and evidence;
+- bounded pipeline and backfill operations;
+- quarantine/redrive workflows;
+- schema and publication review;
+- incident and recovery evidence.
 
-## Deferred decisions
+This direction is deferred until each backend operation has an authoritative state machine,
+authorization contract, idempotency/recovery behavior, and audit evidence. Direct browser or Portal
+access to infrastructure administration endpoints remains prohibited.
 
-- Distributed CDC leases, PostgreSQL control-store migration, and retention/reprocess governance.
-- Schema compatibility governance/registry after real downstream requirements are known.
-- SQLite-to-PostgreSQL manifest migration and distributed locking.
-- Kafka partition/retention sizing, TLS/SASL/ACLs, multi-broker replication, and Connect scaling.
-- Silver/table format and whether measured scale warrants distributed processing.
-- Production MinIO identity, TLS, KMS, object lock/versioning, lifecycle, replication, and backup.
-- Warehouse sizing/access, catalog/lineage backend, dashboards, and platform SLOs.
+## Possible production direction
+
+A separately authorized deployment design would need decisions and evidence for:
+
+- workload identity and runtime secret delivery;
+- network, storage, and migration ownership;
+- immutable promotion and rollback;
+- backup/restore and cryptographic-key continuity;
+- HA topology and recovery objectives;
+- capacity, latency, and failure budgets;
+- registry monitoring, SBOM, signing, and provenance verification.
+
+The repository does not select Kubernetes, a cloud provider, a secrets vendor, or a specific
+warehouse by default. Existing abstractions should be extended before a new subsystem is proposed.
+
+## Principles that carry forward
+
+1. Keep authoritative state with the owning system.
+2. Preserve immutable source and processing evidence before derived products.
+3. Use explicit identifiers and bounded replay rather than global exactly-once claims.
+4. Expose operations only through versioned, authorized application boundaries.
+5. Treat unknown dependency or security state as unavailable, not healthy.
+6. Keep secrets out of source, browser bundles, build metadata, logs, and telemetry.
+7. Require executable evidence before moving a capability from deferred to implemented.
+
+## Decision and review triggers
+
+A target item requires a new scoped decision when it introduces any of:
+
+- a new data or security authority;
+- a schema, state machine, or public contract;
+- a deployment target or persistent service;
+- a new secret, privileged identity, or network boundary;
+- an externally visible reliability, scale, security, or compliance claim.
+
+Feature freeze rejects implementation of these target items during FF-04 through FF-06.
+
+## Related documents
+
+- [Current implemented architecture](current-state.md)
+- [Canonical claims](claims.md)
+- [Roadmap](../roadmap.md)
+- [Historical Portal product direction](../product/enterprise-data-platform-portal.md)
+- [Portal architecture boundary](../portal/architecture-boundaries.md)

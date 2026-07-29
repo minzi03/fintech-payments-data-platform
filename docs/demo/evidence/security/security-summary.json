@@ -1,0 +1,28 @@
+{
+  "schema_version": "demo-security-summary/v1",
+  "provenance": "derived-from-recorded-verification",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "scanner_families": [
+    "Semgrep CE",
+    "OSV-Scanner",
+    "Gitleaks",
+    "Trivy",
+    "zizmor"
+  ],
+  "identity": {
+    "scanner_images": "digest-pinned",
+    "first_party_images": "exact image identities",
+    "toolchain_policy": "immutable and fail-closed"
+  },
+  "current_policy_summary": {
+    "blocking_findings": 0,
+    "expired_exceptions": 0,
+    "fixed_available_first_party_critical_or_high": 0,
+    "active_bounded_exception_records": 46,
+    "first_party_high_no_fix_unknown_reachability": 10,
+    "vendor_findings": "report-only"
+  },
+  "disclaimer": "Policy passing does not mean vulnerability-free or production-authorized.",
+  "raw_findings_included": false
+}

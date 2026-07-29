@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "portal-security-exceptions/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "exceptions"],
+  "properties": {
+    "schema_version": { "const": "portal-security-exceptions/v1" },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scanner",
+          "finding_identifier",
+          "safe_fingerprint",
+          "asset",
+          "scope",
+          "severity",
+          "exploitability",
+          "fix_status",
+          "reason",
+          "compensating_control",
+          "owner",
+          "approved_by",
+          "created_date",
+          "expiry_date",
+          "review_trigger",
+          "removal_criteria",
+          "evidence_link"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^SCN-[0-9]{3}$" },
+          "scanner": { "type": "string" },
+          "finding_identifier": { "type": "string" },
+          "package": { "type": "string" },
+          "package_version": { "type": "string" },
+          "safe_fingerprint": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "asset": { "type": "string" },
+          "architecture": { "enum": ["amd64", "arm64"] },
+          "scanner_database_identity": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "evidence_version": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,80}$"
+          },
+          "evidence_revisions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "evidence_version",
+                "scanner_database_identity",
+                "analysis_date",
+                "status"
+              ],
+              "properties": {
+                "evidence_version": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,80}$"
+                },
+                "scanner_database_identity": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "analysis_date": { "type": "string", "format": "date" },
+                "status": { "enum": ["current", "superseded"] }
+              }
+            }
+          },
+          "scope": { "type": "string" },
+          "severity": { "type": "string" },
+          "exploitability": { "type": "string" },
+          "fix_status": { "type": "string" },
+          "reason": { "type": "string", "minLength": 1 },
+          "compensating_control": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string", "minLength": 1 },
+          "approved_by": { "type": "string", "minLength": 1 },
+          "created_date": { "type": "string", "format": "date" },
+          "expiry_date": { "type": "string", "format": "date" },
+          "review_trigger": { "type": "string", "minLength": 1 },
+          "removal_criteria": { "type": "string", "minLength": 1 },
+          "evidence_link": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "scanner": { "const": "trivy" },
+                "scope": { "const": "first_party_runtime" }
+              },
+              "required": ["scanner", "scope"]
+            },
+            "then": {
+              "required": [
+                "package",
+                "package_version",
+                "architecture",
+                "scanner_database_identity",
+                "evidence_version",
+                "evidence_revisions"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

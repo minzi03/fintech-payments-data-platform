@@ -70,6 +70,7 @@ class PortalError(Exception):
         detail: str,
         retryable: bool = False,
         dependency: str | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(title)
         self.status_code = status_code
@@ -78,6 +79,7 @@ class PortalError(Exception):
         self.detail = detail
         self.retryable = retryable
         self.dependency = dependency
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _problem_response(
@@ -90,6 +92,7 @@ def _problem_response(
     field_errors: list[FieldError] | None = None,
     retryable: bool | None = None,
     dependency: str | None = None,
+    retry_after_seconds: int | None = None,
 ) -> JSONResponse:
     problem = ProblemDetails(
         type=f"https://docs.fintech-platform.local/problems/{error_code.lower()}",
@@ -102,12 +105,22 @@ def _problem_response(
         timestamp=datetime.now(UTC),
         field_errors=field_errors,
         retryable=retryable,
+        retry_after_seconds=retry_after_seconds,
         dependency=dependency,
     )
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status,
         content=problem.model_dump(mode="json", exclude_none=True),
     )
+    if getattr(request.state, "clear_browser_binding", False):
+        from portal_api.auth.cookies import clear_browser_binding_cookie
+
+        clear_browser_binding_cookie(response, settings=request.app.state.settings)
+    if status == 429:
+        response.headers["Retry-After"] = str(max(1, min(3_600, retry_after_seconds or 1)))
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -123,6 +136,7 @@ def register_error_handlers(app: FastAPI) -> None:
             error_code=error.error_code,
             retryable=error.retryable,
             dependency=error.dependency,
+            retry_after_seconds=error.retry_after_seconds,
         )
 
     @app.exception_handler(RequestValidationError)

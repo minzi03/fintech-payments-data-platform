@@ -8,11 +8,14 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from opentelemetry.trace import get_current_span
+
 from portal_api.core.config import PortalApiSettings
 
 _SECRET_PATTERNS = (
     re.compile(
-        r"(?i)(password|passwd|secret|authorization|cookie|access[_-]?token|refresh[_-]?token)"
+        r"(?i)(password|passwd|secret|authorization|cookie|access[_-]?token|refresh[_-]?token|"
+        r"id[_-]?token|authorization[_-]?code|code[_-]?verifier|browser[_-]?binding|nonce|state)"
         r"\s*[:=]\s*[^\s,;]+"
     ),
     re.compile(r"(?i)(https?://[^:/\s]+:)[^@\s]+@"),
@@ -28,6 +31,14 @@ def redact_text(value: object) -> str:
     return rendered
 
 
+def current_trace_fields() -> tuple[str, str]:
+    """Return stable lowercase trace identifiers without creating spans."""
+    span_context = get_current_span().get_span_context()
+    if not span_context.is_valid:
+        return "-", "-"
+    return f"{span_context.trace_id:032x}", f"{span_context.span_id:016x}"
+
+
 class JsonFormatter(logging.Formatter):
     """Emit stable JSON events without arbitrary record internals."""
 
@@ -37,6 +48,7 @@ class JsonFormatter(logging.Formatter):
         self._environment = environment
 
     def format(self, record: logging.LogRecord) -> str:
+        trace_id, span_id = current_trace_fields()
         payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "severity": record.levelname,
@@ -45,11 +57,26 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "event": getattr(record, "event", record.getMessage()),
             "message": redact_text(record.getMessage()),
+            "trace_id": trace_id,
+            "span_id": span_id,
         }
         for key, value in record.__dict__.items():
             if key in _STANDARD_RECORD_FIELDS or key.startswith("_") or key in payload:
                 continue
-            if key in {"authorization", "cookie", "password", "secret", "token", "body"}:
+            if key in {
+                "authorization",
+                "authorization_code",
+                "body",
+                "browser_binding",
+                "code_verifier",
+                "cookie",
+                "id_token",
+                "nonce",
+                "password",
+                "secret",
+                "state",
+                "token",
+            }:
                 continue
             payload[key] = redact_text(value) if isinstance(value, str) else value
         if record.exc_info:
@@ -64,10 +91,12 @@ class ConsoleFormatter(logging.Formatter):
         event = getattr(record, "event", record.getMessage())
         correlation = getattr(record, "correlation_id", "-")
         request = getattr(record, "request_id", "-")
+        trace_id, span_id = current_trace_fields()
         message = redact_text(record.getMessage())
         return (
             f"{datetime.now(UTC).isoformat()} {record.levelname} "
-            f"event={event} correlation_id={correlation} request_id={request} {message}"
+            f"event={event} correlation_id={correlation} request_id={request} "
+            f"trace_id={trace_id} span_id={span_id} {message}"
         )
 
 

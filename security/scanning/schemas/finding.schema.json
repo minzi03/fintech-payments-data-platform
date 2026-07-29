@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "portal-security-finding/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scanner",
+    "scanner_version",
+    "scanner_database_identity",
+    "rule_or_vulnerability_id",
+    "aliases",
+    "asset_type",
+    "asset_identity",
+    "package",
+    "package_version",
+    "ecosystem",
+    "repository_path",
+    "safe_fingerprint",
+    "severity",
+    "exploitability",
+    "fix_status",
+    "scope",
+    "regression_state",
+    "first_seen_commit",
+    "source_commit",
+    "message",
+    "references"
+  ],
+  "properties": {
+    "schema_version": {"const": "portal-security-finding/v1"},
+    "scanner": {"type": "string", "minLength": 1},
+    "scanner_version": {"type": "string", "minLength": 1},
+    "scanner_database_identity": {"type": "string"},
+    "rule_or_vulnerability_id": {"type": "string", "minLength": 1},
+    "aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "asset_type": {"type": "string", "minLength": 1},
+    "asset_identity": {"type": "string", "minLength": 1},
+    "package": {"type": "string"},
+    "package_version": {"type": "string"},
+    "ecosystem": {"type": "string"},
+    "repository_path": {"type": "string"},
+    "safe_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "severity": {
+      "enum": ["critical", "high", "medium", "low", "informational"]
+    },
+    "exploitability": {
+      "enum": [
+        "known_exploited",
+        "reachable",
+        "likely_reachable",
+        "unknown",
+        "build_only",
+        "development_only",
+        "not_present",
+        "affected_condition_absent"
+      ]
+    },
+    "fix_status": {
+      "enum": [
+        "fixed_available",
+        "mitigation_available",
+        "no_fix",
+        "disputed",
+        "withdrawn",
+        "false_positive"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "first_party_runtime",
+        "first_party_development",
+        "vendor_runtime",
+        "test_fixture",
+        "documentation",
+        "generated_artifact",
+        "github_workflow"
+      ]
+    },
+    "regression_state": {
+      "enum": [
+        "new",
+        "baseline",
+        "advisory_new",
+        "resurfaced",
+        "expired_exception",
+        "resolved"
+      ]
+    },
+    "first_seen_commit": {"type": "string"},
+    "source_commit": {"type": "string"},
+    "message": {"type": "string"},
+    "references": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  }
+}

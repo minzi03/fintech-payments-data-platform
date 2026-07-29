@@ -22,29 +22,32 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1  # v4
         with:
           version: 11.9.0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: "22.20.0"
           cache: pnpm
 
       - name: Install Portal dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "./apps/portal-api[dev]"
+          python -m pip install \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement apps/portal-api/requirements-dev.lock
+          python scripts/portal/lock_portal_dependencies.py --check
           pnpm install --frozen-lockfile
 
       - name: Validate Portal API
@@ -52,7 +55,22 @@ jobs:
           python -m ruff check apps/portal-api
           python -m ruff format --check apps/portal-api
           python -m mypy --config-file apps/portal-api/pyproject.toml
-          python -m pytest -c apps/portal-api/pyproject.toml apps/portal-api/tests
+          python -m pytest -c apps/portal-api/pyproject.toml \
+            apps/portal-api/tests \
+            --ignore=apps/portal-api/tests/integration/test_redis_abuse_enforcement.py \
+            -m "not destructive_migration"
+
+      - name: Start isolated Redis test dependency
+        run: docker compose --env-file .env.example up -d --wait portal-redis
+
+      - name: Validate real-Redis abuse enforcement
+        run: >-
+          python -m pytest -c apps/portal-api/pyproject.toml
+          apps/portal-api/tests/integration/test_redis_abuse_enforcement.py
+
+      - name: Stop isolated Redis test dependency
+        if: always()
+        run: docker compose --env-file .env.example rm --stop --force portal-redis
 
       - name: Detect generated contract drift
         run: |
@@ -72,23 +90,105 @@ jobs:
           pnpm --filter @fintech/portal-web test
           pnpm --filter @fintech/portal-web build
 
-  portal-containers:
-    name: Portal container security and health
-    needs: portal-quality
+  portal-database-integration:
+    name: Portal disposable database integration
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
 
-      - name: Build and start isolated Portal
-        run: docker compose --env-file .env.example up -d --build --wait portal-api portal-web
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+          cache: pip
 
-      - name: Verify non-root users and health
+      - name: Install immutable Portal dependencies
         run: |
-          test "$(docker compose exec -T portal-api id -u)" != "0"
-          test "$(docker compose exec -T portal-web id -u)" != "0"
+          python -m pip install \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement apps/portal-api/requirements-dev.lock
+          python scripts/portal/lock_portal_dependencies.py --check
+
+      - name: Run integration tests in a run-owned database
+        run: python scripts/portal/run_disposable_portal_tests.py --suite integration
+
+  portal-migration-validation:
+    name: Portal destructive migration validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install immutable Portal dependencies
+        run: |
+          python -m pip install \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement apps/portal-api/requirements-dev.lock
+          python scripts/portal/lock_portal_dependencies.py --check
+
+      - name: Run destructive migration tests in a run-owned database
+        run: python scripts/portal/run_disposable_portal_tests.py --suite migration
+
+  portal-containers:
+    name: Portal container security and health
+    needs:
+      - portal-quality
+      - portal-security-fast
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Build and measure Portal image reproducibility
+        run: >-
+          python3 scripts/portal/build_reproducible_artifacts.py
+          --output build/portal-artifacts/manifest.json
+          --require-clean
+
+      - name: Start isolated Portal from verified images
+        run: >-
+          docker compose --env-file .env.example up -d --no-build --wait
+          portal-api portal-audit-worker portal-redis portal-web
+
+      - name: Scan exact Portal and vendor images
+        run: >-
+          python3 scripts/security/scan.py images
+          --api-image fintech-portal-api:local
+          --web-image fintech-payments-data-platform-portal-web
+
+      - name: Upload sanitized image security report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: portal-image-security-report
+          path: build/security/images.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify container hardening, identity and network isolation
+        run: python3 scripts/portal/verify_container_hardening.py --runtime
+
+      - name: Verify public health and boundary behavior
+        run: |
           curl --fail --silent http://127.0.0.1:8010/health/live
           curl --fail --silent http://127.0.0.1:3000/health
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -96,58 +196,120 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
             http://127.0.0.1:3000/developer)" = "404"
 
+      - name: Verify graceful first-party shutdown
+        run: |
+          assert_graceful_shutdown() {
+            service="$1"
+            budget="$2"
+            started="$(date +%s)"
+            docker compose stop --timeout "${budget}" "${service}"
+            elapsed="$(( $(date +%s) - started ))"
+            test "${elapsed}" -le "${budget}"
+            exit_code="$(docker inspect --format '{{.State.ExitCode}}' \
+              "$(docker compose ps -a -q "${service}")")"
+            test "${exit_code}" = "0" || test "${exit_code}" = "143"
+          }
+          assert_graceful_shutdown portal-web 30
+          assert_graceful_shutdown portal-api 30
+          assert_graceful_shutdown portal-audit-worker 45
+
       - name: Capture safe Portal diagnostics
         if: failure()
-        run: docker compose logs --tail=200 portal-api portal-web
+        run: docker compose logs --tail=200 portal-api portal-audit-worker portal-web
 
       - name: Stop Portal
         if: always()
         run: docker compose --env-file .env.example down --remove-orphans
 
+  portal-security-fast:
+    name: Portal source, dependency, secret, and workflow security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository with bounded history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate policy and run fast security gates
+        env:
+          PORTAL_SECURITY_GIT_RANGE: >-
+            ${{ github.event_name == 'pull_request'
+              && format('{0}..{1}', github.event.pull_request.base.sha,
+              github.event.pull_request.head.sha) || '' }}
+        run: python3 scripts/security/scan.py fast
+
+      - name: Upload sanitized fast security report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: portal-fast-security-report
+          path: build/security/fast.json
+          if-no-files-found: error
+          retention-days: 14
+
   portal-e2e:
-    name: Portal browser smoke test
+    name: Portal browser and local OIDC security tests
     needs: portal-quality
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1  # v4
         with:
           version: 11.9.0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: "22.20.0"
           cache: pnpm
 
       - name: Install Portal and browser dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "./apps/portal-api[dev]"
+          python -m pip install \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement apps/portal-api/requirements-dev.lock
           pnpm install --frozen-lockfile
           pnpm --filter @fintech/portal-web exec playwright install --with-deps chromium
 
-      - name: Run Portal smoke test
+      - name: Start disposable Portal and identity stack
+        run: docker compose --env-file .env.example up -d --build --wait portal-api portal-web
+
+      - name: Run Portal browser and authentication tests
+        env:
+          PORTAL_E2E_AUTH: "1"
+          PORTAL_E2E_EXTERNAL: "1"
+          PORTAL_WEB_URL: http://localhost:3000
         run: pnpm --filter @fintech/portal-web e2e
+
+      - name: Capture safe local-stack diagnostics
+        if: failure()
+        run: docker compose logs --tail=200 portal-keycloak portal-api portal-web
 
       - name: Upload safe browser diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: portal-playwright-report
           path: apps/portal-web/playwright-report
           retention-days: 7
+
+      - name: Stop disposable Portal stack
+        if: always()
+        run: docker compose --env-file .env.example down --remove-orphans
 
   quality:
     name: Phase 7 quality gates
@@ -156,10 +318,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -193,10 +355,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -236,7 +398,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.4-bookworm
+        image: postgres:16.4-bookworm@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412
         env:
           POSTGRES_DB: airflow_metadata
           POSTGRES_USER: airflow_metadata
@@ -269,10 +431,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip

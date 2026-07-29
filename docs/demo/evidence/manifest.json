@@ -1,0 +1,214 @@
+{
+  "schema_version": "demo-evidence-manifest/v1",
+  "generated_at": "2026-07-29T05:39:22.723Z",
+  "repository": "fintech-payments-data-platform",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "source_tag": "phase-portal-finalization-architecture-claims",
+  "asset_count": 12,
+  "manifest_self_hash_included": false,
+  "assets": [
+    {
+      "artifact_name": "system-context",
+      "artifact_type": "markdown",
+      "relative_path": "docs/demo/evidence/architecture/system-context.md",
+      "sha256": "b7097909a49d86160648c8b8b748051a5587ff8e91ec3f2a91fa9f41d6bc874e",
+      "description": "Sanitized current system-context and boundary diagram.",
+      "evidence_category": "architecture",
+      "provenance": "generated-from-source",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:docs/architecture/current-state.md",
+      "expected_result": "Current data-plane, control, and separate Portal boundaries are present.",
+      "limitations": ["Architecture evidence, not current service health."]
+    },
+    {
+      "artifact_name": "airflow-dag-summary",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/data-platform/airflow-dag-summary.json",
+      "sha256": "43f0d0e7226ea2ef8f2532469bebcbbe60fc7a788f9003d3a92cdc3d1ea7f161",
+      "description": "Tracked Airflow DAG inventory and state-ownership summary.",
+      "evidence_category": "data-platform",
+      "provenance": "generated-from-source",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git grep -n \"dag_id=\" 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5 -- airflow/dags",
+      "expected_result": "Four bounded DAG identifiers are found.",
+      "limitations": [
+        "Static inventory, not a current successful-run claim.",
+        "Local Airflow is not highly available."
+      ]
+    },
+    {
+      "artifact_name": "batch-contract-summary",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/data-platform/batch-contract-summary.json",
+      "sha256": "29a8d777d533f640852cbbf27451d91c2ac666da37f882843384fa51f1e1575e",
+      "description": "Settlement-v1 identity, publication, and quality-rule summary.",
+      "evidence_category": "data-platform",
+      "provenance": "generated-from-source",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:contracts/batch/settlement_v1.yml",
+      "expected_result": "Versioned CSV contract and six quality-rule codes are present.",
+      "limitations": ["No reconciliation-product or dashboard evidence."]
+    },
+    {
+      "artifact_name": "cdc-publication-boundary",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/data-platform/cdc-publication-boundary.json",
+      "sha256": "a2da4702b492cb85353f38ce8bbad24c14ee13f65604a84f416f49b701214f80",
+      "description": "Source-derived CDC ordering and immutable-publication contract.",
+      "evidence_category": "data-platform",
+      "provenance": "generated-from-source",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:docs/architecture/cdc-bronze-ingestion.md",
+      "expected_result": "Upload/checksum/manifest evidence precedes offset commit.",
+      "limitations": [
+        "Does not claim global exactly-once behavior.",
+        "Contains no live offset or payload."
+      ]
+    },
+    {
+      "artifact_name": "prepared-demo-dataset",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/data-platform/prepared-demo-dataset.json",
+      "sha256": "4278c0c41aef9879d9145a6b360641b73d8f96e251a46b8adbfa4f222f38c875",
+      "description": "Deterministic synthetic namespace and one-use live-action bounds.",
+      "evidence_category": "data-platform",
+      "provenance": "illustrative",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": true,
+      "runtime_mutation_required": false,
+      "reproduction_command": null,
+      "expected_result": "Presenter can explain the prepared/live boundary without claiming execution.",
+      "limitations": [
+        "Illustrative specification, not runtime proof.",
+        "The live generator seed is one-use per persistent database."
+      ]
+    },
+    {
+      "artifact_name": "silver-quality-summary",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/data-platform/silver-quality-summary.json",
+      "sha256": "5218c657749da521b8f2de99f3d148fc74f1c235a128ce66e9fb73b149083b9d",
+      "description": "Source-derived Silver output, normalization, quality, and lineage semantics.",
+      "evidence_category": "data-platform",
+      "provenance": "generated-from-source",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:docs/architecture/silver-processing.md",
+      "expected_result": "History, latest/current, settlement, event, and quality boundaries are present.",
+      "limitations": [
+        "Contains no live run counts.",
+        "Warehouse, dbt, Gold, and dashboards are not implemented."
+      ]
+    },
+    {
+      "artifact_name": "dead-letter-health",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/portal/dead-letter-health.json",
+      "sha256": "412f5c778f93105c9318b2ae3a61563b87dfaa8d86a2ad91d1af06c0898f2ab3",
+      "description": "Read-only worker health captured with one intentional dead letter.",
+      "evidence_category": "portal",
+      "provenance": "live-captured",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": true,
+      "runtime_mutation_required": false,
+      "reproduction_command": "docker compose --env-file .env.example exec -T portal-audit-worker python -m portal_api.audit.worker --healthcheck",
+      "expected_result": "DEGRADED with database, destination and outbox UP; pending 0; dead-lettered 1.",
+      "limitations": [
+        "Point-in-time local health evidence.",
+        "Contains no dead-letter payload."
+      ]
+    },
+    {
+      "artifact_name": "portal-runtime-boundary",
+      "artifact_type": "markdown",
+      "relative_path": "docs/demo/evidence/portal/runtime-boundary.md",
+      "sha256": "949e33e0cc233b841a3af6d776081731d4de970f6d0cf4bfa60fdba2aa2c1aca",
+      "description": "Portal identity, session, abuse, audit, and data-plane non-integration boundary.",
+      "evidence_category": "portal",
+      "provenance": "generated-from-source",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:docs/portal/architecture-boundaries.md",
+      "expected_result": "PostgreSQL authority, Redis role, opaque session, and no data-plane adapter are documented.",
+      "limitations": ["Architecture evidence, not a live login capture."]
+    },
+    {
+      "artifact_name": "security-summary",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/security/security-summary.json",
+      "sha256": "7caacfc7a875208b030ec61cf2044318d3e4298b2ecb2f6c9f52a92b1fce2006",
+      "description": "Presentation-safe security policy and bounded-disposition summary.",
+      "evidence_category": "security",
+      "provenance": "derived-from-recorded-verification",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:docs/portal/security-scanning.md",
+      "expected_result": "Five scanner families and current bounded policy disposition are documented.",
+      "limitations": [
+        "No raw CVE or secret-match output.",
+        "Policy passing is not a vulnerability-free or production-authorization claim."
+      ]
+    },
+    {
+      "artifact_name": "offline-rehearsal",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/validation/offline-rehearsal.json",
+      "sha256": "6fbbcc98bb02b684d27504c69d454f40f67fbf3891392697cc1f21e3ac75d253",
+      "description": "Recorded evidence-only rehearsal with no service or persistent-state dependency.",
+      "evidence_category": "validation",
+      "provenance": "live-captured",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": null,
+      "expected_result": "Offline route completes using all tracked evidence categories.",
+      "limitations": ["Live CDC rehearsal remains pending FF-06."]
+    },
+    {
+      "artifact_name": "validation-safety",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/validation/validation-safety.json",
+      "sha256": "abf5cfca9cce1a36179f636407000ddacc8fb899feab389416dbeb906a57a557",
+      "description": "FF-01 destructive-test isolation and recorded verification summary.",
+      "evidence_category": "validation",
+      "provenance": "derived-from-recorded-verification",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:docs/portal/testing.md",
+      "expected_result": "Disposable ownership, one-use token, refusal, and scoped teardown are documented.",
+      "limitations": [
+        "Destructive migration tests are not rerun by this demo package."
+      ]
+    },
+    {
+      "artifact_name": "verification-summary",
+      "artifact_type": "json",
+      "relative_path": "docs/demo/evidence/validation/verification-summary.json",
+      "sha256": "17f90e73008435742ff036630fde3e63311ff983d9e4b92eb375fb2417c5af29",
+      "description": "Sanitized checkpoint test, OpenAPI, migration, and hardening summary.",
+      "evidence_category": "validation",
+      "provenance": "derived-from-recorded-verification",
+      "sanitization_status": "reviewed-safe",
+      "contains_synthetic_data": false,
+      "runtime_mutation_required": false,
+      "reproduction_command": "git show 11ba97f539f9f3ed7e16c2e772a9988afce7e9e5:README.md",
+      "expected_result": "Recorded verification counts, OpenAPI identity, Alembic head, and hardening result are present.",
+      "limitations": [
+        "Checkpoint evidence, not a claim that all suites reran during FF-05.",
+        "No remote CI result is claimed."
+      ]
+    }
+  ]
+}

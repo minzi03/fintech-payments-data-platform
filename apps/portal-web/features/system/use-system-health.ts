@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { portalApi } from "@/api/portal-api";
 import { portalQueryKeys } from "@/api/query-keys";
 
-export function useSystemHealth() {
+export function useSystemHealth(environmentId?: string) {
   const liveness = useQuery({
     queryKey: portalQueryKeys.liveness(),
     queryFn: portalApi.liveness,
@@ -19,8 +19,9 @@ export function useSystemHealth() {
     queryFn: portalApi.systemInfo,
   });
   const dependencies = useQuery({
-    queryKey: portalQueryKeys.dependencies(),
-    queryFn: () => portalApi.dependencies(),
+    queryKey: portalQueryKeys.dependencies(environmentId),
+    queryFn: () => portalApi.dependencies(environmentId as string),
+    enabled: environmentId !== undefined,
   });
   return { dependencies, liveness, readiness, systemInfo };
 }

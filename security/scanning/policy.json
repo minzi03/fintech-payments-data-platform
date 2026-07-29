@@ -1,0 +1,643 @@
+{
+  "schema_version": "portal-security-policy/v1",
+  "policy_version": "2026-07-29.3",
+  "exit_codes": {
+    "passed": 0,
+    "blocking_finding": 10,
+    "scanner_failure": 20,
+    "stale_database": 21,
+    "input_mismatch": 22,
+    "invalid_governance": 23,
+    "unsafe_report": 24,
+    "tool_identity_mismatch": 25
+  },
+  "non_suppressible": [
+    "confirmed_secret",
+    "known_exploited_reachable_first_party",
+    "critical_privilege_regression",
+    "docker_socket_exposure",
+    "privileged_mode",
+    "host_namespace_regression",
+    "digest_pin_removal",
+    "expired_exception",
+    "scanner_failure",
+    "redaction_failure",
+    "input_identity_mismatch"
+  ],
+  "blocking": {
+    "first_party_runtime": {
+      "critical": ["new", "resurfaced", "baseline", "expired_exception"],
+      "high": ["new", "resurfaced", "expired_exception"]
+    },
+    "github_workflow": {
+      "critical": ["new", "resurfaced", "baseline", "expired_exception"],
+      "high": ["new", "resurfaced", "expired_exception"]
+    },
+    "vendor_runtime": {
+      "critical": ["new", "resurfaced", "expired_exception"],
+      "high": ["new", "resurfaced", "expired_exception"]
+    }
+  },
+  "exception_maximum_days": {
+    "first_party_critical": 7,
+    "first_party_fixed_available_high": 14,
+    "first_party_no_fix_high": 60,
+    "vendor_critical_high": 60,
+    "development_or_build_only": 90,
+    "disputed_or_withdrawn": 90,
+    "false_positive": 180,
+    "fake_secret_fixture": 180,
+    "scanner_outage_emergency": 1
+  },
+  "report_retention_days": {
+    "pull_request": 14,
+    "main_or_scheduled": 30,
+    "release": 90,
+    "raw_secret": 0
+  },
+  "dependency_scope_overrides": [
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "brace-expansion",
+      "package_version": "1.1.16",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    },
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "brace-expansion",
+      "package_version": "5.0.7",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    },
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "js-yaml",
+      "package_version": "4.2.0",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    },
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "vite",
+      "package_version": "8.0.2",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    }
+  ],
+  "image_reachability_overrides": [
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2023-45853",
+      "packages": ["zlib1g"],
+      "package_version": "1:1.2.13.dfsg-1",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "Debian Bookworm marks src:zlib ignored because contrib/minizip is not built; exact image package inventory contains libz only and no MiniZip files.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-13221",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "Debian records the vulnerable trie implementation as introduced in Perl 5.37.10; both exact images contain Perl 5.36.0.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-42496",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The affected Archive::Tar module is absent from both exact images; module import and perl-base file inventory checks fail closed.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-57433",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The affected Storable module is absent from both exact images; module import and perl-base file inventory checks fail closed.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-8376",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The advisory requires a 32-bit Perl build; Docker and dpkg report amd64 for both exact images.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3"
+      ],
+      "vulnerability_id": "CVE-2025-69720",
+      "packages": ["libncursesw6", "libtinfo6", "ncurses-base"],
+      "package_version": "6.4-4",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The advisory affects the infocmp CLI in ncurses-bin; exact dpkg file ownership excludes infocmp from these binary packages.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2025-69720",
+      "packages": ["libtinfo6", "ncurses-base"],
+      "package_version": "6.4-4",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The advisory affects the infocmp CLI in ncurses-bin; exact dpkg file ownership excludes infocmp from these binary packages.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2025-69720",
+      "packages": ["ncurses-bin"],
+      "package_version": "6.4-4",
+      "architectures": ["amd64"],
+      "exploitability": "unknown",
+      "evidence": "The affected infocmp binary is present, while Portal entrypoints do not invoke it; absence of every indirect invocation is not proven.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-41992",
+      "packages": ["gzip"],
+      "package_version": "1.12-1",
+      "architectures": ["amd64"],
+      "exploitability": "unknown",
+      "evidence": "The affected gzip binary is present, while Portal entrypoints do not invoke multi-file LZW/LZH decompression; indirect invocation is not fully proven absent.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-42497",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The affected Archive::Tar module is absent from both exact images; module import and perl-base file inventory checks fail closed.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-48962",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The affected IO::Compress File::GlobMapper module is absent from both exact images; module import and perl-base file inventory checks fail closed.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-53615",
+      "packages": [
+        "libmount1",
+        "libsmartcols1",
+        "libuuid1",
+        "mount",
+        "util-linux",
+        "util-linux-extra"
+      ],
+      "package_version": "2.38.1-5+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The advisory affects libblkid DOS partition parsing; exact dpkg file ownership places that code in libblkid1, not these source-package sibling binaries.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-53615",
+      "packages": ["bsdutils"],
+      "package_version": "1:2.38.1-5+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The advisory affects libblkid DOS partition parsing; exact dpkg file ownership places that code in libblkid1, not the bsdutils source-package sibling binary.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-53615",
+      "packages": ["libblkid1"],
+      "package_version": "2.38.1-5+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "unknown",
+      "evidence": "The affected libblkid library is present; Portal entrypoints neither inspect block devices nor mount host devices, but complete indirect reachability is not proven.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-54369",
+      "packages": ["libacl1"],
+      "package_version": "2.3.1-3",
+      "architectures": ["amd64"],
+      "exploitability": "unknown",
+      "evidence": "The affected libacl library is present; Portal runs non-root and does not call ACL pathname APIs directly, but complete indirect reachability is not proven.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-57432",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "unknown",
+      "evidence": "The affected core Perl pack and unpack operations are present; Portal entrypoints do not invoke Perl, but complete indirect invocation is not proven absent.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    },
+    {
+      "asset_identities": [
+        "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7"
+      ],
+      "vulnerability_id": "CVE-2026-9538",
+      "packages": ["perl-base"],
+      "package_version": "5.36.0-7+deb12u3",
+      "architectures": ["amd64"],
+      "exploitability": "affected_condition_absent",
+      "evidence": "The affected Archive::Tar module is absent from both exact images; module import and perl-base file inventory checks fail closed.",
+      "evidence_source": "Exact-image Trivy inventory plus FF-06A dpkg-query, module, architecture and file-ownership probes.",
+      "analysis_date": "2026-07-29",
+      "review_owner": "portal-maintainers",
+      "expiry_or_removal_trigger": "Revalidate on image identity, package version, advisory condition, architecture or scanner database change.",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
+    }
+  ]
+}

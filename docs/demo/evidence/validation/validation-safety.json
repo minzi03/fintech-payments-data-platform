@@ -1,0 +1,29 @@
+{
+  "schema_version": "demo-validation-safety/v1",
+  "provenance": "derived-from-recorded-verification",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "ordinary_backend": {
+    "destructive_migration_tests_excluded": true,
+    "fallback_to_runtime_database_url": false
+  },
+  "destructive_migration_workflow": {
+    "unique_disposable_database": true,
+    "unique_compose_project": true,
+    "marker_outside_alembic_schema": true,
+    "marker_survives_downgrade": true,
+    "one_use_token_required": true,
+    "token_expiry_and_run_binding": true,
+    "remote_host_refused": true,
+    "persistent_portal_database_refused": true,
+    "excessive_role_privileges_refused": true,
+    "scoped_teardown": true
+  },
+  "recorded_verification": {
+    "negative_isolation_tests_passed": 36,
+    "positive_migration_tests_passed": 6,
+    "disposable_containers_after_validation": 0,
+    "disposable_volumes_after_validation": 0
+  },
+  "runtime_mutation_required_for_demo": false
+}

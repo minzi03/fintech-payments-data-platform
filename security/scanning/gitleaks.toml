@@ -1,0 +1,10 @@
+title = "Fintech Payments Data Platform secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Only generated and ignored scanner output is excluded; tracked fixtures require SCN review."
+paths = [
+  '''^build/security/''',
+]

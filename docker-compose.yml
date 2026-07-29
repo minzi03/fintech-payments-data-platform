@@ -81,7 +81,142 @@ x-airflow-common: &airflow-common
       condition: service_completed_successfully
 
 services:
+  portal-postgres:
+    image: postgres:16.4-bookworm@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PORTAL_DB_NAME:-portal_control}
+      POSTGRES_USER: ${PORTAL_DB_ADMIN_USER:-portal_admin}
+      POSTGRES_PASSWORD: ${PORTAL_DB_ADMIN_PASSWORD:-change_me}
+      PORTAL_DB_MIGRATION_PASSWORD: ${PORTAL_DB_MIGRATION_PASSWORD:-change_me}
+      PORTAL_DB_RUNTIME_PASSWORD: ${PORTAL_DB_RUNTIME_PASSWORD:-change_me}
+      PORTAL_DB_AUDIT_PASSWORD: ${PORTAL_DB_AUDIT_PASSWORD:-change_me}
+      PORTAL_DB_ARCHIVE_PASSWORD: ${PORTAL_DB_ARCHIVE_PASSWORD:-change_me}
+    ports:
+      - "127.0.0.1:${PORTAL_DB_PORT:-55432}:5432"
+    volumes:
+      - portal_postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/portal/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - portal-data
+
+  portal-migrate:
+    image: fintech-portal-api:local
+    build:
+      context: .
+      dockerfile: apps/portal-api/Dockerfile
+      args:
+        PORTAL_API_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
+        PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
+        PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
+    restart: "no"
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    pids_limit: 32
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      portal-postgres:
+        condition: service_healthy
+    environment:
+      PORTAL_MIGRATION_DATABASE_URL: >-
+        postgresql+psycopg://portal_migration:${PORTAL_DB_MIGRATION_PASSWORD:-change_me}@portal-postgres:5432/${PORTAL_DB_NAME:-portal_control}
+    command:
+      - alembic
+      - -c
+      - /app/alembic.ini
+      - upgrade
+      - head
+    healthcheck:
+      disable: true
+    mem_limit: 128m
+    cpus: 0.25
+    networks:
+      - portal-data
+
+  portal-keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${PORTAL_IDP_ADMIN_USER:-portal-local-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${PORTAL_IDP_ADMIN_PASSWORD:-local-admin-change-me}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: ${PORTAL_IDP_PUBLIC_URL:-http://portal-idp.localhost:8081}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8081"
+    ports:
+      - "127.0.0.1:${PORTAL_IDP_PORT:-8081}:8081"
+    networks:
+      portal-data:
+        aliases:
+          - portal-idp.localhost
+    volumes:
+      - ./infrastructure/keycloak/realm-export.json:/opt/keycloak/data/import/fintech-portal-realm.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '200 OK' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    mem_limit: 768m
+    cpus: 1.0
+
+  portal-redis:
+    image: redis:7.4.2-alpine@sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory-policy
+      - volatile-lru
+    ports:
+      - "127.0.0.1:${PORTAL_REDIS_PORT:-56379}:6379"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    mem_limit: 128m
+    cpus: 0.25
+    networks:
+      - portal-data
+
   portal-api:
+    image: fintech-portal-api:local
     build:
       context: .
       dockerfile: apps/portal-api/Dockerfile
@@ -90,6 +225,26 @@ services:
         PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
         PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    pids_limit: 64
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      portal-keycloak:
+        condition: service_healthy
+      portal-migrate:
+        condition: service_completed_successfully
     environment:
       PORTAL_API_ENVIRONMENT: ${PORTAL_API_ENVIRONMENT:-local}
       PORTAL_API_SERVICE_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
@@ -108,10 +263,116 @@ services:
       PORTAL_API_READINESS_TIMEOUT_SECONDS: ${PORTAL_API_READINESS_TIMEOUT_SECONDS:-5}
       PORTAL_API_HEALTH_CACHE_TTL_SECONDS: ${PORTAL_API_HEALTH_CACHE_TTL_SECONDS:-2}
       PORTAL_API_TELEMETRY_ENABLED: ${PORTAL_API_TELEMETRY_ENABLED:-false}
+      PORTAL_API_TELEMETRY_METRICS_EXPORTER: >-
+        ${PORTAL_API_TELEMETRY_METRICS_EXPORTER:-prometheus}
+      PORTAL_API_TELEMETRY_TRACE_EXPORTER: ${PORTAL_API_TELEMETRY_TRACE_EXPORTER:-none}
+      PORTAL_API_TELEMETRY_TRACE_SAMPLING_RATIO: >-
+        ${PORTAL_API_TELEMETRY_TRACE_SAMPLING_RATIO:-0.1}
+      PORTAL_API_TELEMETRY_EXPORT_INTERVAL_SECONDS: >-
+        ${PORTAL_API_TELEMETRY_EXPORT_INTERVAL_SECONDS:-30}
+      PORTAL_API_TELEMETRY_EXPORT_TIMEOUT_SECONDS: >-
+        ${PORTAL_API_TELEMETRY_EXPORT_TIMEOUT_SECONDS:-10}
+      PORTAL_API_TELEMETRY_OTLP_ENDPOINT: >-
+        ${PORTAL_API_TELEMETRY_OTLP_ENDPOINT:-http://localhost:4318}
+      PORTAL_API_TELEMETRY_PROMETHEUS_HOST: 0.0.0.0
+      PORTAL_API_TELEMETRY_PROMETHEUS_PORT: 9464
+      PORTAL_API_TELEMETRY_RESOURCE_ATTRIBUTES: >-
+        ${PORTAL_API_TELEMETRY_RESOURCE_ATTRIBUTES:-}
       PORTAL_API_OPENAPI_ENABLED: ${PORTAL_API_OPENAPI_ENABLED:-true}
       PORTAL_API_DEVELOPMENT_IDENTITY_ENABLED: "false"
+      PORTAL_API_SECURITY_RUNTIME_ENABLED: ${PORTAL_API_SECURITY_RUNTIME_ENABLED:-true}
+      PORTAL_API_SECRET_PROVIDER: ${PORTAL_API_SECRET_PROVIDER:-environment}
+      PORTAL_API_DATABASE_URL: >-
+        postgresql+psycopg://portal_runtime:${PORTAL_DB_RUNTIME_PASSWORD:-change_me}@portal-postgres:5432/${PORTAL_DB_NAME:-portal_control}
+      PORTAL_API_ABUSE_PROTECTION_ENABLED: ${PORTAL_API_ABUSE_PROTECTION_ENABLED:-true}
+      # `.env.example` uses the host-mapped URL for direct Python execution.
+      # Containers use Compose DNS and the container port.
+      PORTAL_API_REDIS_URL: redis://portal-redis:6379/0
+      PORTAL_API_REDIS_CONNECT_TIMEOUT_SECONDS: >-
+        ${PORTAL_API_REDIS_CONNECT_TIMEOUT_SECONDS:-0.5}
+      PORTAL_API_REDIS_OPERATION_TIMEOUT_SECONDS: >-
+        ${PORTAL_API_REDIS_OPERATION_TIMEOUT_SECONDS:-0.25}
+      PORTAL_API_REDIS_MAX_CONNECTIONS: ${PORTAL_API_REDIS_MAX_CONNECTIONS:-50}
+      PORTAL_API_REDIS_KEY_PREFIX: ${PORTAL_API_REDIS_KEY_PREFIX:-portal:abuse}
+      PORTAL_API_ABUSE_POLICY_VERSION: ${PORTAL_API_ABUSE_POLICY_VERSION:-development-v1}
+      PORTAL_API_ABUSE_LOCAL_FALLBACK_MAX_KEYS: >-
+        ${PORTAL_API_ABUSE_LOCAL_FALLBACK_MAX_KEYS:-10000}
+      PORTAL_API_ABUSE_PROVIDER_MAX_CONCURRENCY: >-
+        ${PORTAL_API_ABUSE_PROVIDER_MAX_CONCURRENCY:-20}
+      PORTAL_API_ABUSE_PROVIDER_CONCURRENCY_LEASE_SECONDS: >-
+        ${PORTAL_API_ABUSE_PROVIDER_CONCURRENCY_LEASE_SECONDS:-15}
+      PORTAL_API_ABUSE_BACKEND_AUDIT_INTERVAL_SECONDS: >-
+        ${PORTAL_API_ABUSE_BACKEND_AUDIT_INTERVAL_SECONDS:-60}
+      PORTAL_API_FORWARDED_HEADER_MODE: ${PORTAL_API_FORWARDED_HEADER_MODE:-direct}
+      PORTAL_API_TRUSTED_PROXY_CIDRS: ${PORTAL_API_TRUSTED_PROXY_CIDRS:-}
+      PORTAL_API_MAX_FORWARDED_HOPS: ${PORTAL_API_MAX_FORWARDED_HOPS:-5}
+      PORTAL_API_IPV4_PREFIX_LENGTH: ${PORTAL_API_IPV4_PREFIX_LENGTH:-24}
+      PORTAL_API_IPV6_PREFIX_LENGTH: ${PORTAL_API_IPV6_PREFIX_LENGTH:-64}
+      PORTAL_API_CLIENT_ADDRESS_HMAC_SECRET: >-
+        ${PORTAL_API_CLIENT_ADDRESS_HMAC_SECRET:-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}
+      PORTAL_API_SECURITY_MASTER_KEY: >-
+        ${PORTAL_API_SECURITY_MASTER_KEY:-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}
+      PORTAL_API_SECURITY_KEY_VERSION: ${PORTAL_API_SECURITY_KEY_VERSION:-local-development-v1}
+      PORTAL_API_SECURITY_PREVIOUS_MASTER_KEY: ${PORTAL_API_SECURITY_PREVIOUS_MASTER_KEY:-}
+      PORTAL_API_SECURITY_PREVIOUS_KEY_VERSION: ${PORTAL_API_SECURITY_PREVIOUS_KEY_VERSION:-}
+      PORTAL_API_SECURITY_FUTURE_KEY_VERSION: ${PORTAL_API_SECURITY_FUTURE_KEY_VERSION:-}
+      PORTAL_API_SECURITY_KEY_TRANSITION_STARTED_AT: >-
+        ${PORTAL_API_SECURITY_KEY_TRANSITION_STARTED_AT:-}
+      PORTAL_API_SECURITY_KEY_TRANSITION_EXPIRES_AT: >-
+        ${PORTAL_API_SECURITY_KEY_TRANSITION_EXPIRES_AT:-}
+      PORTAL_API_OIDC_PROVIDER_ID: ${PORTAL_API_OIDC_PROVIDER_ID:-local-keycloak}
+      PORTAL_API_OIDC_ISSUER: >-
+        ${PORTAL_API_OIDC_ISSUER:-http://portal-idp.localhost:8081/realms/fintech-portal}
+      PORTAL_API_OIDC_DISCOVERY_URL: >-
+        ${PORTAL_API_OIDC_DISCOVERY_URL:-http://portal-idp.localhost:8081/realms/fintech-portal/.well-known/openid-configuration}
+      PORTAL_API_OIDC_CLIENT_ID: ${PORTAL_API_OIDC_CLIENT_ID:-fintech-portal}
+      PORTAL_API_OIDC_CLIENT_SECRET: ${PORTAL_API_OIDC_CLIENT_SECRET:-local-portal-client-secret}
+      PORTAL_API_OIDC_REDIRECT_URI: ${PORTAL_API_OIDC_REDIRECT_URI:-http://localhost:3000/portal-api/v1/auth/callback}
+      PORTAL_API_OIDC_SCOPES: ${PORTAL_API_OIDC_SCOPES:-openid profile}
+      PORTAL_API_OIDC_ALLOWED_ALGORITHMS: ${PORTAL_API_OIDC_ALLOWED_ALGORITHMS:-RS256}
+      PORTAL_API_OIDC_GROUP_CLAIM_PATH: ${PORTAL_API_OIDC_GROUP_CLAIM_PATH:-groups}
+      PORTAL_API_OIDC_ALLOWED_ROLES: >-
+        ${PORTAL_API_OIDC_ALLOWED_ROLES:-portal_viewer,data_engineer_viewer,platform_operator_viewer,security_auditor_viewer,portal_admin_viewer}
+      PORTAL_API_ALLOWED_RETURN_PATHS: ${PORTAL_API_ALLOWED_RETURN_PATHS:-/,/system-status}
+      PORTAL_API_ALLOWED_ENVIRONMENT_IDS: ${PORTAL_API_ALLOWED_ENVIRONMENT_IDS:-local,development}
+      PORTAL_API_PORTAL_TENANT_ID: ${PORTAL_API_PORTAL_TENANT_ID:-fintech-platform-primary}
+      PORTAL_API_IDENTITY_MAPPING_REVISION: ${PORTAL_API_IDENTITY_MAPPING_REVISION:-local-mapping-v1}
+      PORTAL_API_CALLBACK_POLICY_REVISION: ${PORTAL_API_CALLBACK_POLICY_REVISION:-local-callback-policy-v1}
+      PORTAL_API_CAPABILITY_REVISION: ${PORTAL_API_CAPABILITY_REVISION:-local-capability-v1}
+      PORTAL_API_SESSION_SECURITY_EPOCH: ${PORTAL_API_SESSION_SECURITY_EPOCH:-1}
+      PORTAL_API_SESSION_IDLE_TTL_SECONDS: ${PORTAL_API_SESSION_IDLE_TTL_SECONDS:-1800}
+      PORTAL_API_SESSION_ABSOLUTE_TTL_SECONDS: ${PORTAL_API_SESSION_ABSOLUTE_TTL_SECONDS:-28800}
+      PORTAL_API_IDENTITY_FRESHNESS_SECONDS: ${PORTAL_API_IDENTITY_FRESHNESS_SECONDS:-900}
+      PORTAL_API_SESSION_ACTIVITY_WRITE_INTERVAL_SECONDS: ${PORTAL_API_SESSION_ACTIVITY_WRITE_INTERVAL_SECONDS:-60}
+      PORTAL_API_MAXIMUM_ACTIVE_SESSIONS: ${PORTAL_API_MAXIMUM_ACTIVE_SESSIONS:-5}
+      PORTAL_API_OIDC_HTTP_TIMEOUT_SECONDS: ${PORTAL_API_OIDC_HTTP_TIMEOUT_SECONDS:-5}
+      PORTAL_API_OIDC_CACHE_TTL_SECONDS: ${PORTAL_API_OIDC_CACHE_TTL_SECONDS:-900}
+      PORTAL_API_OIDC_STALE_CEILING_SECONDS: >-
+        ${PORTAL_API_OIDC_STALE_CEILING_SECONDS:-3600}
+      PORTAL_API_PROVIDER_REFRESH_ENABLED: ${PORTAL_API_PROVIDER_REFRESH_ENABLED:-true}
+      PORTAL_API_PROVIDER_REFRESH_THRESHOLD_SECONDS: >-
+        ${PORTAL_API_PROVIDER_REFRESH_THRESHOLD_SECONDS:-120}
+      PORTAL_API_PROVIDER_REFRESH_SCAN_INTERVAL_SECONDS: >-
+        ${PORTAL_API_PROVIDER_REFRESH_SCAN_INTERVAL_SECONDS:-5}
+      PORTAL_API_PROVIDER_REFRESH_RETRY_BUDGET: >-
+        ${PORTAL_API_PROVIDER_REFRESH_RETRY_BUDGET:-3}
+      PORTAL_API_PROVIDER_REFRESH_INITIAL_BACKOFF_SECONDS: >-
+        ${PORTAL_API_PROVIDER_REFRESH_INITIAL_BACKOFF_SECONDS:-1}
+      PORTAL_API_PROVIDER_REFRESH_MAX_BACKOFF_SECONDS: >-
+        ${PORTAL_API_PROVIDER_REFRESH_MAX_BACKOFF_SECONDS:-30}
+      PORTAL_API_PROVIDER_REFRESH_LEASE_SECONDS: >-
+        ${PORTAL_API_PROVIDER_REFRESH_LEASE_SECONDS:-30}
+      PORTAL_API_PROVIDER_REFRESH_BATCH_SIZE: >-
+        ${PORTAL_API_PROVIDER_REFRESH_BATCH_SIZE:-25}
+      PORTAL_API_PROVIDER_LOGOUT_TIMEOUT_SECONDS: >-
+        ${PORTAL_API_PROVIDER_LOGOUT_TIMEOUT_SECONDS:-5}
+      PORTAL_API_PROVIDER_LOGOUT_REPLAY_TTL_SECONDS: >-
+        ${PORTAL_API_PROVIDER_LOGOUT_REPLAY_TTL_SECONDS:-86400}
+      PORTAL_API_LOGIN_INTENT_TTL_SECONDS: ${PORTAL_API_LOGIN_INTENT_TTL_SECONDS:-300}
+      PORTAL_API_LOGIN_TRANSACTION_TTL_SECONDS: ${PORTAL_API_LOGIN_TRANSACTION_TTL_SECONDS:-300}
     ports:
       - "127.0.0.1:${PORTAL_API_PORT:-8010}:8010"
+      - "127.0.0.1:${PORTAL_API_PROMETHEUS_PORT:-9464}:9464"
     healthcheck:
       test:
         - CMD
@@ -119,13 +380,105 @@ services:
         - -c
         - >-
           import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8010/health/live', timeout=2)
+          urllib.request.urlopen('http://127.0.0.1:8010/health/ready', timeout=2)
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 10s
     mem_limit: 256m
     cpus: 0.50
+    networks:
+      - portal-app
+      - portal-data
+
+  portal-audit-worker:
+    image: fintech-portal-api:local
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    pids_limit: 64
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      portal-migrate:
+        condition: service_completed_successfully
+    environment:
+      PORTAL_API_ENVIRONMENT: ${PORTAL_API_ENVIRONMENT:-local}
+      PORTAL_API_SERVICE_NAME: portal-audit-worker
+      PORTAL_API_SERVICE_VERSION: ${PORTAL_API_SERVICE_VERSION:-0.1.0-dev}
+      PORTAL_API_BUILD_SHA: ${PORTAL_API_BUILD_SHA:-local}
+      PORTAL_API_BUILD_TIME: ${PORTAL_API_BUILD_TIME:-local}
+      PORTAL_API_LOG_LEVEL: ${PORTAL_API_LOG_LEVEL:-INFO}
+      PORTAL_API_LOG_FORMAT: ${PORTAL_API_LOG_FORMAT:-console}
+      PORTAL_API_SECURITY_RUNTIME_ENABLED: "false"
+      PORTAL_API_SECRET_PROVIDER: ${PORTAL_API_SECRET_PROVIDER:-environment}
+      PORTAL_API_ABUSE_PROTECTION_ENABLED: "false"
+      PORTAL_API_AUDIT_OUTBOX_ENABLED: ${PORTAL_API_AUDIT_OUTBOX_ENABLED:-true}
+      PORTAL_API_AUDIT_WORKER_DATABASE_URL: >-
+        postgresql+psycopg://portal_archive:${PORTAL_DB_ARCHIVE_PASSWORD:-change_me}@portal-postgres:5432/${PORTAL_DB_NAME:-portal_control}
+      PORTAL_API_AUDIT_OUTBOX_POLL_INTERVAL_SECONDS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_POLL_INTERVAL_SECONDS:-1}
+      PORTAL_API_AUDIT_OUTBOX_BATCH_SIZE: ${PORTAL_API_AUDIT_OUTBOX_BATCH_SIZE:-100}
+      PORTAL_API_AUDIT_OUTBOX_WORKER_CONCURRENCY: >-
+        ${PORTAL_API_AUDIT_OUTBOX_WORKER_CONCURRENCY:-4}
+      PORTAL_API_AUDIT_OUTBOX_LEASE_SECONDS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_LEASE_SECONDS:-30}
+      PORTAL_API_AUDIT_OUTBOX_MAX_ATTEMPTS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_MAX_ATTEMPTS:-5}
+      PORTAL_API_AUDIT_OUTBOX_BASE_BACKOFF_SECONDS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_BASE_BACKOFF_SECONDS:-1}
+      PORTAL_API_AUDIT_OUTBOX_MAX_BACKOFF_SECONDS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_MAX_BACKOFF_SECONDS:-60}
+      PORTAL_API_AUDIT_OUTBOX_DESTINATION: >-
+        ${PORTAL_API_AUDIT_OUTBOX_DESTINATION:-local_postgres}
+      PORTAL_API_AUDIT_OUTBOX_DELIVERY_TIMEOUT_SECONDS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_DELIVERY_TIMEOUT_SECONDS:-5}
+      PORTAL_API_AUDIT_OUTBOX_RETENTION_DAYS: >-
+        ${PORTAL_API_AUDIT_OUTBOX_RETENTION_DAYS:-7}
+      PORTAL_API_AUDIT_DEAD_LETTER_RETENTION_DAYS: >-
+        ${PORTAL_API_AUDIT_DEAD_LETTER_RETENTION_DAYS:-30}
+      PORTAL_API_MAINTENANCE_ENABLED: ${PORTAL_API_MAINTENANCE_ENABLED:-true}
+      PORTAL_API_MAINTENANCE_INTERVAL_SECONDS: >-
+        ${PORTAL_API_MAINTENANCE_INTERVAL_SECONDS:-60}
+      PORTAL_API_MAINTENANCE_BATCH_SIZE: ${PORTAL_API_MAINTENANCE_BATCH_SIZE:-100}
+      PORTAL_API_MAINTENANCE_MAX_RUNTIME_SECONDS: >-
+        ${PORTAL_API_MAINTENANCE_MAX_RUNTIME_SECONDS:-30}
+      PORTAL_API_REPLAY_RETENTION_BUFFER_SECONDS: >-
+        ${PORTAL_API_REPLAY_RETENTION_BUFFER_SECONDS:-300}
+      PORTAL_API_TERMINAL_ENVELOPE_RETENTION_DAYS: >-
+        ${PORTAL_API_TERMINAL_ENVELOPE_RETENTION_DAYS:-7}
+      PORTAL_API_TELEMETRY_ENABLED: ${PORTAL_API_TELEMETRY_ENABLED:-false}
+      PORTAL_API_TELEMETRY_METRICS_EXPORTER: ${PORTAL_API_TELEMETRY_METRICS_EXPORTER:-none}
+      PORTAL_API_TELEMETRY_TRACE_EXPORTER: ${PORTAL_API_TELEMETRY_TRACE_EXPORTER:-none}
+    command:
+      - python
+      - -m
+      - portal_api.audit.worker
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -m
+        - portal_api.audit.worker
+        - --healthcheck
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 256m
+    cpus: 0.50
+    networks:
+      - portal-data
 
   portal-web:
     build:
@@ -136,12 +489,29 @@ services:
         PORTAL_BUILD_SHA: ${NEXT_PUBLIC_PORTAL_BUILD_SHA:-local}
         PORTAL_ENV: ${NEXT_PUBLIC_PORTAL_ENV:-local}
         PORTAL_API_INTERNAL_URL: http://portal-api:8010
+        PORTAL_IDP_PUBLIC_URL: ${PORTAL_IDP_PUBLIC_URL:-http://portal-idp.localhost:8081}
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
+    pids_limit: 64
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       portal-api:
         condition: service_healthy
     environment:
       PORTAL_API_INTERNAL_URL: http://portal-api:8010
+      PORTAL_PUBLIC_ORIGIN: ${PORTAL_PUBLIC_ORIGIN:-http://localhost:3000}
     ports:
       - "127.0.0.1:${PORTAL_WEB_PORT:-3000}:3000"
     healthcheck:
@@ -159,6 +529,8 @@ services:
       start_period: 10s
     mem_limit: 384m
     cpus: 0.75
+    networks:
+      - portal-app
 
   postgres:
     image: postgres:16.4-bookworm
@@ -521,7 +893,15 @@ services:
       retries: 20
       start_period: 30s
 
+networks:
+  portal-app:
+    name: fintech-payments-portal-app
+  portal-data:
+    name: fintech-payments-portal-data
+
 volumes:
+  portal_postgres_data:
+    name: fintech-payments-portal-postgres-data
   postgres_data:
     name: fintech-payments-postgres-data
   minio_data:

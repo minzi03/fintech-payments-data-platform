@@ -5,13 +5,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { portalQueryKeys } from "@/api/query-keys";
 import { ProblemAlert } from "@/components/problem-alert";
 import { StatusBadge } from "@/components/status-badge";
+import { usePortalSession } from "@/features/auth/session-context";
 import { useSystemHealth } from "@/features/system/use-system-health";
 
 export function SystemStatusPanel() {
   const queryClient = useQueryClient();
-  const { dependencies, liveness, readiness } = useSystemHealth();
-  const loading = liveness.isPending || readiness.isPending || dependencies.isPending;
-  const error = liveness.error ?? readiness.error ?? dependencies.error;
+  const { selectedEnvironment, state: sessionState } = usePortalSession();
+  const { dependencies, liveness, readiness } = useSystemHealth(selectedEnvironment ?? undefined);
+  const dependencyLoading = selectedEnvironment !== null && dependencies.isPending;
+  const loading = liveness.isPending || readiness.isPending || dependencyLoading;
+  const error =
+    liveness.error ?? readiness.error ?? (selectedEnvironment !== null ? dependencies.error : null);
   const lastChecked = [
     liveness.dataUpdatedAt,
     readiness.dataUpdatedAt,
@@ -76,7 +80,24 @@ export function SystemStatusPanel() {
             {dependencies.data?.dependencies.length ?? 0} configured
           </span>
         </div>
-        {dependencies.data?.dependencies.length ? (
+        {sessionState !== "authenticated" ? (
+          <div className="empty-state">
+            <strong>Sign in to inspect protected dependencies.</strong>
+            <p>Public liveness and readiness remain visible without a session.</p>
+          </div>
+        ) : selectedEnvironment === null ? (
+          <div className="empty-state">
+            <strong>Choose an authorized environment.</strong>
+            <p>The Portal API validates the selection before dependency details are requested.</p>
+          </div>
+        ) : dependencies.isPending ? (
+          <div className="loading-block" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            Loading authorized dependency status…
+          </div>
+        ) : dependencies.error ? (
+          <ProblemAlert error={dependencies.error} />
+        ) : dependencies.data?.dependencies.length ? (
           <ul className="dependency-list">
             {dependencies.data.dependencies.map((dependency) => (
               <li key={dependency.dependency_id}>
@@ -94,10 +115,7 @@ export function SystemStatusPanel() {
         ) : (
           <div className="empty-state">
             <strong>No infrastructure adapters are enabled.</strong>
-            <p>
-              This is intentional for PR-PORTAL-001. The Portal remains available without Kafka,
-              Airflow, MinIO, or PostgreSQL.
-            </p>
+            <p>No adapters are currently configured for the selected authorized environment.</p>
           </div>
         )}
       </section>

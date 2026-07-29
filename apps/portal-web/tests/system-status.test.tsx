@@ -13,6 +13,12 @@ vi.mock("@/api/portal-api", () => ({
     systemInfo: vi.fn(),
   },
 }));
+vi.mock("@/features/auth/session-context", () => ({
+  usePortalSession: () => ({
+    selectedEnvironment: "local",
+    state: "authenticated",
+  }),
+}));
 
 const mockedApi = vi.mocked(portalApi);
 

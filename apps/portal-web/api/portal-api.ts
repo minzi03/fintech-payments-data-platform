@@ -1,9 +1,16 @@
 import { Sdk } from "@fintech/portal-contracts";
 import type {
+  CapabilityListView,
+  CsrfView,
   DependencyListResponse,
+  EnvironmentListView,
+  EnvironmentSelectionView,
   LivenessResponse,
+  LogoutResult,
+  NavigationView,
   ProblemDetails,
   ReadinessResponse,
+  SessionView,
   SystemInfoResponse,
 } from "@fintech/portal-contracts";
 import { createClient } from "@fintech/portal-contracts/client";
@@ -90,6 +97,14 @@ function signal(): AbortSignal {
   return AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 }
 
+export async function withFreshCsrf<T>(
+  fetchCsrf: () => Promise<CsrfView>,
+  operation: (csrfToken: string) => Promise<T>,
+): Promise<T> {
+  const csrf = await fetchCsrf();
+  return operation(csrf.csrf_token);
+}
+
 export const portalApi = {
   liveness(): Promise<LivenessResponse> {
     return unwrap("/health/live", () => sdk.getLiveness({ signal: signal() }));
@@ -112,9 +127,86 @@ export const portalApi = {
   systemInfo(): Promise<SystemInfoResponse> {
     return unwrap("/v1/system/info", () => sdk.getSystemInfo({ signal: signal() }));
   },
-  dependencies(force = false): Promise<DependencyListResponse> {
+  dependencies(environmentId: string, force = false): Promise<DependencyListResponse> {
     return unwrap("/v1/system/dependencies", () =>
-      sdk.getSystemDependencies({ query: { force }, signal: signal() }),
+      sdk.getSystemDependencies({
+        query: { environment_id: environmentId, force },
+        signal: signal(),
+      }),
+    );
+  },
+  session(): Promise<SessionView> {
+    return unwrap("/v1/session", () => sdk.getSession({ signal: signal() }));
+  },
+  csrf(): Promise<CsrfView> {
+    return unwrap("/v1/session/csrf", () => sdk.getSessionCsrf({ signal: signal() }));
+  },
+  environments(): Promise<EnvironmentListView> {
+    return unwrap("/v1/environments", () => sdk.listEnvironments({ signal: signal() }));
+  },
+  capabilities(environmentId: string): Promise<CapabilityListView> {
+    return unwrap("/v1/capabilities", () =>
+      sdk.listCapabilities({
+        query: { environment_id: environmentId },
+        signal: signal(),
+      }),
+    );
+  },
+  navigation(environmentId: string): Promise<NavigationView> {
+    return unwrap("/v1/navigation", () =>
+      sdk.getNavigation({
+        query: { environment_id: environmentId },
+        signal: signal(),
+      }),
+    );
+  },
+  async selectEnvironment(environmentId: string): Promise<EnvironmentSelectionView> {
+    return withFreshCsrf(
+      () => portalApi.csrf(),
+      (csrfToken) =>
+        unwrap("/v1/session/environment", () =>
+          sdk.selectEnvironment({
+            body: { environment_id: environmentId },
+            headers: { "X-CSRF-Token": csrfToken },
+            signal: signal(),
+          }),
+        ),
+    );
+  },
+  async refreshSession(): Promise<SessionView> {
+    return withFreshCsrf(
+      () => portalApi.csrf(),
+      (csrfToken) =>
+        unwrap("/v1/session/refresh", () =>
+          sdk.refreshSession({
+            headers: { "X-CSRF-Token": csrfToken },
+            signal: signal(),
+          }),
+        ),
+    );
+  },
+  async logout(): Promise<LogoutResult> {
+    return withFreshCsrf(
+      () => portalApi.csrf(),
+      (csrfToken) =>
+        unwrap("/v1/auth/logout", () =>
+          sdk.logout({
+            headers: { "X-CSRF-Token": csrfToken },
+            signal: signal(),
+          }),
+        ),
+    );
+  },
+  async logoutAll(): Promise<LogoutResult> {
+    return withFreshCsrf(
+      () => portalApi.csrf(),
+      (csrfToken) =>
+        unwrap("/v1/auth/logout-all", () =>
+          sdk.logoutAll({
+            headers: { "X-CSRF-Token": csrfToken },
+            signal: signal(),
+          }),
+        ),
     );
   },
 };

@@ -1,15 +1,20 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { loadPortalWebTestConfiguration } from "./config/server";
+
+const testConfiguration = loadPortalWebTestConfiguration();
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
+  workers: process.env.PORTAL_E2E_AUTH ? 1 : undefined,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["html", { open: "never" }], ["list"]] : "list",
   use: {
-    baseURL: process.env.PORTAL_WEB_URL ?? "http://127.0.0.1:3000",
-    trace: "retain-on-failure",
+    baseURL: testConfiguration.webUrl,
+    trace: process.env.PORTAL_E2E_AUTH ? "off" : "retain-on-failure",
   },
-  webServer: process.env.PORTAL_E2E_EXTERNAL
+  webServer: testConfiguration.externalStack
     ? undefined
     : [
         {

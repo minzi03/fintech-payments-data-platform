@@ -9,18 +9,52 @@ import type {
 } from "./client";
 import { client } from "./client.gen";
 import type {
+  CompleteLoginCallbackData,
+  CompleteLoginCallbackErrors,
   GetLivenessData,
   GetLivenessErrors,
   GetLivenessResponses,
+  GetLoginContextData,
+  GetLoginContextErrors,
+  GetLoginContextResponses,
+  GetNavigationData,
+  GetNavigationErrors,
+  GetNavigationResponses,
   GetReadinessData,
   GetReadinessErrors,
   GetReadinessResponses,
+  GetSessionCsrfData,
+  GetSessionCsrfErrors,
+  GetSessionCsrfResponses,
+  GetSessionData,
+  GetSessionErrors,
+  GetSessionResponses,
   GetSystemDependenciesData,
   GetSystemDependenciesErrors,
   GetSystemDependenciesResponses,
   GetSystemInfoData,
   GetSystemInfoErrors,
   GetSystemInfoResponses,
+  ListCapabilitiesData,
+  ListCapabilitiesErrors,
+  ListCapabilitiesResponses,
+  ListEnvironmentsData,
+  ListEnvironmentsErrors,
+  ListEnvironmentsResponses,
+  LogoutAllData,
+  LogoutAllErrors,
+  LogoutAllResponses,
+  LogoutData,
+  LogoutErrors,
+  LogoutResponses,
+  RefreshSessionData,
+  RefreshSessionErrors,
+  RefreshSessionResponses,
+  SelectEnvironmentData,
+  SelectEnvironmentErrors,
+  SelectEnvironmentResponses,
+  StartLoginData,
+  StartLoginErrors,
 } from "./types.gen";
 
 export type Options<
@@ -102,6 +136,200 @@ export class Sdk extends HeyApiClient {
       GetReadinessErrors,
       ThrowOnError
     >({ url: "/health/ready", ...options });
+  }
+
+  /**
+   * Complete Login Callback
+   */
+  public completeLoginCallback<ThrowOnError extends boolean = false>(
+    options?: Options<CompleteLoginCallbackData, ThrowOnError>,
+  ): RequestResult<unknown, CompleteLoginCallbackErrors, ThrowOnError> {
+    return (options?.client ?? this.client).get<
+      unknown,
+      CompleteLoginCallbackErrors,
+      ThrowOnError
+    >({ url: "/v1/auth/callback", ...options });
+  }
+
+  /**
+   * Start Login
+   */
+  public startLogin<ThrowOnError extends boolean = false>(
+    options: Options<StartLoginData, ThrowOnError>,
+  ): RequestResult<unknown, StartLoginErrors, ThrowOnError> {
+    return (options.client ?? this.client).post<
+      unknown,
+      StartLoginErrors,
+      ThrowOnError
+    >({
+      url: "/v1/auth/login",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  }
+
+  /**
+   * Login Context
+   */
+  public getLoginContext<ThrowOnError extends boolean = false>(
+    options?: Options<GetLoginContextData, ThrowOnError>,
+  ): RequestResult<
+    GetLoginContextResponses,
+    GetLoginContextErrors,
+    ThrowOnError
+  > {
+    return (options?.client ?? this.client).get<
+      GetLoginContextResponses,
+      GetLoginContextErrors,
+      ThrowOnError
+    >({ url: "/v1/auth/login-context", ...options });
+  }
+
+  /**
+   * Logout
+   */
+  public logout<ThrowOnError extends boolean = false>(
+    options?: Options<LogoutData, ThrowOnError>,
+  ): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> {
+    return (options?.client ?? this.client).post<
+      LogoutResponses,
+      LogoutErrors,
+      ThrowOnError
+    >({ url: "/v1/auth/logout", ...options });
+  }
+
+  /**
+   * Logout All
+   */
+  public logoutAll<ThrowOnError extends boolean = false>(
+    options?: Options<LogoutAllData, ThrowOnError>,
+  ): RequestResult<LogoutAllResponses, LogoutAllErrors, ThrowOnError> {
+    return (options?.client ?? this.client).post<
+      LogoutAllResponses,
+      LogoutAllErrors,
+      ThrowOnError
+    >({ url: "/v1/auth/logout-all", ...options });
+  }
+
+  /**
+   * List Capabilities
+   */
+  public listCapabilities<ThrowOnError extends boolean = false>(
+    options: Options<ListCapabilitiesData, ThrowOnError>,
+  ): RequestResult<
+    ListCapabilitiesResponses,
+    ListCapabilitiesErrors,
+    ThrowOnError
+  > {
+    return (options.client ?? this.client).get<
+      ListCapabilitiesResponses,
+      ListCapabilitiesErrors,
+      ThrowOnError
+    >({ url: "/v1/capabilities", ...options });
+  }
+
+  /**
+   * List Environments
+   */
+  public listEnvironments<ThrowOnError extends boolean = false>(
+    options?: Options<ListEnvironmentsData, ThrowOnError>,
+  ): RequestResult<
+    ListEnvironmentsResponses,
+    ListEnvironmentsErrors,
+    ThrowOnError
+  > {
+    return (options?.client ?? this.client).get<
+      ListEnvironmentsResponses,
+      ListEnvironmentsErrors,
+      ThrowOnError
+    >({ url: "/v1/environments", ...options });
+  }
+
+  /**
+   * Get Navigation
+   */
+  public getNavigation<ThrowOnError extends boolean = false>(
+    options: Options<GetNavigationData, ThrowOnError>,
+  ): RequestResult<GetNavigationResponses, GetNavigationErrors, ThrowOnError> {
+    return (options.client ?? this.client).get<
+      GetNavigationResponses,
+      GetNavigationErrors,
+      ThrowOnError
+    >({ url: "/v1/navigation", ...options });
+  }
+
+  /**
+   * Get Session
+   */
+  public getSession<ThrowOnError extends boolean = false>(
+    options?: Options<GetSessionData, ThrowOnError>,
+  ): RequestResult<GetSessionResponses, GetSessionErrors, ThrowOnError> {
+    return (options?.client ?? this.client).get<
+      GetSessionResponses,
+      GetSessionErrors,
+      ThrowOnError
+    >({ url: "/v1/session", ...options });
+  }
+
+  /**
+   * Get Session Csrf
+   */
+  public getSessionCsrf<ThrowOnError extends boolean = false>(
+    options?: Options<GetSessionCsrfData, ThrowOnError>,
+  ): RequestResult<
+    GetSessionCsrfResponses,
+    GetSessionCsrfErrors,
+    ThrowOnError
+  > {
+    return (options?.client ?? this.client).get<
+      GetSessionCsrfResponses,
+      GetSessionCsrfErrors,
+      ThrowOnError
+    >({ url: "/v1/session/csrf", ...options });
+  }
+
+  /**
+   * Select Environment
+   */
+  public selectEnvironment<ThrowOnError extends boolean = false>(
+    options: Options<SelectEnvironmentData, ThrowOnError>,
+  ): RequestResult<
+    SelectEnvironmentResponses,
+    SelectEnvironmentErrors,
+    ThrowOnError
+  > {
+    return (options.client ?? this.client).post<
+      SelectEnvironmentResponses,
+      SelectEnvironmentErrors,
+      ThrowOnError
+    >({
+      url: "/v1/session/environment",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  }
+
+  /**
+   * Refresh Session
+   */
+  public refreshSession<ThrowOnError extends boolean = false>(
+    options?: Options<RefreshSessionData, ThrowOnError>,
+  ): RequestResult<
+    RefreshSessionResponses,
+    RefreshSessionErrors,
+    ThrowOnError
+  > {
+    return (options?.client ?? this.client).post<
+      RefreshSessionResponses,
+      RefreshSessionErrors,
+      ThrowOnError
+    >({ url: "/v1/session/refresh", ...options });
   }
 
   /**
