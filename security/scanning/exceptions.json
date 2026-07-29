@@ -30,8 +30,8 @@
       "safe_fingerprint": "sha256:f2133a52fa4c6c9b0528c1af0a066258302133914a76cf0a49f83fc6f5a4bfbd",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -44,7 +44,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-068",
@@ -55,8 +69,8 @@
       "safe_fingerprint": "sha256:36812989fa9cf673f9e83aedc3e6246a8266a4f5e04db539a66f6b4d55e876de",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -69,7 +83,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-069",
@@ -80,8 +108,8 @@
       "safe_fingerprint": "sha256:75b11c1177117bf059bd649d192c2d7da1cffb18462554cfabd9c0557781f2ad",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -94,7 +122,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-070",
@@ -105,8 +147,8 @@
       "safe_fingerprint": "sha256:0abd4862d8e207ffccd8125337165dbc0436c0b115b0f2d7c552a9e03444d2ea",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -119,7 +161,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-071",
@@ -130,8 +186,8 @@
       "safe_fingerprint": "sha256:979e8d6e31f3a5caf3be628e3bfa8a3253dbd98c36b9bb7cf6e71a3b9842b1c6",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -144,7 +200,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-072",
@@ -155,8 +225,8 @@
       "safe_fingerprint": "sha256:db2fc69f07a108651d18eded355994bd9f760eed847a56df83c279b186c8c2d1",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -169,7 +239,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-073",
@@ -180,8 +264,8 @@
       "safe_fingerprint": "sha256:24f3e11ae97a300d56c14299db25c8ae964a78c89f7f1eac37255453b0701003",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -194,7 +278,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-074",
@@ -205,8 +303,8 @@
       "safe_fingerprint": "sha256:167ad560ee93521f913d49bebda306d77922ade57dc85b03bf1ba02e96716efd",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -219,7 +317,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-075",
@@ -230,8 +342,8 @@
       "safe_fingerprint": "sha256:851317c9278aa4addfa633ec7cec44a89f96ad76eaba4a7d398f6d8d9cdf8f5d",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -244,7 +356,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-076",
@@ -255,8 +381,8 @@
       "safe_fingerprint": "sha256:ae80e39e9d07ab14f0398492d827d60a6af99163c45614fafb56696f2ef77b6b",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -269,7 +395,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-077",
@@ -280,8 +420,8 @@
       "safe_fingerprint": "sha256:9771e9aa101781bda2beb2761490dc93f25867cf21f70f94425c2b69ba8c7c98",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -294,7 +434,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-078",
@@ -305,8 +459,8 @@
       "safe_fingerprint": "sha256:7990bb6a5440a41b32e8840485e3018e4a5efee8f6841a611e0dd827c0359c3f",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -319,7 +473,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-079",
@@ -330,8 +498,8 @@
       "safe_fingerprint": "sha256:e5036cd5cb425095e5d36081555997ffeb7c56eda389fa80bf3352002f3552f7",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -344,7 +512,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-080",
@@ -355,8 +537,8 @@
       "safe_fingerprint": "sha256:20b1b58eca9d38f7f399e82fb6ccff67fdc77c36ba9ee205ca428f9b0f644b07",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -369,7 +551,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-081",
@@ -380,8 +576,8 @@
       "safe_fingerprint": "sha256:9fed922e1b491734bd9556698a4b7ce3991250aee679f998e5435b547a833dc1",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -394,7 +590,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-082",
@@ -405,8 +615,8 @@
       "safe_fingerprint": "sha256:02a916151e4bc5d745c1973f485fc94ea66107845b2b74612b651235e004cd29",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -419,7 +629,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-083",
@@ -430,8 +654,8 @@
       "safe_fingerprint": "sha256:1b99c699490032cab93060d9fc33826a55772e32d223c5d325f31ef97aade9d3",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -444,7 +668,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-084",
@@ -455,8 +693,8 @@
       "safe_fingerprint": "sha256:124c06b897827c457c021a1344b96c85443274b95f638ecb7d71767e40ddda76",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -469,7 +707,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-085",
@@ -480,8 +732,8 @@
       "safe_fingerprint": "sha256:91a5792fe4537b92d542de80ee8a4557f9d3e35686ff6a07f9c6730abc6ac067",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -494,7 +746,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-086",
@@ -505,8 +771,8 @@
       "safe_fingerprint": "sha256:72492718051532e945a1aaaa5cb3ff46e9bbcac0f9c15d49df8415f56e19abeb",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -519,7 +785,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-087",
@@ -530,8 +810,8 @@
       "safe_fingerprint": "sha256:da6a65c00fdc14fbcfa35c3b725dd2ba96e3bc86928fe78dab3e84e5fff3ab55",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -544,7 +824,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-088",
@@ -555,8 +849,8 @@
       "safe_fingerprint": "sha256:d6a9ac9d7d8696e926e65e81643c9c060ae5c82b105359951d792f522711d297",
       "asset": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -569,7 +863,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-089",
@@ -580,8 +888,8 @@
       "safe_fingerprint": "sha256:2947ba25ad8bb61bbd66dba089307810e788afe2a5990607d53817c73617e065",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -594,7 +902,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-090",
@@ -605,8 +927,8 @@
       "safe_fingerprint": "sha256:a27fdb71acf83b28f531e73c1e7bde448d94f99475085107441ced772645e4bf",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -619,7 +941,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-091",
@@ -630,8 +966,8 @@
       "safe_fingerprint": "sha256:2dfe65de0c7546704b0298766fcf6033b970d9e250c33d2c5d938610993fed44",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -644,7 +980,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-092",
@@ -655,8 +1005,8 @@
       "safe_fingerprint": "sha256:89b77deba33f739ecf9d6b6066e19957fe3c9c8216655d888ab42731cdfcfd03",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -669,7 +1019,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-093",
@@ -680,8 +1044,8 @@
       "safe_fingerprint": "sha256:ba0a66101109ee5b0917216b2f4deb106c54434f85113c9561b8cd43a9762a57",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -694,7 +1058,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-094",
@@ -705,8 +1083,8 @@
       "safe_fingerprint": "sha256:47f8a31437d1017dfdf64f562ce5c063e61d22b556e7853b728e9ee972a933cb",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -719,7 +1097,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-095",
@@ -730,8 +1122,8 @@
       "safe_fingerprint": "sha256:1448db4a69e763a6bd376cd443a56889fca7295be8b04962554d5c6cbd702470",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -744,7 +1136,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-096",
@@ -755,8 +1161,8 @@
       "safe_fingerprint": "sha256:f637eef730c00eb6db9d11a9408b592afbe849254c4b12217cfc55202bc42fd5",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -769,7 +1175,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-097",
@@ -780,8 +1200,8 @@
       "safe_fingerprint": "sha256:ce92f2f7dafdd108f76a89ec31169de7a0abfff1a00d013040cb6543bfa04c90",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -794,7 +1214,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-098",
@@ -805,8 +1239,8 @@
       "safe_fingerprint": "sha256:fbb2be29deab7fa8c5720f6b6b1674b2670ec5a5b061e8c78b7323e8edabd500",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -819,7 +1253,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-099",
@@ -830,8 +1278,8 @@
       "safe_fingerprint": "sha256:67d95a369bd14044294438c1acf95d458858efcd30a0bfd0793566015a22e371",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -844,7 +1292,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-100",
@@ -855,8 +1317,8 @@
       "safe_fingerprint": "sha256:6d104f777f70ca993750be76273869fa3947258722cd65b01dcb27571320631a",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -869,7 +1331,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-101",
@@ -880,8 +1356,8 @@
       "safe_fingerprint": "sha256:be67c4bd45394d44d03bcc60ac371fadb327844af119d2f13830cb944d03684e",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -894,7 +1370,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-102",
@@ -905,8 +1395,8 @@
       "safe_fingerprint": "sha256:8e94e7dc2b97256ec930449078ccbef1acefe7754f84417b1e18cc9864998f4f",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -919,7 +1409,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-103",
@@ -930,8 +1434,8 @@
       "safe_fingerprint": "sha256:c1ec77d1d69f39c34e6dce574dfde16d5fb3a50c5bbf338c22ddfec22b094712",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -944,7 +1448,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-104",
@@ -955,8 +1473,8 @@
       "safe_fingerprint": "sha256:3b8f7d2afe20e1c00e6a302960f61e368e43b3c715b6f454faf5afb2db3ad2da",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -969,7 +1487,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-105",
@@ -980,8 +1512,8 @@
       "safe_fingerprint": "sha256:1cd4c3d6743a6f7a0dad3de04d2c1f7e6f79a35693130a6d38580619d32c190a",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -994,7 +1526,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-106",
@@ -1005,8 +1551,8 @@
       "safe_fingerprint": "sha256:f1c6223a66aae3d58e5ff22d0033b70ada408f2b08cf3973d1012b0ea9d7220d",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -1019,7 +1565,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-107",
@@ -1030,8 +1590,8 @@
       "safe_fingerprint": "sha256:4cbd756b7b1aed8a22c32ea664f792bde1757b2743f8a9205c7e1dd60190c9f1",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -1044,7 +1604,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-108",
@@ -1055,8 +1629,8 @@
       "safe_fingerprint": "sha256:89dbd63de27baa93dfb76e03bc2711ee18009a033cce805e25e889b5d62a2729",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "unknown",
@@ -1069,7 +1643,21 @@
       "expiry_date": "2026-09-27",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove after an upstream fixed package is available and the rebuilt exact images pass the full Portal verification and security suites.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-109",
@@ -1080,8 +1668,8 @@
       "safe_fingerprint": "sha256:54b5d8dd76380d116ec2d4553cc8957e2e989bff416ec9b500c26ef0b348a6db",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -1094,7 +1682,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-110",
@@ -1105,8 +1707,8 @@
       "safe_fingerprint": "sha256:be159b8c21e3e9082e0e634425295f09bca4640d536efe13c12f49c70ea54d7d",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "critical",
       "exploitability": "affected_condition_absent",
@@ -1119,7 +1721,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     },
     {
       "id": "SCN-111",
@@ -1130,8 +1746,8 @@
       "safe_fingerprint": "sha256:1e0c02c69375841c9183d02b97b2cfe44c092e7ac4013e87eacb6f4d697f437e",
       "asset": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
       "architecture": "amd64",
-      "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
-      "evidence_version": "ff06a-2026-07-29.1",
+      "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+      "evidence_version": "ff06b-2026-07-29.1",
       "scope": "first_party_runtime",
       "severity": "high",
       "exploitability": "affected_condition_absent",
@@ -1144,7 +1760,21 @@
       "expiry_date": "2027-01-25",
       "review_trigger": "Image digest, package version, advisory condition, exploitability classification, severity, fix status or scanner database identity changes.",
       "removal_criteria": "Remove when the scanner no longer reports the exact fingerprint; reopen immediately if the affected code or architecture appears in a future exact image.",
-      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding"
+      "evidence_link": "docs/portal/security-scanning.md#final-artifact-evidence-rebinding",
+      "evidence_revisions": [
+        {
+          "evidence_version": "ff06a-2026-07-29.1",
+          "scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+          "analysis_date": "2026-07-29",
+          "status": "superseded"
+        },
+        {
+          "evidence_version": "ff06b-2026-07-29.1",
+          "scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+          "analysis_date": "2026-07-29",
+          "status": "current"
+        }
+      ]
     }
   ]
 }

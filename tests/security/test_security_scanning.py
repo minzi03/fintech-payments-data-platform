@@ -115,6 +115,17 @@ def finding(scanner: ModuleType, **overrides: Any) -> Any:
     return scanner.make_finding(**defaults)
 
 
+def evidence_revisions(database: str, version: str) -> list[dict[str, str]]:
+    return [
+        {
+            "evidence_version": version,
+            "scanner_database_identity": database,
+            "analysis_date": "2026-07-29",
+            "status": "current",
+        }
+    ]
+
+
 def test_scanner_toolchain_requires_all_immutable_identities(scanner: ModuleType) -> None:
     validated = scanner.validate_toolchain(toolchain_fixture(), verify_files=False)
     assert set(validated) == {"semgrep", "osv", "gitleaks", "trivy", "zizmor"}
@@ -424,6 +435,10 @@ def test_image_reachability_override_requires_exact_complete_evidence(
         "expiry_or_removal_trigger": "Revalidate when the image or package changes.",
         "scanner_database_identity": "sha256:" + ("b" * 64),
         "evidence_version": "ff06a-test.1",
+        "evidence_revisions": evidence_revisions(
+            "sha256:" + ("b" * 64),
+            "ff06a-test.1",
+        ),
     }
 
     result = scanner.apply_image_reachability_overrides(
@@ -503,6 +518,7 @@ def test_image_evidence_is_rejected_for_every_exact_key_mismatch(
         "expiry_or_removal_trigger": "Revalidate when any exact key changes.",
         "scanner_database_identity": database,
         "evidence_version": "ff06a-test.1",
+        "evidence_revisions": evidence_revisions(database, "ff06a-test.1"),
     }
     override[field] = replacement
 
@@ -546,6 +562,10 @@ def test_image_evidence_rejects_missing_fields_wildcards_and_ungoverned_architec
         "expiry_or_removal_trigger": "Revalidate when any exact key changes.",
         "scanner_database_identity": "sha256:" + ("b" * 64),
         "evidence_version": "ff06a-test.1",
+        "evidence_revisions": evidence_revisions(
+            "sha256:" + ("b" * 64),
+            "ff06a-test.1",
+        ),
     }
 
     missing = dict(override)
@@ -584,7 +604,7 @@ def test_final_artifact_handoff_binds_tags_ids_source_and_architecture(
     )
 
     assert set(architectures.values()) == {"amd64"}
-    assert evidence_version == "ff06a-2026-07-29.1"
+    assert evidence_version == "ff06b-2026-07-29.1"
     assert database_identity.startswith("sha256:")
 
     changed = dict(expected)
@@ -596,6 +616,176 @@ def test_final_artifact_handoff_binds_tags_ids_source_and_architecture(
             source=source,
             expected_images=changed,
         )
+
+
+def test_evidence_revisions_require_one_exact_current_revision(scanner: ModuleType) -> None:
+    previous_database = "sha256:" + ("a" * 64)
+    current_database = "sha256:" + ("b" * 64)
+    revisions = [
+        {
+            "evidence_version": "ff06a-test.1",
+            "scanner_database_identity": previous_database,
+            "analysis_date": "2026-07-28",
+            "status": "superseded",
+        },
+        {
+            "evidence_version": "ff06b-test.1",
+            "scanner_database_identity": current_database,
+            "analysis_date": "2026-07-29",
+            "status": "current",
+        },
+    ]
+
+    validated = scanner._validate_evidence_revisions(
+        revisions,
+        current_database_identity=current_database,
+        current_evidence_version="ff06b-test.1",
+    )
+    assert len(validated) == 2
+
+    duplicate = [dict(revisions[1]), dict(revisions[1])]
+    wildcard = [dict(revisions[1], scanner_database_identity="*")]
+    superseded_only = [dict(revisions[1], status="superseded")]
+    two_current = [dict(revisions[0], status="current"), dict(revisions[1])]
+    for invalid in (duplicate, wildcard, superseded_only, two_current):
+        with pytest.raises(scanner.ScanFailure):
+            scanner._validate_evidence_revisions(
+                invalid,
+                current_database_identity=current_database,
+                current_evidence_version="ff06b-test.1",
+            )
+
+    with pytest.raises(scanner.ScanFailure, match="does not match active"):
+        scanner._validate_evidence_revisions(
+            revisions,
+            current_database_identity=previous_database,
+            current_evidence_version="ff06a-test.1",
+        )
+
+
+def test_finding_content_identity_is_stable_across_exact_database_refresh(
+    scanner: ModuleType,
+) -> None:
+    image = "sha256:" + ("a" * 64)
+    previous = scanner.make_finding(
+        scanner="trivy",
+        scanner_version="0.70.0",
+        database_identity="sha256:" + ("b" * 64),
+        identifier="CVE-2026-0001",
+        asset_type="image_vulnerability",
+        asset_identity=image,
+        package="example-package",
+        package_version="1.2.3",
+        repository_path="",
+        severity="high",
+        exploitability="unknown",
+        fix_status="no_fix",
+        scope="first_party_runtime",
+        source="c" * 40,
+    )
+    current = scanner.make_finding(
+        scanner="trivy",
+        scanner_version="0.70.0",
+        database_identity="sha256:" + ("c" * 64),
+        identifier="CVE-2026-0001",
+        asset_type="image_vulnerability",
+        asset_identity=image,
+        package="example-package",
+        package_version="1.2.3",
+        repository_path="",
+        severity="high",
+        exploitability="unknown",
+        fix_status="no_fix",
+        scope="first_party_runtime",
+        source="c" * 40,
+    )
+
+    assert scanner._image_finding_identity(
+        [previous],
+        include_database=False,
+    ) == scanner._image_finding_identity([current], include_database=False)
+    assert scanner._image_finding_identity(
+        [previous],
+        include_database=True,
+    ) != scanner._image_finding_identity([current], include_database=True)
+
+
+def test_pinned_trivy_database_fails_closed_on_wrong_or_changed_identity(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    expected = "sha256:" + ("a" * 64)
+    changed = "sha256:" + ("b" * 64)
+    cache = tmp_path / "trivy"
+    cache.mkdir()
+    runner = scanner.DockerScannerRunner(
+        snapshot=tmp_path,
+        output=tmp_path,
+        scanners={},
+        source="c" * 40,
+        trivy_cache=cache,
+    )
+    monkeypatch.setattr(runner, "_trivy_database_identity", lambda _cache: expected)
+    runner.pin_trivy_database(expected)
+    assert runner._verify_pinned_trivy_database() == expected
+
+    monkeypatch.setattr(runner, "_trivy_database_identity", lambda _cache: changed)
+    with pytest.raises(scanner.ScanFailure, match="changed after selection"):
+        runner._verify_pinned_trivy_database()
+
+    unpinned = scanner.DockerScannerRunner(
+        snapshot=tmp_path,
+        output=tmp_path,
+        scanners={},
+        source="c" * 40,
+        trivy_cache=cache,
+    )
+    monkeypatch.setattr(unpinned, "_trivy_database_identity", lambda _cache: changed)
+    with pytest.raises(scanner.ScanFailure, match="identity mismatch"):
+        unpinned.pin_trivy_database(expected)
+
+
+def test_committed_scanner_refresh_is_exact_current_and_non_wildcard(
+    scanner: ModuleType,
+) -> None:
+    root = REPOSITORY_ROOT / "security" / "scanning"
+    handoff = scanner._json(root / "final-artifacts.json")
+    policy = scanner._json(root / "policy.json")
+    exceptions = scanner._json(root / "exceptions.json")
+    database = handoff["scanner"]["database_identity"]
+    evidence_version = handoff["evidence_version"]
+
+    assert handoff["schema_version"] == "portal-final-artifacts/v2"
+    assert handoff["scanner_database"]["required_flags"] == [
+        "--skip-db-update",
+        "--skip-java-db-update",
+    ]
+    assert handoff["finding_differential"]["finding_inventory_changed"] is False
+    assert (
+        handoff["finding_differential"]["scanner_metadata_only_changes"]
+        == handoff["finding_differential"]["current_finding_count"]
+        == 343
+    )
+
+    governed = [
+        item
+        for item in exceptions["exceptions"]
+        if item.get("scanner") == "trivy" and item.get("scope") == "first_party_runtime"
+    ]
+    assert len(governed) == 45
+    for item in [*governed, *policy["image_reachability_overrides"]]:
+        assert item["scanner_database_identity"] == database
+        assert item["evidence_version"] == evidence_version
+        assert "*" not in json.dumps(item["evidence_revisions"])
+        assert len(item["evidence_revisions"]) == 2
+        assert sum(revision["status"] == "current" for revision in item["evidence_revisions"]) == 1
+        assert item["evidence_revisions"][-1] == {
+            "evidence_version": evidence_version,
+            "scanner_database_identity": database,
+            "analysis_date": "2026-07-29",
+            "status": "current",
+        }
 
 
 def test_zizmor_v1_locations_are_normalized(scanner: ModuleType) -> None:
@@ -924,6 +1114,7 @@ def test_first_party_image_exception_requires_exact_package_database_and_evidenc
         "architecture": "amd64",
         "scanner_database_identity": database,
         "evidence_version": "ff06a-test.1",
+        "evidence_revisions": evidence_revisions(database, "ff06a-test.1"),
         "scope": "first_party_runtime",
         "severity": "high",
         "exploitability": "unknown",
@@ -1070,7 +1261,7 @@ def test_artifact_manifest_allows_one_governance_only_child_commit(
 
     def fake_git(*arguments: str, check: bool = True) -> str:
         del check
-        if arguments == ("rev-parse", f"{governance_source}^"):
+        if arguments == ("merge-base", artifact_source, governance_source):
             return artifact_source
         if arguments == ("diff", "--name-only", f"{artifact_source}..{governance_source}"):
             return "security/scanning/exceptions.json\nscripts/security/scan.py"
@@ -1085,7 +1276,7 @@ def test_artifact_manifest_allows_one_governance_only_child_commit(
 
     def unsafe_git(*arguments: str, check: bool = True) -> str:
         del check
-        if arguments[0] == "rev-parse":
+        if arguments[0] == "merge-base":
             return artifact_source
         return "apps/portal-api/Dockerfile"
 

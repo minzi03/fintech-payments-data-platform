@@ -15,14 +15,14 @@ monitoring remain separate work.
 
 ## Authority map
 
-| Authority | Scope |
-| --- | --- |
-| Semgrep CE | High-confidence first-party Python and TypeScript/JavaScript SAST |
-| OSV-Scanner v2 | Vulnerabilities in the Portal Python runtime/development locks and pnpm lock |
-| Gitleaks | Tracked/index content, bounded commit ranges, and explicit full-history scans |
-| Trivy | Exact first-party and Portal vendor images; image secrets; supplemental Docker config |
-| zizmor | GitHub Actions workflow security |
-| Portal repository verifiers | Authoritative Compose, runtime, identity, and container-hardening semantics |
+| Authority                   | Scope                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| Semgrep CE                  | High-confidence first-party Python and TypeScript/JavaScript SAST                     |
+| OSV-Scanner v2              | Vulnerabilities in the Portal Python runtime/development locks and pnpm lock          |
+| Gitleaks                    | Tracked/index content, bounded commit ranges, and explicit full-history scans         |
+| Trivy                       | Exact first-party and Portal vendor images; image secrets; supplemental Docker config |
+| zizmor                      | GitHub Actions workflow security                                                      |
+| Portal repository verifiers | Authoritative Compose, runtime, identity, and container-hardening semantics           |
 
 The scanners are complementary. Bandit does not duplicate Semgrep, pip-audit and `pnpm audit` do
 not duplicate OSV, and unrestricted Trivy filesystem scanning does not duplicate immutable lock
@@ -33,13 +33,13 @@ scanning. Generic Trivy configuration findings cannot weaken or replace the Port
 `security/scanning/toolchain.json` pins each scanner by human-readable version and multi-platform
 OCI digest:
 
-| Scanner | Version | Immutable authority |
-| --- | --- | --- |
-| Semgrep CE | 1.164.0 | OCI digest plus repository-local ruleset hash |
-| OSV-Scanner | 2.3.8 | OCI digest and the live `osv.dev` API identity |
-| Gitleaks | 8.30.1 | OCI digest plus repository-local config hash |
-| Trivy | 0.70.0 | OCI digest; vulnerability database identity recorded per scan |
-| zizmor | 1.28.0 | OCI digest and built-in ruleset identity |
+| Scanner     | Version | Immutable authority                                           |
+| ----------- | ------- | ------------------------------------------------------------- |
+| Semgrep CE  | 1.164.0 | OCI digest plus repository-local ruleset hash                 |
+| OSV-Scanner | 2.3.8   | OCI digest and the live `osv.dev` API identity                |
+| Gitleaks    | 8.30.1  | OCI digest plus repository-local config hash                  |
+| Trivy       | 0.70.0  | OCI digest; vulnerability database identity recorded per scan |
+| zizmor      | 1.28.0  | OCI digest and built-in ruleset identity                      |
 
 The Trivy identity intentionally avoids the compromised 0.69.4 release line. New GitHub Actions
 must use full commit SHAs. Scanner installation is containerized and never changes application
@@ -105,18 +105,21 @@ python scripts/portal/reuse_verified_artifacts.py \
   --require-clean
 python scripts/security/scan.py images \
   --api-image portal-api:ff06a-c9516f9-20260729a \
-  --web-image portal-web:ff06a-c9516f9-20260729a
+  --web-image portal-web:ff06a-c9516f9-20260729a \
+  --trivy-cache <approved-local-trivy-cache>
 ```
 
 The reuse command does not build, pull, retag, or replace an image. It validates the run-scoped
 tags, Docker image IDs, revision labels, application-content digests, package-inventory digests,
 source relationship, and deterministic manifest identity from
 `security/scanning/final-artifacts.json`. The scanner then compares that manifest with the same
-current Docker image IDs before exporting ignored temporary archives. A single immediate child
-commit containing only explicitly allowlisted artifact-governance files may attest its parent
-artifacts; every other source mismatch fails closed. Audit-worker and migration use the Portal API
-image result. PostgreSQL, Redis, and Keycloak use their immutable Compose digests and a separate
-vendor policy.
+current Docker image IDs before exporting ignored temporary archives. A descendant chain containing
+only explicitly allowlisted artifact-governance files may attest the same parent artifacts; every
+other source mismatch fails closed. Image mode requires an approved local Trivy cache whose exact
+database identity matches the committed handoff. It disables vulnerability and Java database
+updates, removes scanner network access, and rechecks the database identity before and after every
+image scan. Audit-worker and migration use the Portal API image result. PostgreSQL, Redis, and
+Keycloak use their immutable Compose digests and a separate vendor policy.
 
 On pull requests, CI supplies `PORTAL_SECURITY_GIT_RANGE` as an exact
 `<base-commit>..<head-commit>` pair for bounded Gitleaks history scanning. The wrapper accepts only
@@ -229,10 +232,10 @@ The active exceptions mean this repository is not approved or ready for producti
 FF-02 rebuilt the exact first-party artifacts from remediation commit
 `534f5b70d677333299f0fa12a3011168f332a05c`:
 
-| Artifact | Exact image identity |
-| --- | --- |
+| Artifact                                | Exact image identity                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------- |
 | Portal API, audit worker, and migration | `sha256:b46b4518c0933c547fd7c09416efc8391bb342b566f65e0d6a1dc69aec2572bd` |
-| Portal Web | `sha256:663ad676c0e5d632f6a21d399bf73bf7242bea2afdcf75928c34066f0b83791a` |
+| Portal Web                              | `sha256:663ad676c0e5d632f6a21d399bf73bf7242bea2afdcf75928c34066f0b83791a` |
 
 The scan used Trivy 0.70.0 and vulnerability database identity
 `sha256:cee72afaa19faad1252d37bbb98a4f7eb23bc830e7dec8b9f406bc77d7b105e4`.
@@ -250,10 +253,10 @@ Every remaining first-party Critical/High finding requires an exact rule keyed b
 advisory, binary package, and package version. Missing, duplicate, or unused rules invalidate the
 policy. Current disposition is:
 
-| Disposition | Count | Evidence boundary | Expiry |
-| --- | ---: | --- | --- |
-| Affected condition not present | 35 | MiniZip not built; affected Perl modules/version/architecture absent; or source-package sibling attribution does not contain the affected binary | 2027-01-25 |
-| No fix; indirect reachability unknown | 10 | Affected package/code is present, direct Portal entrypoint use was not found, and complete indirect non-reachability was not claimed | 2026-09-27 |
+| Disposition                           | Count | Evidence boundary                                                                                                                                | Expiry     |
+| ------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| Affected condition not present        |    35 | MiniZip not built; affected Perl modules/version/architecture absent; or source-package sibling attribution does not contain the affected binary | 2027-01-25 |
+| No fix; indirect reachability unknown |    10 | Affected package/code is present, direct Portal entrypoint use was not found, and complete indirect non-reachability was not claimed             | 2026-09-27 |
 
 The 35 `affected_condition_absent` decisions use exact false-positive exceptions and must be
 reopened if any image digest, package version, advisory condition, architecture, or scanner
@@ -273,10 +276,10 @@ Vendor findings remain report-only under the unchanged vendor policy.
 FF-06A selected exactly one final build of each first-party image from source commit
 `c9516f9455d90be24dccd62869c2d5afd8b5f802`:
 
-| Artifact | Run-scoped local tag | Canonical policy identity |
-| --- | --- | --- |
+| Artifact                                | Run-scoped local tag                 | Canonical policy identity                                                 |
+| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------- |
 | Portal API, audit worker, and migration | `portal-api:ff06a-c9516f9-20260729a` | `sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3` |
-| Portal Web | `portal-web:ff06a-c9516f9-20260729a` | `sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7` |
+| Portal Web                              | `portal-web:ff06a-c9516f9-20260729a` | `sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7` |
 
 The canonical policy identity is the local Docker image ID, which is also the image config digest
 reported by `docker image inspect`. Mutable tags are convenience references and never authorize a
@@ -317,6 +320,35 @@ generated manifest files. This limitation is recorded rather than replaced with 
 secret. FF-06 must reuse the exact handoff artifacts and must not rebuild before exact-image policy
 verification.
 
+### FF-06B scanner database evidence refresh
+
+FF-06B preserved both FF-06A image IDs and selected the current, non-stale Trivy database identity
+`sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e`.
+The database was copied into a dedicated local evidence cache, pinned before scanning, and used
+offline with `--skip-db-update` and `--skip-java-db-update`. Its identity remained unchanged before,
+during, and after the API, Web, and central policy scans.
+
+The refreshed evidence version is `ff06b-2026-07-29.1`. Every exact first-party disposition and
+reachability decision now records two revisions: FF-06A is retained as `superseded`, while FF-06B is
+the single `current` revision. Superseded evidence cannot satisfy current policy. The policy and
+exception register still require the active database identity, evidence version, artifact, advisory,
+binary package, installed version, architecture, and finding fingerprint to match exactly.
+
+The normalized comparison found 343 unchanged first-party image findings: 10 Critical, 35 High,
+115 Medium, 165 Low, and 18 Informational. There were no new or removed advisories, alias changes,
+severity changes, package/version changes, fix-status changes, image secret findings, or image
+misconfiguration findings. All 45 Critical/High findings still report `no_fix`; their reachability
+conclusions and expiry dates remain unchanged. The earliest active first-party expiry is
+2026-09-27, outside the 30-day checkpoint window.
+
+The committed handoff uses schema `portal-final-artifacts/v2` and records database timestamps,
+per-artifact normalized report identities, the combined finding-set identity, the unchanged-content
+differential, reachability evidence identity, exception register identity, central policy identity,
+and the exact offline scan flags. The central exact-image policy reported 1,340 findings across the
+two frozen first-party images and three immutable vendor images with zero blocking findings.
+This refresh is scanner provenance, not a vulnerability-free, production-ready, or byte-identical
+OCI claim. OCI byte determinism remains `NOT VERIFIED`.
+
 ## CI execution
 
 The pull-request/main CI workflow runs:
@@ -344,16 +376,16 @@ Suggested retention is 14 days for pull-request reports, 30 days for main/schedu
 
 ## Deterministic outcomes
 
-| Exit | Meaning |
-| ---: | --- |
-| 0 | Policy passed |
-| 10 | Blocking finding |
-| 20 | Scanner execution failure |
-| 21 | Stale mandatory scanner database/ruleset |
-| 22 | Scan input or artifact identity mismatch |
-| 23 | Invalid baseline or expired exception |
-| 24 | Unsafe report or redaction failure |
-| 25 | Scanner version/checksum mismatch |
+| Exit | Meaning                                  |
+| ---: | ---------------------------------------- |
+|    0 | Policy passed                            |
+|   10 | Blocking finding                         |
+|   20 | Scanner execution failure                |
+|   21 | Stale mandatory scanner database/ruleset |
+|   22 | Scan input or artifact identity mismatch |
+|   23 | Invalid baseline or expired exception    |
+|   24 | Unsafe report or redaction failure       |
+|   25 | Scanner version/checksum mismatch        |
 
 “No blocking findings” does not mean “no vulnerabilities.” Scanner absence, zero parsed packages,
 invalid JSON, stale mandatory data, or inability to execute is a failure rather than a zero-finding

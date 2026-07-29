@@ -1,4 +1,4 @@
-"""Materialize a Portal build manifest from exact FF-06A artifacts without rebuilding."""
+"""Materialize a Portal build manifest from frozen FF-06 artifacts without rebuilding."""
 
 from __future__ import annotations
 
@@ -105,13 +105,15 @@ def application_content_digest(tag: str, name: str) -> str:
 def source_is_current_or_governance_child(*, artifact_source: str, current: str) -> bool:
     if artifact_source == current:
         return True
-    parent = git("rev-parse", f"{current}^")
+    merge_base = git("merge-base", artifact_source, current)
+    if merge_base != artifact_source:
+        return False
     changed = frozenset(
         line
         for line in git("diff", "--name-only", f"{artifact_source}..{current}").splitlines()
         if line
     )
-    return parent == artifact_source and bool(changed) and changed <= GOVERNANCE_ONLY_PATHS
+    return bool(changed) and changed <= GOVERNANCE_ONLY_PATHS
 
 
 def load_handoff(path: Path) -> dict[str, Any]:
@@ -121,7 +123,7 @@ def load_handoff(path: Path) -> dict[str, Any]:
         raise ValueError("invalid final-artifact handoff") from error
     if (
         not isinstance(handoff, dict)
-        or handoff.get("schema_version") != "portal-final-artifacts/v1"
+        or handoff.get("schema_version") != "portal-final-artifacts/v2"
         or handoff.get("canonical_policy_identity") != "docker_image_id"
     ):
         raise ValueError("unsupported final-artifact handoff")
@@ -217,7 +219,7 @@ def build_manifest(handoff: dict[str, Any], records: list[dict[str, Any]]) -> di
         "metadata": {
             "generated_at_utc": records[0]["created"],
             "timestamp_affects_image_identity": False,
-            "evidence_version": handoff["evidence_version"],
+            "evidence_version": handoff["artifact_evidence_version"],
         },
     }
 

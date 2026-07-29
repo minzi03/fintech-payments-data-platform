@@ -192,6 +192,10 @@ def canonical_digest(value: object) -> str:
     return sha256_bytes(encoded)
 
 
+def _mapping(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def normalize_repository_path(value: str) -> str:
     candidate = value.replace("\\", "/").removeprefix("./")
     if candidate.startswith("/src/"):
@@ -337,7 +341,14 @@ def validate_toolchain(
         image = item.get("image")
         version = item.get("version")
         pattern = item.get("expected_version_pattern")
-        if not all(isinstance(part, str) and part for part in (image, version, pattern)):
+        if (
+            not isinstance(image, str)
+            or not image
+            or not isinstance(version, str)
+            or not version
+            or not isinstance(pattern, str)
+            or not pattern
+        ):
             raise ScanFailure("incomplete scanner identity", exit_code=EXIT_INVALID_GOVERNANCE)
         if not IMAGE_REFERENCE.fullmatch(image):
             raise ScanFailure(f"{name} image is not immutable", exit_code=EXIT_TOOL_IDENTITY)
@@ -441,6 +452,7 @@ def validate_exceptions(
         "architecture",
         "scanner_database_identity",
         "evidence_version",
+        "evidence_revisions",
     }
     for item in exceptions:
         if not isinstance(item, dict):
@@ -471,6 +483,8 @@ def validate_exceptions(
         if expected_fields != required:
             for key in exact_image_required:
                 value = item.get(key)
+                if key == "evidence_revisions":
+                    continue
                 if not isinstance(value, str) or not value or "*" in value or "?" in value:
                     raise ScanFailure(
                         "incomplete exact-image SCN exception",
@@ -491,6 +505,11 @@ def validate_exceptions(
                     "invalid exact-image architecture",
                     exit_code=EXIT_INVALID_GOVERNANCE,
                 )
+            _validate_evidence_revisions(
+                item["evidence_revisions"],
+                current_database_identity=str(item["scanner_database_identity"]),
+                current_evidence_version=str(item["evidence_version"]),
+            )
         for key in (
             "reason",
             "compensating_control",
@@ -528,6 +547,75 @@ def validate_exceptions(
             expired.add(fingerprint)
         indexed[fingerprint] = item
     return indexed, expired
+
+
+def _validate_evidence_revisions(
+    value: object,
+    *,
+    current_database_identity: str,
+    current_evidence_version: str,
+) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, list) or not value:
+        raise ScanFailure(
+            "missing exact evidence revisions",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    required = {
+        "evidence_version",
+        "scanner_database_identity",
+        "analysis_date",
+        "status",
+    }
+    revisions: list[Mapping[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    current: list[Mapping[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != required:
+            raise ScanFailure(
+                "invalid exact evidence revision",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        evidence_version = str(item["evidence_version"])
+        database_identity = str(item["scanner_database_identity"])
+        status = str(item["status"])
+        try:
+            analysis_date = date.fromisoformat(str(item["analysis_date"]))
+        except ValueError as error:
+            raise ScanFailure(
+                "invalid evidence revision date",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            ) from error
+        key = (evidence_version, database_identity)
+        if (
+            re.fullmatch(r"[A-Za-z0-9._-]{1,80}", evidence_version) is None
+            or not SHA256.fullmatch(database_identity)
+            or status not in {"current", "superseded"}
+            or analysis_date > datetime.now(UTC).date()
+            or key in seen
+        ):
+            raise ScanFailure(
+                "unsafe or duplicate evidence revision",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        seen.add(key)
+        revisions.append(item)
+        if status == "current":
+            current.append(item)
+    if len(current) != 1:
+        raise ScanFailure(
+            "evidence revisions require exactly one current revision",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    active = current[0]
+    if (
+        active["scanner_database_identity"] != current_database_identity
+        or active["evidence_version"] != current_evidence_version
+    ):
+        raise ScanFailure(
+            "current evidence revision does not match active evidence",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    return tuple(revisions)
 
 
 def _exception_duration_category(item: Mapping[str, Any]) -> str:
@@ -696,8 +784,8 @@ def parse_semgrep(
             continue
         identifier = str(result.get("check_id") or "semgrep-unknown")
         path = normalize_repository_path(str(result.get("path") or ""))
-        extra = result.get("extra") if isinstance(result.get("extra"), dict) else {}
-        metadata = extra.get("metadata") if isinstance(extra.get("metadata"), dict) else {}
+        extra = _mapping(result.get("extra"))
+        metadata = _mapping(extra.get("metadata"))
         exploitability = str(metadata.get("exploitability") or "unknown")
         findings.append(
             make_finding(
@@ -862,11 +950,7 @@ def parse_osv(
         for package_entry in packages:
             if not isinstance(package_entry, dict):
                 continue
-            package_data = (
-                package_entry.get("package")
-                if isinstance(package_entry.get("package"), dict)
-                else {}
-            )
+            package_data = _mapping(package_entry.get("package"))
             name = str(package_data.get("name") or package_entry.get("name") or "")
             installed_version = str(
                 package_data.get("version") or package_entry.get("version") or ""
@@ -907,9 +991,9 @@ def parse_osv(
                                 if isinstance(event, dict) and event.get("fixed"):
                                     fixed_versions.add(str(event["fixed"]))
                 references = [
-                    item.get("url")
+                    value
                     for item in vulnerability.get("references", [])
-                    if isinstance(item, dict)
+                    if isinstance(item, dict) and isinstance((value := item.get("url")), str)
                 ]
                 development = lock_path.endswith("requirements-dev.lock")
                 findings.append(
@@ -1111,9 +1195,7 @@ def parse_zizmor(
         identifier = item.get("ident") or item.get("rule") or item.get("audit")
         if not identifier:
             continue
-        determinations = (
-            item.get("determinations") if isinstance(item.get("determinations"), dict) else {}
-        )
+        determinations = _mapping(item.get("determinations"))
         severity = _severity(
             determinations.get("severity") or item.get("severity"),
             default="medium",
@@ -1125,13 +1207,9 @@ def parse_zizmor(
         for location in locations:
             if not isinstance(location, dict):
                 continue
-            symbolic = (
-                location.get("symbolic") if isinstance(location.get("symbolic"), dict) else {}
-            )
-            key_metadata = symbolic.get("key") if isinstance(symbolic.get("key"), dict) else {}
-            local_metadata = (
-                key_metadata.get("Local") if isinstance(key_metadata.get("Local"), dict) else {}
-            )
+            symbolic = _mapping(location.get("symbolic"))
+            key_metadata = _mapping(symbolic.get("key"))
+            local_metadata = _mapping(key_metadata.get("Local"))
             path_value = (
                 local_metadata.get("verbatim_path")
                 or location.get("path")
@@ -1145,17 +1223,9 @@ def parse_zizmor(
                 path = normalize_repository_path(str(path_value))
             except ScanFailure:
                 continue
-            concrete = (
-                location.get("concrete") if isinstance(location.get("concrete"), dict) else {}
-            )
-            concrete_location = (
-                concrete.get("location") if isinstance(concrete.get("location"), dict) else {}
-            )
-            start_point = (
-                concrete_location.get("start_point")
-                if isinstance(concrete_location.get("start_point"), dict)
-                else {}
-            )
+            concrete = _mapping(location.get("concrete"))
+            concrete_location = _mapping(concrete.get("location"))
+            start_point = _mapping(concrete_location.get("start_point"))
             line = int(start_point.get("row") or location.get("row") or item.get("line") or 0)
             key = (str(identifier), path, line)
             if key in seen:
@@ -1264,6 +1334,7 @@ def apply_image_reachability_overrides(
         "expiry_or_removal_trigger",
         "scanner_database_identity",
         "evidence_version",
+        "evidence_revisions",
     }
     indexed: dict[tuple[str, str, str, str, str, str], tuple[str, str]] = {}
     for item in overrides:
@@ -1284,6 +1355,7 @@ def apply_image_reachability_overrides(
         expiry_or_removal_trigger = str(item["expiry_or_removal_trigger"])
         scanner_database_identity = str(item["scanner_database_identity"])
         evidence_version = str(item["evidence_version"])
+        evidence_revisions = item["evidence_revisions"]
         try:
             analysis_date = date.fromisoformat(str(item["analysis_date"]))
         except ValueError as error:
@@ -1329,6 +1401,11 @@ def apply_image_reachability_overrides(
                 "unsafe image reachability override",
                 exit_code=EXIT_INVALID_GOVERNANCE,
             )
+        _validate_evidence_revisions(
+            evidence_revisions,
+            current_database_identity=scanner_database_identity,
+            current_evidence_version=evidence_version,
+        )
         for asset in assets:
             for package in packages:
                 for architecture in architectures:
@@ -1347,7 +1424,7 @@ def apply_image_reachability_overrides(
                         )
                     indexed[key] = (exploitability, evidence)
 
-    matched: set[tuple[str, str, str, str]] = set()
+    matched: set[tuple[str, str, str, str, str, str]] = set()
     result: list[Finding] = []
     for finding in findings:
         if (
@@ -1432,7 +1509,7 @@ def is_blocking(
         return True
     exception = exceptions.get(finding.safe_fingerprint)
     if exception is not None:
-        expected = {
+        expected: dict[str, Any] = {
             "scanner": finding.scanner,
             "finding_identifier": finding.rule_or_vulnerability_id,
             "asset": finding.asset_identity,
@@ -1575,12 +1652,53 @@ class DockerScannerRunner:
         output: Path,
         scanners: Mapping[str, Mapping[str, Any]],
         source: str,
+        trivy_cache: Path | None = None,
     ) -> None:
         self.snapshot = snapshot
         self.output = output
         self.scanners = scanners
         self.source = source
+        self.trivy_cache = (
+            trivy_cache.resolve()
+            if trivy_cache is not None
+            else (self.output / "cache" / "trivy").resolve()
+        )
+        self.pinned_trivy_database_identity = ""
         self.executions: list[ScannerExecution] = []
+
+    def pin_trivy_database(self, expected_identity: str) -> None:
+        if not SHA256.fullmatch(expected_identity):
+            raise ScanFailure(
+                "invalid pinned Trivy database identity",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        if not self.trivy_cache.is_dir():
+            raise ScanFailure(
+                "pinned Trivy database cache is missing",
+                exit_code=EXIT_INPUT_MISMATCH,
+            )
+        actual = self._trivy_database_identity(self.trivy_cache)
+        if actual != expected_identity:
+            raise ScanFailure(
+                "pinned Trivy database identity mismatch",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        self.pinned_trivy_database_identity = expected_identity
+
+    def _verify_pinned_trivy_database(self) -> str:
+        expected = self.pinned_trivy_database_identity
+        if not expected:
+            raise ScanFailure(
+                "Trivy database is not pinned",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        actual = self._trivy_database_identity(self.trivy_cache)
+        if actual != expected:
+            raise ScanFailure(
+                "Trivy database changed after selection",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        return actual
 
     def validate_version(self, name: str) -> None:
         scanner = self.scanners[name]
@@ -1843,7 +1961,7 @@ class DockerScannerRunner:
         )
         for path in inputs:
             command = [
-                *_docker_base(network=True, mounts=((self.snapshot, "/src", True),)),
+                *_docker_base(network=False, mounts=((self.snapshot, "/src", True),)),
                 str(scanner["image"]),
                 "config",
                 "--format=json",
@@ -1876,6 +1994,7 @@ class DockerScannerRunner:
         name = "trivy"
         self.validate_version(name)
         scanner = self.scanners[name]
+        database_identity_before = self._verify_pinned_trivy_database()
         image_id_before = self._image_id(tag)
         safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", tag).strip("-")[:80] or "image"
         image_dir = self.output / "work" / "images"
@@ -1888,12 +2007,10 @@ class DockerScannerRunner:
         image_id_after = self._image_id(tag)
         if image_id_after != image_id_before:
             raise ScanFailure("image identity changed during export", exit_code=EXIT_INPUT_MISMATCH)
-        cache = self.output / "cache" / "trivy"
-        cache.mkdir(parents=True, exist_ok=True)
         command = [
             *_docker_base(
-                network=True,
-                mounts=((image_dir, "/work", True), (cache, "/cache", False)),
+                network=False,
+                mounts=((image_dir, "/work", True), (self.trivy_cache, "/cache", False)),
                 temporary_storage_size="4g",
             ),
             str(scanner["image"]),
@@ -1902,13 +2019,20 @@ class DockerScannerRunner:
             "--format=json",
             "--quiet",
             "--scanners=vuln,secret",
+            "--skip-db-update",
+            "--skip-java-db-update",
             f"--input=/work/{archive.name}",
         ]
         stdout, _, _ = _run(command, safe_name=f"Trivy image {safe_name}")
         payload = _parse_json_output(stdout, scanner=name)
         if not isinstance(payload, dict):
             raise ScanFailure("invalid Trivy image result", exit_code=EXIT_SCANNER_FAILURE)
-        database_identity = self._trivy_database_identity(cache)
+        database_identity = self._verify_pinned_trivy_database()
+        if database_identity != database_identity_before:
+            raise ScanFailure(
+                "Trivy database changed during image scan",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
         findings = parse_trivy(
             payload,
             version=str(scanner["version"]),
@@ -2109,6 +2233,7 @@ def run_mode(
     output: Path = DEFAULT_OUTPUT,
     api_image: str = "fintech-portal-api:local",
     web_image: str = "fintech-payments-data-platform-portal-web",
+    trivy_cache: Path | None = None,
 ) -> int:
     started_at = datetime.now(UTC)
     (
@@ -2141,6 +2266,7 @@ def run_mode(
         output=_safe_output_root(output),
         scanners=scanners,
         source=source,
+        trivy_cache=trivy_cache,
     )
     findings: list[Finding] = []
     advisory_scanners: frozenset[str] = frozenset()
@@ -2180,6 +2306,7 @@ def run_mode(
                 "portal-web": (web_image, expected_image_ids["portal-web"]),
             },
         )
+        runner.pin_trivy_database(expected_image_database_identity)
         artifact_manifest_identity = validate_artifact_manifest(
             output / ".." / "portal-artifacts" / "manifest.json",
             source=source,
@@ -2202,6 +2329,14 @@ def run_mode(
                 "final-artifact scanner database identity mismatch",
                 exit_code=EXIT_INVALID_GOVERNANCE,
             )
+        validate_final_scan_evidence(
+            FINAL_ARTIFACTS_PATH,
+            findings=findings,
+            artifact_architectures=artifact_architectures,
+            database_identity=expected_image_database_identity,
+            policy=policy,
+            exceptions=exceptions,
+        )
     else:
         raise ScanFailure("unsupported scan mode", exit_code=EXIT_INPUT_MISMATCH)
 
@@ -2281,13 +2416,15 @@ def _portal_vendor_images(compose: Path) -> tuple[str, ...]:
 def _artifact_source_is_current_or_governance_child(*, artifact_source: str, source: str) -> bool:
     if artifact_source == source:
         return True
-    parent = git("rev-parse", f"{source}^")
+    merge_base = git("merge-base", artifact_source, source)
+    if merge_base != artifact_source:
+        return False
     changed = frozenset(
         path
         for path in git("diff", "--name-only", f"{artifact_source}..{source}").splitlines()
         if path
     )
-    return parent == artifact_source and bool(changed) and changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS
+    return bool(changed) and changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS
 
 
 def validate_final_artifact_handoff(
@@ -2300,6 +2437,7 @@ def validate_final_artifact_handoff(
     required = {
         "schema_version",
         "evidence_version",
+        "artifact_evidence_version",
         "source_commit",
         "canonical_policy_identity",
         "artifact_manifest_identity",
@@ -2312,8 +2450,11 @@ def validate_final_artifact_handoff(
         "build_commands",
         "verification_commands",
         "oci_nondeterminism",
+        "scanner_database",
+        "scan_evidence",
+        "finding_differential",
     }
-    if set(handoff) != required or handoff.get("schema_version") != "portal-final-artifacts/v1":
+    if set(handoff) != required or handoff.get("schema_version") != "portal-final-artifacts/v2":
         raise ScanFailure(
             "unsupported final-artifact handoff schema",
             exit_code=EXIT_INVALID_GOVERNANCE,
@@ -2337,12 +2478,15 @@ def validate_final_artifact_handoff(
             exit_code=EXIT_INVALID_GOVERNANCE,
         )
     evidence_version = handoff.get("evidence_version")
+    artifact_evidence_version = handoff.get("artifact_evidence_version")
     manifest_identity = handoff.get("artifact_manifest_identity")
     policy_identity = handoff.get("policy_identity")
     exception_identity = handoff.get("exception_register_identity")
     if (
         not isinstance(evidence_version, str)
         or re.fullmatch(r"[A-Za-z0-9._-]{1,80}", evidence_version) is None
+        or not isinstance(artifact_evidence_version, str)
+        or re.fullmatch(r"[A-Za-z0-9._-]{1,80}", artifact_evidence_version) is None
         or not isinstance(manifest_identity, str)
         or not SHA256.fullmatch(manifest_identity)
         or not isinstance(policy_identity, str)
@@ -2374,6 +2518,15 @@ def validate_final_artifact_handoff(
             "invalid final-artifact scanner identity",
             exit_code=EXIT_INVALID_GOVERNANCE,
         )
+    _validate_scanner_database_metadata(
+        handoff.get("scanner_database"),
+        expected_identity=str(scanner["database_identity"]),
+    )
+    _validate_finding_differential(
+        handoff.get("finding_differential"),
+        current_database_identity=str(scanner["database_identity"]),
+        current_evidence_version=str(evidence_version),
+    )
     artifacts = handoff.get("artifacts")
     if not isinstance(artifacts, list) or len(artifacts) != 2:
         raise ScanFailure(
@@ -2434,6 +2587,352 @@ def validate_final_artifact_handoff(
     return architectures, str(evidence_version), str(scanner["database_identity"])
 
 
+def _validate_scanner_database_metadata(value: object, *, expected_identity: str) -> None:
+    required = {
+        "identity",
+        "vulnerability_schema_version",
+        "java_schema_version",
+        "vulnerability_updated_at",
+        "vulnerability_downloaded_at",
+        "vulnerability_next_update",
+        "java_updated_at",
+        "java_downloaded_at",
+        "java_next_update",
+        "freshness_result",
+        "source",
+        "cache_classification",
+        "update_policy",
+        "required_flags",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ScanFailure(
+            "invalid scanner database metadata",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    timestamps = (
+        "vulnerability_updated_at",
+        "vulnerability_downloaded_at",
+        "vulnerability_next_update",
+        "java_updated_at",
+        "java_downloaded_at",
+        "java_next_update",
+    )
+    try:
+        parsed = [
+            datetime.fromisoformat(str(value[key]).replace("Z", "+00:00")) for key in timestamps
+        ]
+    except ValueError as error:
+        raise ScanFailure(
+            "invalid scanner database timestamp",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        ) from error
+    if (
+        value["identity"] != expected_identity
+        or value["vulnerability_schema_version"] != 2
+        or value["java_schema_version"] != 1
+        or value["freshness_result"] != "valid"
+        or value["source"] != "trivy-local-oci-cache"
+        or value["cache_classification"] != "external-local-release-evidence"
+        or value["update_policy"] != "pinned-offline"
+        or value["required_flags"] != ["--skip-db-update", "--skip-java-db-update"]
+        or any(item.tzinfo is None for item in parsed)
+    ):
+        raise ScanFailure(
+            "unsafe scanner database metadata",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+
+
+def _validate_finding_differential(
+    value: object,
+    *,
+    current_database_identity: str,
+    current_evidence_version: str,
+) -> None:
+    required = {
+        "previous_evidence_version",
+        "current_evidence_version",
+        "previous_scanner_database_identity",
+        "current_scanner_database_identity",
+        "previous_finding_content_identity",
+        "current_finding_content_identity",
+        "previous_finding_count",
+        "current_finding_count",
+        "unchanged_findings",
+        "new_advisories",
+        "removed_advisories",
+        "severity_changes",
+        "alias_changes",
+        "package_match_changes",
+        "installed_version_changes",
+        "fix_status_changes",
+        "affected_condition_changes",
+        "scanner_metadata_only_changes",
+        "finding_inventory_changed",
+        "technical_reachability_conclusions_changed",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ScanFailure(
+            "invalid finding differential",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    identities = (
+        "previous_scanner_database_identity",
+        "current_scanner_database_identity",
+        "previous_finding_content_identity",
+        "current_finding_content_identity",
+    )
+    counts = (
+        "previous_finding_count",
+        "current_finding_count",
+        "unchanged_findings",
+        "new_advisories",
+        "removed_advisories",
+        "severity_changes",
+        "alias_changes",
+        "package_match_changes",
+        "installed_version_changes",
+        "fix_status_changes",
+        "affected_condition_changes",
+        "scanner_metadata_only_changes",
+    )
+    if (
+        any(not SHA256.fullmatch(str(value[key])) for key in identities)
+        or value["current_scanner_database_identity"] != current_database_identity
+        or value["current_evidence_version"] != current_evidence_version
+        or value["previous_scanner_database_identity"] == current_database_identity
+        or value["previous_evidence_version"] == current_evidence_version
+        or any(not isinstance(value[key], int) or value[key] < 0 for key in counts)
+        or value["previous_finding_count"] != value["current_finding_count"]
+        or value["unchanged_findings"] != value["current_finding_count"]
+        or value["previous_finding_content_identity"] != value["current_finding_content_identity"]
+        or any(
+            value[key] != 0
+            for key in (
+                "new_advisories",
+                "removed_advisories",
+                "severity_changes",
+                "alias_changes",
+                "package_match_changes",
+                "installed_version_changes",
+                "fix_status_changes",
+                "affected_condition_changes",
+            )
+        )
+        or value["scanner_metadata_only_changes"] != value["current_finding_count"]
+        or value["finding_inventory_changed"] is not False
+        or value["technical_reachability_conclusions_changed"] is not False
+    ):
+        raise ScanFailure(
+            "finding differential is not an unchanged-artifact refresh",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+
+
+def _image_finding_record(finding: Finding, *, include_database: bool) -> dict[str, Any]:
+    record = {
+        "scanner": finding.scanner,
+        "scanner_version": finding.scanner_version,
+        "rule_or_vulnerability_id": finding.rule_or_vulnerability_id,
+        "aliases": list(finding.aliases),
+        "asset_type": finding.asset_type,
+        "asset_identity": finding.asset_identity,
+        "package": finding.package,
+        "package_version": finding.package_version,
+        "ecosystem": finding.ecosystem,
+        "repository_path": finding.repository_path,
+        "safe_fingerprint": finding.safe_fingerprint,
+        "severity": finding.severity,
+        "fix_status": finding.fix_status,
+        "scope": finding.scope,
+    }
+    if include_database:
+        record["scanner_database_identity"] = finding.scanner_database_identity
+    return record
+
+
+def _image_finding_identity(
+    findings: Sequence[Finding],
+    *,
+    include_database: bool,
+) -> str:
+    records = [_image_finding_record(item, include_database=include_database) for item in findings]
+    return canonical_digest(
+        sorted(
+            records,
+            key=lambda item: (
+                item["asset_identity"],
+                item["rule_or_vulnerability_id"],
+                item["package"],
+                item["package_version"],
+                item["safe_fingerprint"],
+            ),
+        )
+    )
+
+
+def validate_final_scan_evidence(
+    path: Path,
+    *,
+    findings: Sequence[Finding],
+    artifact_architectures: Mapping[str, str],
+    database_identity: str,
+    policy: Mapping[str, Any],
+    exceptions: Mapping[str, Any],
+) -> None:
+    handoff = _json(path.resolve())
+    evidence = handoff.get("scan_evidence")
+    required = {
+        "database_identity",
+        "finding_content_identity",
+        "normalized_finding_set_identity",
+        "artifact_report_set_identity",
+        "artifacts",
+        "reachability_evidence_identity",
+        "exception_register_identity",
+        "central_policy_identity",
+        "security_result",
+        "blocking_count",
+        "fixed_available_first_party_critical_high",
+        "expiry_summary",
+        "oci_byte_determinism",
+    }
+    if not isinstance(evidence, dict) or set(evidence) != required:
+        raise ScanFailure(
+            "invalid final scan evidence",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    current = [
+        item
+        for item in findings
+        if item.scanner == "trivy"
+        and item.scope == "first_party_runtime"
+        and item.asset_identity in artifact_architectures
+    ]
+    by_artifact = {
+        artifact: [item for item in current if item.asset_identity == artifact]
+        for artifact in sorted(artifact_architectures)
+    }
+    artifact_records = evidence["artifacts"]
+    if not isinstance(artifact_records, list) or len(artifact_records) != 2:
+        raise ScanFailure(
+            "invalid final scan artifact evidence",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    names_by_identity = {
+        str(item["image_id"]): str(item["name"])
+        for item in handoff.get("artifacts", [])
+        if isinstance(item, dict)
+    }
+    expected_report_identities: dict[str, str] = {}
+    seen_assets: set[str] = set()
+    artifact_required = {
+        "name",
+        "image_id",
+        "architecture",
+        "scan_timestamp",
+        "normalized_report_identity",
+        "finding_count",
+        "severity_counts",
+        "fix_status_counts",
+        "secret_findings",
+        "misconfiguration_findings",
+    }
+    for record in artifact_records:
+        if not isinstance(record, dict) or set(record) != artifact_required:
+            raise ScanFailure(
+                "invalid final scan artifact record",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        image_id = str(record["image_id"])
+        artifact_findings = by_artifact.get(image_id)
+        try:
+            scan_timestamp = datetime.fromisoformat(
+                str(record["scan_timestamp"]).replace("Z", "+00:00")
+            )
+        except ValueError as error:
+            raise ScanFailure(
+                "invalid final scan timestamp",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            ) from error
+        report_identity = (
+            _image_finding_identity(artifact_findings, include_database=True)
+            if artifact_findings is not None
+            else ""
+        )
+        severity_counts = dict(
+            sorted(Counter(item.severity for item in artifact_findings or []).items())
+        )
+        fix_status_counts = dict(
+            sorted(Counter(item.fix_status for item in artifact_findings or []).items())
+        )
+        if (
+            artifact_findings is None
+            or image_id in seen_assets
+            or record["name"] != names_by_identity.get(image_id)
+            or record["architecture"] != artifact_architectures.get(image_id)
+            or scan_timestamp.tzinfo is None
+            or record["normalized_report_identity"] != report_identity
+            or record["finding_count"] != len(artifact_findings)
+            or record["severity_counts"] != severity_counts
+            or record["fix_status_counts"] != fix_status_counts
+            or record["secret_findings"]
+            != sum(item.asset_type == "potential_secret" for item in artifact_findings)
+            or record["misconfiguration_findings"]
+            != sum(item.asset_type == "configuration" for item in artifact_findings)
+        ):
+            raise ScanFailure(
+                "final scan artifact evidence mismatch",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        seen_assets.add(image_id)
+        expected_report_identities[str(record["name"])] = report_identity
+    combined_identity = _image_finding_identity(current, include_database=True)
+    content_identity = _image_finding_identity(current, include_database=False)
+    report_set_identity = canonical_digest(dict(sorted(expected_report_identities.items())))
+    reachability_identity = canonical_digest(policy.get("image_reachability_overrides", []))
+    first_party_exceptions = [
+        item
+        for item in exceptions.get("exceptions", [])
+        if isinstance(item, dict)
+        and item.get("scanner") == "trivy"
+        and item.get("scope") == "first_party_runtime"
+    ]
+    today = datetime.now(UTC).date()
+    expiry_dates = [date.fromisoformat(str(item["expiry_date"])) for item in first_party_exceptions]
+    expiry_summary = {
+        "earliest_expiry": min(expiry_dates).isoformat(),
+        "expired_count": sum(item < today for item in expiry_dates),
+        "within_30_days_count": sum(0 <= (item - today).days <= 30 for item in expiry_dates),
+    }
+    fixed_available = sum(
+        item.severity in {"critical", "high"} and item.fix_status == "fixed_available"
+        for item in current
+    )
+    differential = handoff.get("finding_differential")
+    if (
+        evidence["database_identity"] != database_identity
+        or evidence["finding_content_identity"] != content_identity
+        or evidence["normalized_finding_set_identity"] != combined_identity
+        or evidence["artifact_report_set_identity"] != report_set_identity
+        or evidence["reachability_evidence_identity"] != reachability_identity
+        or evidence["exception_register_identity"] != sha256_file(EXCEPTIONS_PATH)
+        or evidence["central_policy_identity"] != sha256_file(POLICY_PATH)
+        or evidence["security_result"] != "passed"
+        or evidence["blocking_count"] != 0
+        or evidence["fixed_available_first_party_critical_high"] != fixed_available
+        or evidence["expiry_summary"] != expiry_summary
+        or evidence["oci_byte_determinism"] != "not_verified"
+        or not isinstance(differential, dict)
+        or differential.get("current_finding_content_identity") != content_identity
+        or differential.get("current_finding_count") != len(current)
+    ):
+        raise ScanFailure(
+            "final scan governance evidence mismatch",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+
+
 def validate_artifact_manifest(
     path: Path,
     *,
@@ -2467,7 +2966,7 @@ def validate_artifact_manifest(
     for item in images:
         if not isinstance(item, dict):
             continue
-        output = item.get("output") if isinstance(item.get("output"), dict) else {}
+        output = _mapping(item.get("output"))
         name = str(item.get("name") or "")
         digest = str(output.get("digest") or "")
         if name and SHA256.fullmatch(digest):
@@ -2483,6 +2982,14 @@ def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespac
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--api-image", default="fintech-portal-api:local")
     parser.add_argument("--web-image", default="fintech-payments-data-platform-portal-web")
+    parser.add_argument(
+        "--trivy-cache",
+        type=Path,
+        help=(
+            "Approved local Trivy cache. Image mode pins the exact database from "
+            "the committed final-artifact handoff and disables database updates."
+        ),
+    )
     return parser.parse_args(arguments)
 
 
@@ -2494,6 +3001,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             output=options.output,
             api_image=options.api_image,
             web_image=options.web_image,
+            trivy_cache=options.trivy_cache,
         )
     except ScanFailure as error:
         print(

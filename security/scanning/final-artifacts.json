@@ -1,16 +1,17 @@
 {
-  "schema_version": "portal-final-artifacts/v1",
-  "evidence_version": "ff06a-2026-07-29.1",
+  "schema_version": "portal-final-artifacts/v2",
+  "evidence_version": "ff06b-2026-07-29.1",
+  "artifact_evidence_version": "ff06a-2026-07-29.1",
   "source_commit": "c9516f9455d90be24dccd62869c2d5afd8b5f802",
   "canonical_policy_identity": "docker_image_id",
   "artifact_manifest_identity": "sha256:27bea0e7d7e6df6f3167c441f6a0bf39fbeaae5d4ec40bea05c336afb8eabcdb",
-  "policy_identity": "sha256:eb5603f044325a86fe904e8b86d0a6c909b41ca15b360e2b25a9f62e07174cc3",
-  "exception_register_identity": "sha256:927d11c6ee9f106cb76a924f090d412ab226555e72305a1a7a5dcd43dc4cd167",
+  "policy_identity": "sha256:d08d77daeef36ab1c9f73f976f096ab840e2651f25cf1b5b9c1689713f8e7140",
+  "exception_register_identity": "sha256:8129c2a8e5fb7c5c3f1cd7a1cb523b51c1c261df8226758770ee68216ec3ad44",
   "scanner": {
     "name": "trivy",
     "version": "0.70.0",
     "immutable_image": "docker.io/aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
-    "database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead"
+    "database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e"
   },
   "artifacts": [
     {
@@ -46,13 +47,7 @@
         "forbidden_paths_absent": true,
         "sensitive_env_absent": true,
         "setid_files_absent": true,
-        "forbidden_runtime_tools_absent": [
-          "pip",
-          "pip3",
-          "gcc",
-          "cc",
-          "make"
-        ],
+        "forbidden_runtime_tools_absent": ["pip", "pip3", "gcc", "cc", "make"],
         "entrypoint": [],
         "command": [
           "uvicorn",
@@ -63,10 +58,7 @@
           "8010",
           "--no-access-log"
         ],
-        "exposed_ports": [
-          "8010/tcp",
-          "9464/tcp"
-        ],
+        "exposed_ports": ["8010/tcp", "9464/tcp"],
         "safe_source_maps": 0
       },
       "build_once": true
@@ -118,16 +110,9 @@
           "cc",
           "make"
         ],
-        "entrypoint": [
-          "docker-entrypoint.sh"
-        ],
-        "command": [
-          "node",
-          "apps/portal-web/server.js"
-        ],
-        "exposed_ports": [
-          "3000/tcp"
-        ],
+        "entrypoint": ["docker-entrypoint.sh"],
+        "command": ["node", "apps/portal-web/server.js"],
+        "exposed_ports": ["3000/tcp"],
         "safe_source_maps": 9
       },
       "build_once": true
@@ -236,17 +221,15 @@
       "scripts/security/scan.py",
       "images",
       "--output",
-      "build/ff06a-raw",
+      "build/ff06b-raw",
       "--api-image",
       "portal-api:ff06a-c9516f9-20260729a",
       "--web-image",
-      "portal-web:ff06a-c9516f9-20260729a"
+      "portal-web:ff06a-c9516f9-20260729a",
+      "--trivy-cache",
+      "<approved-local-trivy-cache>"
     ],
-    [
-      "python",
-      "scripts/security/scan.py",
-      "policy"
-    ]
+    ["python", "scripts/security/scan.py", "policy"]
   ],
   "oci_nondeterminism": [
     {
@@ -269,5 +252,103 @@
       ],
       "reason": "Next.js emits per-build preview and server-action cryptographic material in generated manifests."
     }
-  ]
+  ],
+  "scanner_database": {
+    "identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+    "vulnerability_schema_version": 2,
+    "java_schema_version": 1,
+    "vulnerability_updated_at": "2026-07-29T00:49:41.742211045Z",
+    "vulnerability_downloaded_at": "2026-07-29T08:29:13.24252736Z",
+    "vulnerability_next_update": "2026-07-30T00:49:41.742210684Z",
+    "java_updated_at": "2026-07-29T01:21:07.373378814Z",
+    "java_downloaded_at": "2026-07-29T08:32:39.266188136Z",
+    "java_next_update": "2026-08-01T01:21:07.373378514Z",
+    "freshness_result": "valid",
+    "source": "trivy-local-oci-cache",
+    "cache_classification": "external-local-release-evidence",
+    "update_policy": "pinned-offline",
+    "required_flags": ["--skip-db-update", "--skip-java-db-update"]
+  },
+  "scan_evidence": {
+    "database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+    "finding_content_identity": "sha256:087141685bba346b11714f2977471ebcf9a6c94149dc9a737f4bd8c85cf767da",
+    "normalized_finding_set_identity": "sha256:50db77dec1f4aabca73418f7f67eebdfc745ccadda6a881ca2769640553911d8",
+    "artifact_report_set_identity": "sha256:d391b8837f1faecc191d46a5c39521c516b1e188a146c8f7c86cb563e2a8f643",
+    "artifacts": [
+      {
+        "name": "portal-api",
+        "image_id": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+        "architecture": "amd64",
+        "scan_timestamp": "2026-07-29T08:47:59.074540449Z",
+        "normalized_report_identity": "sha256:409f0854557c963c8c980df34f4ec6d673d84c9836d097209fddb69fb94f9d1f",
+        "finding_count": 183,
+        "severity_counts": {
+          "critical": 5,
+          "high": 18,
+          "informational": 9,
+          "low": 93,
+          "medium": 58
+        },
+        "fix_status_counts": {
+          "no_fix": 183
+        },
+        "secret_findings": 0,
+        "misconfiguration_findings": 0
+      },
+      {
+        "name": "portal-web",
+        "image_id": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
+        "architecture": "amd64",
+        "scan_timestamp": "2026-07-29T08:48:22.030036616Z",
+        "normalized_report_identity": "sha256:5afe229eb3ff9f726a9c1e74fa2805231ba598b86259a9ae0a4d78665c43eaf2",
+        "finding_count": 160,
+        "severity_counts": {
+          "critical": 5,
+          "high": 17,
+          "informational": 9,
+          "low": 72,
+          "medium": 57
+        },
+        "fix_status_counts": {
+          "no_fix": 160
+        },
+        "secret_findings": 0,
+        "misconfiguration_findings": 0
+      }
+    ],
+    "reachability_evidence_identity": "sha256:be66730a451bc7dd8083679a137ae4d76a46dfca2868c5e0ca0e0fe67b6c07bb",
+    "exception_register_identity": "sha256:8129c2a8e5fb7c5c3f1cd7a1cb523b51c1c261df8226758770ee68216ec3ad44",
+    "central_policy_identity": "sha256:d08d77daeef36ab1c9f73f976f096ab840e2651f25cf1b5b9c1689713f8e7140",
+    "security_result": "passed",
+    "blocking_count": 0,
+    "fixed_available_first_party_critical_high": 0,
+    "expiry_summary": {
+      "earliest_expiry": "2026-09-27",
+      "expired_count": 0,
+      "within_30_days_count": 0
+    },
+    "oci_byte_determinism": "not_verified"
+  },
+  "finding_differential": {
+    "previous_evidence_version": "ff06a-2026-07-29.1",
+    "current_evidence_version": "ff06b-2026-07-29.1",
+    "previous_scanner_database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead",
+    "current_scanner_database_identity": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+    "previous_finding_content_identity": "sha256:087141685bba346b11714f2977471ebcf9a6c94149dc9a737f4bd8c85cf767da",
+    "current_finding_content_identity": "sha256:087141685bba346b11714f2977471ebcf9a6c94149dc9a737f4bd8c85cf767da",
+    "previous_finding_count": 343,
+    "current_finding_count": 343,
+    "unchanged_findings": 343,
+    "new_advisories": 0,
+    "removed_advisories": 0,
+    "severity_changes": 0,
+    "alias_changes": 0,
+    "package_match_changes": 0,
+    "installed_version_changes": 0,
+    "fix_status_changes": 0,
+    "affected_condition_changes": 0,
+    "scanner_metadata_only_changes": 343,
+    "finding_inventory_changed": false,
+    "technical_reachability_conclusions_changed": false
+  }
 }
