@@ -1,171 +1,136 @@
-# Implementation Roadmap
+# Implementation history and bounded roadmap
 
-Phases are dependency-ordered and independently testable. A technology named in a future phase is a
-plan, not an implementation claim.
+## Purpose
+
+This document separates completed implementation history from the current portfolio-finalization
+track and uncommitted future direction. A deferred item is not scheduled delivery and is not an
+implementation claim.
+
+Current architecture is authoritative in
+[docs/architecture/current-state.md](architecture/current-state.md). Approved external wording is
+defined by [docs/architecture/claims.md](architecture/claims.md).
+
+## Status summary
 
 ```text
-Phase 0 Foundation                                      [implemented]
-  -> Phase 1 PostgreSQL OLTP + generator                [implemented]
-      -> Phase 2 Settlement batch ingestion             [implemented]
-          -> Phase 3 Shared local/MinIO Bronze storage  [implemented]
-              -> Phase 4 PostgreSQL CDC + Kafka         [implemented]
-                  -> Phase 5 CDC consumer to Bronze     [implemented]
-                      -> Phase 6 Silver + data quality  [implemented]
-                          -> Phase 7 Airflow             [implemented]
-                              -> Production Design Freeze [in progress]
-                                  -> Five blocker slices  [blocked]
-                                      -> Controlled pilot [blocked]
-                                          -> Phase 8 Snowflake/dbt  [planned]
-                                              -> Phase 9 Reconciliation product
-                                                  -> Phase 10 Operations analytics/hardening
-                                                      -> Portal governed control actions [planned]
+Data platform Phases 0–7             COMPLETED
+Portal security/runtime Sprints 01–05 COMPLETED
+Sprint 06 tasks S06-01 through S06-05 COMPLETED
+FF-01 Validation isolation            COMPLETED
+FF-02 Security disposition            COMPLETED
+FF-03 Canonical entrypoint             COMPLETED
+FF-04 Architecture and claims          CURRENT
+FF-05 Demo and evidence                NEXT
+FF-06 Verification/publication         PENDING
 ```
 
-## Completed phases
+Feature development is frozen. FF-04 through FF-06 may improve documentation, evidence,
+verification, and publishing decisions; they may not add product or architecture scope.
 
-### Phase 0 - Project Foundation
+## Completed data-platform history
 
-Repository boundaries, Python 3.11 tooling, safe environment patterns, CI, documentation skeletons,
-and placeholders were established without runtime pipeline implementations.
+| Phase                           | Outcome                                  | Implemented boundary                                                     |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ |
+| Phase 0 — Foundation            | Repository/tooling baseline              | Python tooling, CI, documentation, safe configuration                    |
+| Phase 1 — Payments source       | Constrained OLTP and deterministic data  | PostgreSQL source model, lifecycle constraints, generator                |
+| Phase 2 — Settlement intake     | Versioned replay-safe file boundary      | Contract, fixtures, validation, SQLite manifest, local Bronze/quarantine |
+| Phase 3 — Shared object storage | Immutable local/MinIO boundary           | Storage interface, private buckets, checksums, conditional writes        |
+| Phase 4 — CDC infrastructure    | PostgreSQL-to-Kafka row-change transport | WAL/pgoutput, Debezium, Kafka topics, connector reconciliation           |
+| Phase 5 — CDC to Bronze         | Manual-consumer publication boundary     | Micro-batches, Parquet, manifest, quarantine, upload-before-commit       |
+| Phase 6 — Silver and quality    | Typed derived data and evidence          | History/latest/current, settlement outputs, quality, lineage             |
+| Phase 7 — Airflow orchestration | Scheduling and cross-pipeline control    | Four DAGs, Airflow metadata, PostgreSQL control state                    |
 
-### Phase 1 - PostgreSQL OLTP Source and Generator
+The executable data path ends at Silver and Airflow/control evidence. Warehouse, dbt,
+reconciliation products, Gold, and dashboards were not delivered by Phases 0–7.
 
-The constrained payments schema, reference data, indexes, lifecycle enforcement, deterministic
-synthetic generator, tests, and local PostgreSQL runbook were implemented and verified.
+## Completed Portal security/runtime history
 
-### Phase 2 - Banking Partner Settlement Batch Ingestion
+| Track                          | Outcome                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| Sprint 01 — truthful readiness | PostgreSQL/OIDC adapters, fail-closed required dependency aggregation          |
+| Sprint 02 — telemetry          | OpenTelemetry metrics/tracing, correlated structured logs, exporters           |
+| Sprint 03 — provider lifecycle | Refresh, rotation/reuse detection, fencing, logout, revocation, crypto-erasure |
+| Sprint 04 — abuse protection   | Trusted client identity, Redis atomic enforcement, fallback, penalties         |
+| Sprint 05 — audit/maintenance  | Transactional outbox, delivery worker, dead letter, bounded maintenance        |
 
-The `settlement-v1` contract, scenario fixtures, filename/checksum discovery, file/record quality,
-SQLite manifest, local immutable Bronze/quarantine, structured CLI results, and replay rules were
-implemented. Reconciliation was deliberately deferred.
+These sprints created a separate Portal security runtime. They did not add Portal operational
+adapters for Kafka, MinIO, Airflow, or Silver.
 
-### Phase 3 - MinIO-backed Shared Bronze Storage
+## Completed Sprint 06 hardening
 
-**Depends on:** Phase 2's stable storage boundary and manifest ordering.
+| Task                                    | Outcome                                                                       | Explicitly not granted                            |
+| --------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------- |
+| S06-01 — reproducible artifacts         | Hash-locked Python inputs, pinned actions/base images, build manifest         | Guaranteed byte-identical OCI digest, publication |
+| S06-02 — secret-provider boundary       | Vendor-neutral references/provider contract and environment adapter           | Concrete KMS or cloud secret manager              |
+| S06-03 — production configuration model | Frozen role/profile-aware configuration and strict validation                 | Production security authorization                 |
+| S06-04 — container hardening            | Non-root/read-only first-party images, capabilities/network/resource controls | Production deployment topology                    |
+| S06-05 — security scanning              | Five pinned scanner families, fail-closed policy, bounded exceptions          | Vulnerability-free or supply-chain attestation    |
 
-**Implemented:** a small storage interface, local and MinIO adapters, content-addressed Bronze and
-run-addressed quarantine keys, SHA-256 metadata, collision protection, bounded client failures,
-private idempotent bucket bootstrap, backend selection, local/real-service tests, CI job, and
-operations documentation.
+## Finalization track
 
-**Independent acceptance:** local behavior remains valid; MinIO raw bytes/checksum agree; identical
-content is idempotent; conflicting content cannot overwrite; invalid schemas are quarantine-only;
-partial row failures write Bronze and rejection evidence; failed upload cannot become `PROCESSED`.
+| Gate  | Objective                                     | Status    | Allowed change class                    |
+| ----- | --------------------------------------------- | --------- | --------------------------------------- |
+| FF-01 | Isolate destructive migration validation      | Completed | Validation safety                       |
+| FF-02 | Remediate/disposition image findings          | Completed | Critical security/release evidence      |
+| FF-03 | Establish canonical repository entrypoint     | Completed | Documentation accuracy                  |
+| FF-04 | Reconcile architecture and claims             | Current   | Documentation accuracy                  |
+| FF-05 | Build sanitized demo/evidence package         | Pending   | Demo reliability and evidence           |
+| FF-06 | Run final verification and decide publication | Pending   | Verification and publishing preparation |
 
-**Deliberately deferred:** distributed locking, production identity/TLS/retention, CDC, downstream
-format conversion, reconciliation, orchestration, warehouse, BI, and observability.
+FF-04 completion does not authorize a push. FF-05 must not fabricate screenshots or evidence.
+FF-06 must distinguish local verification from remote CI and production authorization.
 
-### Phase 4 - PostgreSQL CDC Infrastructure with Debezium and Kafka
+## Deferred product/platform direction
 
-**Depends on:** Phase 1's stable business schema and Phase 3's independently validated Bronze
-boundary. Phase 4 does not connect those paths yet.
+The following are possible future work only:
 
-**Implemented:** logical WAL settings, dedicated non-superuser connector role, explicit publication,
-single-node Kafka KRaft, Debezium Kafka Connect, persistent internal state, versioned connector
-template, precise Decimal and microsecond timestamp settings, schema-enabled full envelopes,
-idempotent create/update bootstrap, connector lifecycle scripts, metadata-only topic inspection, and
-real-service tests for snapshot/create/update/delete/restart/event/refund semantics.
+- executable warehouse and dbt transformations;
+- dimensional marts, Gold, reconciliation product, and dashboards;
+- Portal operational adapters for Kafka, MinIO, Airflow, and Silver;
+- production callback/abuse policy and security-runtime authorization;
+- concrete external secret-provider/KMS integration;
+- production identity and workload topology;
+- production deployment, promotion, and rollback;
+- full platform monitoring, alert delivery, and SLOs;
+- backup/restore objectives, HA, multi-region, and DR;
+- SBOM, signing, provenance, release attestation, and broader supply-chain controls.
 
-**Independent acceptance:** all six topics exist; connector and task are `RUNNING`; bootstrap returns
-`unchanged` on replay; initial snapshot emits `r`; later writes emit `c`/`u`/`d`; tombstones are
-distinguished; Decimal remains logical bytes; timestamps, source LSN, source transaction ID, Kafka
-partition, and offset remain available.
+No date or delivery commitment is attached to these items. Each would require a separate bounded
+decision, implementation, verification, and claim review.
 
-**Deliberately deferred:** CDC consumer, MinIO publication, transforms/SMTs that discard envelope
-metadata, Schema Registry, business event topics, reconciliation, orchestration, analytics, and
-production Kafka security/HA.
+## Rejected during feature freeze
 
-### Phase 5 - CDC Consumer to Shared Bronze
+Until finalization is complete, the following are explicitly rejected:
 
-**Depends on:** Phase 4 CDC topic semantics and Phase 3 immutable storage.
+- new business features or data products;
+- schema redesign or new migration scope;
+- architecture-layer expansion;
+- new deployment targets or infrastructure-as-code;
+- Portal data-plane adapters;
+- discretionary dependency modernization;
+- new scanner families or policy expansion unrelated to a critical correction;
+- warehouse, dbt, Gold, dashboard, or catalog implementation;
+- unrelated refactoring or cleanup.
 
-**Implemented:** manual commit/store control, wrapper/direct Debezium parsing, snapshot/create/update/
-delete/tombstone handling, deterministic Kafka event and range identity, partition-aware contiguous
-micro-batches, explicit-schema ZSTD Parquet, immutable MinIO publication, SQLite batch manifest,
-private poison quarantine, bounded retry, rebalance/shutdown flush, payload-safe inspection, and
-upload-before-commit replay/recovery tests.
+Allowed post-freeze work is restricted to release/validation safety, critical security correction,
+exception disposition, broken CI/test repair, documentation accuracy, demo reliability, evidence
+reproducibility, and publishing preparation.
 
-**Independent acceptance:** exact Kafka coordinates are preserved; upload/checksum/`UPLOADED`
-precede synchronous `offset_end + 1`; replay reuses identical objects; collision does not overwrite;
-poison offsets advance only after quarantine; committed groups do not reprocess on restart.
+## Decision triggers for deferred work
 
-**Deliberately deferred:** Silver merging/deduplication, distributed locks/control store, production
-security/HA/retention, schema registry/governance, orchestration, analytics, and observability.
+A deferred item may enter a future roadmap only after it has:
 
-### Phase 6 - Silver Processing and Data Quality
+1. a concrete business or operational requirement;
+2. an authoritative owner and state boundary;
+3. security and failure semantics;
+4. compatibility and rollback analysis;
+5. executable acceptance criteria;
+6. an explicit claim boundary.
 
-**Implemented:** typed settlement/payment records, explicit PyArrow schemas, precise Decimal/UTC
-normalization, CDC history and current/latest state, delete/tombstone behavior, coordinate
-deduplication/order guards, unresolved references, quality outputs, immutable Silver storage,
-incremental SQLite lineage, force/dry-run controls, and real MinIO tests. No distributed engine was
-needed at the current scale.
+## Canonical navigation
 
-### Phase 7 - Airflow Orchestration and Central Control Plane
-
-**Implemented:** Airflow 3.3/LocalExecutor, separate metadata PostgreSQL, versioned `control` schema,
-settlement/CDC-health/CDC-Silver/backfill DAGs, explicit schedules/timezone/catchup, bounded retries
-and timeouts, aggregate PASS/WARN/FAIL quality gates, deterministic run tracking, safe backfill
-parameters, redacted failure callbacks, and source-of-truth boundaries that retain existing
-component manifests.
-
-**Independent acceptance:** DAG parsing requires no external service; the streaming consumer is not
-an Airflow task; XCom contains operational metadata only; retries reuse Phase 2–6 idempotency;
-dry-run writes no output; central pipeline/task/quality rows are transactional and queryable.
-
-**Deliberately deferred:** warehouse/dbt, Gold/reconciliation, distributed executors, full metrics
-and alert delivery, production auth/secrets/HA, and migration of component manifests.
-
-## Production-readiness gate
-
-Phase 7 is the executable local baseline, not production approval. Before Phase 8 or a controlled
-pilot, the repository is freezing and then implementing five blockers:
-
-1. Dataset bootstrap and atomic activation.
-2. Key-only CDC delete semantics.
-3. Cross-system recovery checkpoints.
-4. Least-privilege runtime identities.
-5. Versioned database migrations.
-
-ADR-001 is accepted at Frozen Revision 4. ADR-002 through ADR-005 remain proposed, so runtime
-remediation is intentionally blocked. Empty dbt, dashboard, observability, streaming and
-end-to-end-test scaffolds were removed; planned phases enter the repository only with executable
-assets and verification.
-
-The authoritative gate and status are maintained in
-[`design-freeze.md`](design-freeze.md) and
-[`production-readiness-backlog.md`](production-readiness-backlog.md).
-
-## Planned phases
-
-### Phase 8 - Snowflake and dbt
-
-Least-privilege warehouse objects, staging/intermediate/marts, SCD Type 2 dimensions, incremental
-facts, tests, documentation, and exposures after Silver contracts stabilize.
-
-### Phase 9 - Settlement Reconciliation Product
-
-Versioned match rules, classified reconciliation facts, unmatched workflows, Finance marts, and
-daily evidence. This is the first phase that labels mismatch candidates.
-
-### Phase 10 - Near-real-time Analytics and Hardening
-
-Operations marts/dashboard, SLAs, metrics/alerts, lineage/catalog choices, security hardening,
-performance evidence, deployment/promotion controls, and end-to-end recovery tests.
-
-## Enterprise Portal product track
-
-The [Enterprise Data Platform Portal](product/enterprise-data-platform-portal.md) has a target
-product architecture but no implementation. It does not create a parallel shortcut around the
-production-readiness gate.
-
-1. **V1 truthful read plane:** after the five blockers, add OIDC, capability discovery, and
-   permission-filtered read views for sources, ingestion, runs, datasets, Bronze/Silver, quality,
-   and audit.
-2. **V2 governed control plane:** add durable operations, approvals, snapshot activation, backfill,
-   recovery, and redrive only after each backend API and state machine is production-ready.
-3. **V3 product/governance plane:** expose warehouse, dbt, catalog, lineage, Gold, and
-   reconciliation only after Phases 8-10 deliver executable, tested capabilities.
-
-No Portal page may use fabricated operational data or label a planned capability as available. The
-capability registry, authorization matrix, threat model, Portal API contract, and complete V1 state
-design are implementation entry criteria.
+- [Reviewer entrypoint](../README.md)
+- [Current implemented architecture](architecture/current-state.md)
+- [Target and optional architecture](architecture/target-architecture.md)
+- [Canonical claims](architecture/claims.md)
+- [Demo guide](demo/demo-guide.md)

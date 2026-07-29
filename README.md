@@ -397,8 +397,11 @@ Cleared
 Canonical entrypoint:
 Implemented by FF-03
 
+Architecture and claims:
+Reconciled by FF-04
+
 Public presentation:
-Pending FF-04 through FF-06
+Pending FF-05 and FF-06
 
 Push:
 Not performed
@@ -409,12 +412,10 @@ No remote CI result is claimed for the unpushed checkpoint.
 ## Further reading
 
 - [Business case](docs/business/business-case.md)
-- [Phase 7 data-plane snapshot](docs/architecture/current-state.md) — its Portal status predates the
-  completed Portal runtime track and is not authoritative for current Portal capability
-- [Target architecture](docs/architecture/target-architecture.md) — target context, not a current
-  implementation claim
-- [Implementation roadmap](docs/roadmap.md) — historical phase ordering; final claim
-  reconciliation belongs to FF-04
+- [Current implemented architecture](docs/architecture/current-state.md)
+- [Target and optional architecture](docs/architecture/target-architecture.md)
+- [Canonical architecture and portfolio claims](docs/architecture/claims.md)
+- [Implementation history and bounded roadmap](docs/roadmap.md)
 - [CDC Bronze ingestion](docs/architecture/cdc-bronze-ingestion.md)
 - [Silver processing](docs/architecture/silver-processing.md)
 - [Airflow orchestration](docs/architecture/orchestration.md)
