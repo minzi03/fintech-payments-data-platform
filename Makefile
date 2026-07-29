@@ -61,7 +61,7 @@ export PORTAL_DB_MIGRATION_PASSWORD PORTAL_DB_RUNTIME_PASSWORD PORTAL_DB_AUDIT_P
 export PORTAL_DB_ARCHIVE_PASSWORD PORTAL_MIGRATION_DATABASE_URL
 export PORTAL_TEST_MIGRATION_DATABASE_URL PORTAL_TEST_RUNTIME_DATABASE_URL
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-lock-check portal-lock-update portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-web-test portal-test portal-build portal-artifacts portal-config-check portal-db-up portal-db-migrate portal-db-down portal-db-logs portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-lock-check portal-lock-update portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-web-test portal-test portal-build portal-artifacts portal-config-check security-policy security-fast security-full security-images security-history portal-db-up portal-db-migrate portal-db-down portal-db-logs portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
 	@echo "Targets: install lint format-check test-unit test-integration portal-install portal-contracts portal-test portal-build portal-up portal-e2e portal-down postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down"
@@ -178,6 +178,21 @@ portal-artifacts:
 
 portal-config-check:
 	PYTHONPATH=apps/portal-api/app $(PYTHON) apps/portal-api/scripts/validate_config.py
+
+security-policy:
+	$(PYTHON) scripts/security/scan.py policy
+
+security-fast:
+	$(PYTHON) scripts/security/scan.py fast
+
+security-full:
+	$(PYTHON) scripts/security/scan.py full
+
+security-images:
+	$(PYTHON) scripts/security/scan.py images
+
+security-history:
+	$(PYTHON) scripts/security/scan.py history
 
 portal-db-up:
 	docker compose --env-file $(COMPOSE_ENV) up -d --wait portal-postgres

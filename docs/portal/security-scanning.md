@@ -1,0 +1,297 @@
+# Portal security scanning
+
+## Maturity and boundary
+
+Security scanning covers first-party Portal source, immutable Portal dependency locks, tracked
+secrets, exact Portal container images, pinned Portal vendor images, Docker configuration, and
+GitHub Actions. It is a regression gate and evidence source, not proof that vulnerabilities are
+absent.
+
+Security scanning does not mutate dependencies, source, images, Git history, runtime state, or
+PostgreSQL data. It does not authorize production security policy. Remediation, SBOM generation,
+artifact signing, provenance, registry monitoring, and continuous production CVE monitoring remain
+separate work.
+
+## Authority map
+
+| Authority | Scope |
+| --- | --- |
+| Semgrep CE | High-confidence first-party Python and TypeScript/JavaScript SAST |
+| OSV-Scanner v2 | Vulnerabilities in the Portal Python runtime/development locks and pnpm lock |
+| Gitleaks | Tracked/index content, bounded commit ranges, and explicit full-history scans |
+| Trivy | Exact first-party and Portal vendor images; image secrets; supplemental Docker config |
+| zizmor | GitHub Actions workflow security |
+| Portal repository verifiers | Authoritative Compose, runtime, identity, and container-hardening semantics |
+
+The scanners are complementary. Bandit does not duplicate Semgrep, pip-audit and `pnpm audit` do
+not duplicate OSV, and unrestricted Trivy filesystem scanning does not duplicate immutable lock
+scanning. Generic Trivy configuration findings cannot weaken or replace the Portal verifier.
+
+## Immutable tool identity
+
+`security/scanning/toolchain.json` pins each scanner by human-readable version and multi-platform
+OCI digest:
+
+| Scanner | Version | Immutable authority |
+| --- | --- | --- |
+| Semgrep CE | 1.164.0 | OCI digest plus repository-local ruleset hash |
+| OSV-Scanner | 2.3.8 | OCI digest and the live `osv.dev` API identity |
+| Gitleaks | 8.30.1 | OCI digest plus repository-local config hash |
+| Trivy | 0.70.0 | OCI digest; vulnerability database identity recorded per scan |
+| zizmor | 1.28.0 | OCI digest and built-in ruleset identity |
+
+The Trivy identity intentionally avoids the compromised 0.69.4 release line. New GitHub Actions
+must use full commit SHAs. Scanner installation is containerized and never changes application
+dependency locks.
+
+`scan.py policy` verifies immutable image syntax, the five required identities, ruleset hashes,
+policy version, baseline shape, and exception lifecycle before invoking a scanner. A version or
+checksum mismatch exits `25`; it is never reported as a clean scan.
+
+## Controlled inputs and privacy
+
+The scanner wrapper creates `build/security/work/tracked` from the Git index. Local untracked files,
+editor settings, workspaces, caches, and user-owned prompts are not copied or scanned. A full
+Gitleaks history scan reads Git objects explicitly; it does not scan unrestricted working-directory
+content.
+
+Scanner-native output is captured in process memory. It is normalized and then discarded. The
+portable report contains only rule identity, normalized repository path, immutable asset identity,
+package/version metadata, safe SHA-256 fingerprint, policy classification, and safe references.
+Secret match text, surrounding context, authorization headers, credential-bearing URLs, and
+machine-specific paths are prohibited. Raw secret reports have zero retention.
+
+Scanner subprocesses have a 15-minute hard timeout. Containers run read-only with all capabilities
+dropped and `no-new-privileges`; ordinary scans receive 256 MiB of temporary storage. Exact image
+scans receive a bounded 4 GiB scratch ceiling because Trivy must materialize its Java advisory
+database when inspecting the pinned Keycloak image. A timeout, storage exhaustion, or database
+initialization failure is a scanner failure rather than a clean result.
+
+Generated files live only under ignored `build/security/`:
+
+```text
+build/security/
+├── fast.json
+├── full.json
+├── history.json
+├── images.json
+├── cache/
+└── work/
+```
+
+CI uploads only the named normalized JSON reports, never `cache/`, `work/`, or scanner-native
+output.
+
+## Developer commands
+
+The local and CI entrypoints call the same Python policy engine:
+
+```bash
+make security-policy
+make security-fast
+make security-full
+make security-images
+make security-history
+```
+
+`security-images` requires the S06-01 artifact manifest at
+`build/portal-artifacts/manifest.json` and exact local images:
+
+```bash
+python scripts/portal/build_reproducible_artifacts.py \
+  --output build/portal-artifacts/manifest.json
+python scripts/security/scan.py images \
+  --api-image fintech-portal-api:local \
+  --web-image fintech-payments-data-platform-portal-web
+```
+
+The wrapper compares the manifest source commit and output digests with the exact current image IDs
+before exporting images to ignored temporary archives. Audit-worker and migration use the Portal API
+image result. PostgreSQL, Redis, and Keycloak use their immutable Compose digests and a separate
+vendor policy.
+
+On pull requests, CI supplies `PORTAL_SECURITY_GIT_RANGE` as an exact
+`<base-commit>..<head-commit>` pair for bounded Gitleaks history scanning. The wrapper accepts only
+two full lowercase commit SHAs. Without that CI value, `security-fast` scans the Git-index snapshot,
+which gives local staged coverage without reading unrestricted working-tree or untracked content.
+Range and complete-history scans use a temporary bare Git clone below `build/security/work/`;
+the local worktree and its untracked paths are never mounted into the scanner.
+
+No command performs autofix, dependency update, image retagging, baseline generation, exception
+generation, secret revocation, or history rewriting.
+
+## Finding model and policy
+
+The normalized finding schema is `portal-security-finding/v1`. Classification combines:
+
+- severity: critical, high, medium, low, informational;
+- exploitability: known exploited, reachable, likely reachable, unknown, build only, development
+  only;
+- fix status: fixed available, mitigation available, no fix, disputed, withdrawn, false positive;
+- scope: first-party runtime/development, vendor runtime, test fixture, documentation, generated
+  artifact, GitHub workflow;
+- regression state: new, baseline, advisory new, resurfaced, expired exception, resolved.
+
+A database-only discovery on unchanged source may be `advisory_new`; it is not represented as a code
+regression. A baseline records prior observation only. It does not authorize an above-threshold
+finding.
+
+The following remain non-suppressible:
+
+- a confirmed real credential;
+- a known-exploited reachable first-party vulnerability;
+- a critical privilege, Docker socket, privileged-mode, host-namespace, or digest-pin regression;
+- an expired exception;
+- scanner, database-freshness, input-identity, or redaction failure.
+
+First-party critical findings require resolution or a policy-authorized path where suppression is
+permitted. New/resurfaced high reachable findings block. Portal vendor findings are separated from
+first-party ownership; a digest change introducing critical/high findings blocks, while unchanged
+vendor findings require bounded release review. Development and test findings are advisory unless
+they execute on untrusted CI input or reach production output.
+
+## Baseline and exception lifecycle
+
+`security/scanning/baseline.json` records exact normalized fingerprints and first-observed commit.
+It has no wildcard capability. A finding over the threshold also needs an active entry in
+`security/scanning/exceptions.json`.
+
+Scanning exceptions use `SCN-NNN` identifiers and remain independent of S06-04 `CH-*` container
+exceptions. Every exception requires:
+
+- exact scanner, rule/finding, asset, and fingerprint;
+- scope, severity, exploitability, and fix status;
+- reason and compensating control;
+- owner and approval identity;
+- creation and expiry dates;
+- review trigger, removal criteria, and evidence.
+
+Wildcard, ownerless, approval-less, expiry-less, metadata-mismatched, or over-duration entries are
+invalid. Expired exceptions fail the gate. Confirmed credentials cannot be excepted. Default maximum
+lifetimes are 7 days for first-party critical, 14 days for first-party high/fix-available, 30 days
+for first-party high/no-fix, 60 days for vendor critical/high, 90 days for development/disputed
+entries, 180 days for verified false positives or fake fixtures, and 24 hours for an emergency
+scanner outage.
+
+False-positive triage must prove the value or code path cannot be accepted by production, bind the
+decision to the exact fingerprint, and define a review trigger. Scanner ignore comments must cite an
+active SCN entry.
+
+### Initial baseline triage
+
+The S06-05 initial scan records 28 exact OSV/zizmor fingerprints observed at the locked S06-04
+baseline. Production dependency graph inspection classifies `postcss` and `sharp` as transitive
+Next.js runtime dependencies; `vite`, `js-yaml`, and the affected `brace-expansion` versions are
+development/build-only. This classification is encoded as exact package/version overrides and fails
+closed for every package not listed.
+
+Seven high workflow findings were remediated by pinning the affected GitHub Actions and CI service
+image; they are not excepted. Five existing high runtime dependency findings have `SCN-001` through
+`SCN-005`, each expiring on 2026-08-12. These short exceptions exist only because dependency
+remediation is outside S06-05. They do not classify the advisories as false positives or prove them
+unreachable. Their removal requires dependency updates and the relevant complete verification
+suites.
+
+### Initial image triage
+
+The exact S06-04 Portal API and Portal Web image identities contain 60 pre-existing critical/high
+findings. Every finding is preserved as an exact baseline fingerprint and has a matching,
+metadata-bound `SCN-006` through `SCN-065` exception. Critical exceptions expire on 2026-08-05,
+fixed-available high exceptions expire on 2026-08-12, and no-fix high exceptions expire on
+2026-08-28. These exceptions authorize only this scanning checkpoint; they do not establish
+reachability, accept the vulnerability risk for a release, or defer remediation indefinitely.
+
+The three digest-pinned vendor images contain 997 advisory findings. They remain separately
+classified as vendor runtime evidence and report-only at this non-release checkpoint. A release
+must perform an explicit vendor-image review and create bounded, exact exceptions for any blocking
+finding that remains; S06-05 does not grant that release approval.
+
+Trivy also reports Debian's documented snakeoil fixture at
+`/etc/ssl/private/ssl-cert-snakeoil.key` inside the exact PostgreSQL image. `SCN-066` records the
+path- and digest-bound false-positive decision through 2027-01-25. Portal TLS, database
+authentication, secrets, and deployment configuration do not consume this fixture. Scanner-native
+secret material and context are never persisted in reports or logs.
+
+The earliest active image exception expires on 2026-08-05. Dependency and base-image remediation,
+fresh image builds, and the complete validation suite are required to remove these exceptions.
+The active exceptions mean this repository is not approved or ready for production deployment.
+
+## CI execution
+
+The pull-request/main CI workflow runs:
+
+```text
+tracked/index snapshot
+  → Semgrep first-party source
+  → OSV immutable Portal locks
+  → Gitleaks tracked snapshot
+  → zizmor workflows
+  → centralized policy
+  → sanitized fast.json
+```
+
+After the existing reproducible image build, the container job runs Trivy against the exact API and
+Web image IDs plus the three Portal vendor digests. It also runs supplemental Docker configuration
+checks; the S06-04 verifier remains authoritative.
+
+The scheduled workflow runs the full tracked scan and a separate complete Git-history Gitleaks scan.
+History scanning is not on every pull request. SARIF transport is deliberately optional and is not
+required for enforcement.
+
+Suggested retention is 14 days for pull-request reports, 30 days for main/scheduled reports, and
+90 days for future release reports. Raw secret output is never retained.
+
+## Deterministic outcomes
+
+| Exit | Meaning |
+| ---: | --- |
+| 0 | Policy passed |
+| 10 | Blocking finding |
+| 20 | Scanner execution failure |
+| 21 | Stale mandatory scanner database/ruleset |
+| 22 | Scan input or artifact identity mismatch |
+| 23 | Invalid baseline or expired exception |
+| 24 | Unsafe report or redaction failure |
+| 25 | Scanner version/checksum mismatch |
+
+“No blocking findings” does not mean “no vulnerabilities.” Scanner absence, zero parsed packages,
+invalid JSON, stale mandatory data, or inability to execute is a failure rather than a zero-finding
+result.
+
+## Incident boundary
+
+If a potential credential is reported, stop unsafe output and inspect only the sanitized identity.
+If confirmed, revoke and rotate it through a separately authorized response. Do not baseline the
+credential, commit raw evidence, upload raw reports, or rewrite Git history during a scan.
+
+Dependency or image remediation is also separate from scanning implementation. Preserve the finding
+identity, establish reachability and fix status, then authorize the smallest dependency or image
+change through normal review.
+
+## Rollback
+
+S06-05 is isolated tooling and CI configuration. Reverting its cohesive commit restores S06-04
+runtime behavior without a schema, dependency, image, or data rollback. If one scanner is unstable,
+isolate that integration and preserve sanitized failure evidence; do not disable every scanner or
+weaken policy globally.
+
+Never alter PostgreSQL state or the intentional audit dead letter while diagnosing scanning.
+
+## Limitations and deferred work
+
+- Semgrep CE has limited cross-file and framework-aware analysis.
+- Advisory databases can be incomplete or delayed; dependency reachability may need manual review.
+- Vendor findings depend on upstream remediation.
+- Root data-platform Python dependencies do not have an immutable lock, so complete dependency
+  scanning is not claimed for that surface.
+- GitHub Code Security/SARIF availability is environment-dependent.
+- Continuous registry/production monitoring and automated remediation are not implemented.
+- SBOM, VEX, signing, provenance, release attestations, and SLSA claims are deferred.
+- Production callback/abuse policy, production workload identity, a production secret provider, and
+  staging/production security-runtime authorization remain deferred.
+
+Accurate maturity statement:
+
+> Security scanning implemented for first-party Portal source, dependencies, secrets, container
+> images and CI configuration; remediation, supply-chain attestation and production security
+> authorization remain pending.

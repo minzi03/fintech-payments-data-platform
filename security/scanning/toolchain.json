@@ -1,0 +1,37 @@
+{
+  "schema_version": "portal-security-toolchain/v1",
+  "scanners": {
+    "semgrep": {
+      "version": "1.164.0",
+      "image": "docker.io/semgrep/semgrep:1.164.0@sha256:207983631beecdbe7fa29196c7f4a7a5f29033933cdb76c687ce4a672e07618d",
+      "expected_version_pattern": "(?i)\\b1\\.164\\.0\\b",
+      "ruleset": "security/scanning/semgrep.yml",
+      "ruleset_sha256": "sha256:85ef0ba0aef800f7a455aab1752bf8dd991aa5c2d14674fb460fbd262854ea22"
+    },
+    "osv": {
+      "version": "2.3.8",
+      "image": "ghcr.io/google/osv-scanner:v2.3.8@sha256:64e86bec6df2466feea5137fc7c78fb3b7c21ec077f014d7130f64810e50676b",
+      "expected_version_pattern": "(?i)\\b2\\.3\\.8\\b",
+      "database_identity": "osv.dev-live-api"
+    },
+    "gitleaks": {
+      "version": "8.30.1",
+      "image": "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f",
+      "expected_version_pattern": "(?i)(?<![0-9])8\\.30\\.1(?![0-9])",
+      "ruleset": "security/scanning/gitleaks.toml",
+      "ruleset_sha256": "sha256:792e1c8176700e5922a43059afae90de174de30c4d20ded1098c0aaac1be8ac5"
+    },
+    "trivy": {
+      "version": "0.70.0",
+      "image": "docker.io/aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+      "expected_version_pattern": "(?i)\\b0\\.70\\.0\\b",
+      "database_max_age_hours": 48
+    },
+    "zizmor": {
+      "version": "1.28.0",
+      "image": "ghcr.io/zizmorcore/zizmor:1.28.0@sha256:8e6b3e4fb74d1aa5d23e83ea369f386c66eced0d1fb944d32cd8b2aac100b00d",
+      "expected_version_pattern": "(?i)\\b1\\.28\\.0\\b",
+      "ruleset_identity": "zizmor-builtins-1.28.0"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+rules:
+  - id: portal.python.subprocess-shell
+    message: Shell-enabled subprocess execution crosses a command-injection boundary.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: likely_reachable
+    patterns:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: portal.python.os-system
+    message: os.system executes through a shell and is prohibited in first-party runtime code.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: likely_reachable
+    pattern: os.system(...)
+
+  - id: portal.python.tls-verification-disabled
+    message: TLS peer verification must not be disabled.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: reachable
+    patterns:
+      - pattern-either:
+          - pattern: requests.$METHOD(..., verify=False, ...)
+          - pattern: httpx.$METHOD(..., verify=False, ...)
+          - pattern: httpx.Client(..., verify=False, ...)
+          - pattern: httpx.AsyncClient(..., verify=False, ...)
+
+  - id: portal.python.unsafe-yaml-load
+    message: Unsafe YAML deserialization can construct arbitrary Python objects.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: likely_reachable
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=SafeLoader, ...)
+
+  - id: portal.python.insecure-temporary-file
+    message: mktemp is race-prone; use a securely created temporary file.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: unknown
+    pattern: tempfile.mktemp(...)
+
+  - id: portal.javascript.dynamic-eval
+    message: Dynamic JavaScript evaluation is prohibited in Portal runtime source.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: likely_reachable
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+
+  - id: portal.javascript.child-process-exec
+    message: Shell-based child process execution requires explicit security review.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      confidence: HIGH
+      category: security
+      exploitability: likely_reachable
+    pattern-either:
+      - pattern: child_process.exec(...)
+      - pattern: child_process.execSync(...)
+      - pattern: exec(...)
+      - pattern: execSync(...)

@@ -89,7 +89,9 @@ jobs:
 
   portal-containers:
     name: Portal container security and health
-    needs: portal-quality
+    needs:
+      - portal-quality
+      - portal-security-fast
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -107,6 +109,21 @@ jobs:
         run: >-
           docker compose --env-file .env.example up -d --no-build --wait
           portal-api portal-audit-worker portal-redis portal-web
+
+      - name: Scan exact Portal and vendor images
+        run: >-
+          python3 scripts/security/scan.py images
+          --api-image fintech-portal-api:local
+          --web-image fintech-payments-data-platform-portal-web
+
+      - name: Upload sanitized image security report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: portal-image-security-report
+          path: build/security/images.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify container hardening, identity and network isolation
         run: python3 scripts/portal/verify_container_hardening.py --runtime
@@ -144,6 +161,34 @@ jobs:
       - name: Stop Portal
         if: always()
         run: docker compose --env-file .env.example down --remove-orphans
+
+  portal-security-fast:
+    name: Portal source, dependency, secret, and workflow security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository with bounded history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate policy and run fast security gates
+        env:
+          PORTAL_SECURITY_GIT_RANGE: >-
+            ${{ github.event_name == 'pull_request'
+              && format('{0}..{1}', github.event.pull_request.base.sha,
+              github.event.pull_request.head.sha) || '' }}
+        run: python3 scripts/security/scan.py fast
+
+      - name: Upload sanitized fast security report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: portal-fast-security-report
+          path: build/security/fast.json
+          if-no-files-found: error
+          retention-days: 14
 
   portal-e2e:
     name: Portal browser and local OIDC security tests
@@ -214,10 +259,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -251,10 +296,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -294,7 +339,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.4-bookworm
+        image: postgres:16.4-bookworm@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412
         env:
           POSTGRES_DB: airflow_metadata
           POSTGRES_USER: airflow_metadata
@@ -327,10 +372,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip

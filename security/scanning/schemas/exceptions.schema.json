@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "portal-security-exceptions/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "exceptions"],
+  "properties": {
+    "schema_version": {"const": "portal-security-exceptions/v1"},
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scanner",
+          "finding_identifier",
+          "safe_fingerprint",
+          "asset",
+          "scope",
+          "severity",
+          "exploitability",
+          "fix_status",
+          "reason",
+          "compensating_control",
+          "owner",
+          "approved_by",
+          "created_date",
+          "expiry_date",
+          "review_trigger",
+          "removal_criteria",
+          "evidence_link"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^SCN-[0-9]{3}$"},
+          "scanner": {"type": "string"},
+          "finding_identifier": {"type": "string"},
+          "safe_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "asset": {"type": "string"},
+          "scope": {"type": "string"},
+          "severity": {"type": "string"},
+          "exploitability": {"type": "string"},
+          "fix_status": {"type": "string"},
+          "reason": {"type": "string", "minLength": 1},
+          "compensating_control": {"type": "string", "minLength": 1},
+          "owner": {"type": "string", "minLength": 1},
+          "approved_by": {"type": "string", "minLength": 1},
+          "created_date": {"type": "string", "format": "date"},
+          "expiry_date": {"type": "string", "format": "date"},
+          "review_trigger": {"type": "string", "minLength": 1},
+          "removal_criteria": {"type": "string", "minLength": 1},
+          "evidence_link": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

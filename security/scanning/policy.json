@@ -1,0 +1,92 @@
+{
+  "schema_version": "portal-security-policy/v1",
+  "policy_version": "2026-07-29.1",
+  "exit_codes": {
+    "passed": 0,
+    "blocking_finding": 10,
+    "scanner_failure": 20,
+    "stale_database": 21,
+    "input_mismatch": 22,
+    "invalid_governance": 23,
+    "unsafe_report": 24,
+    "tool_identity_mismatch": 25
+  },
+  "non_suppressible": [
+    "confirmed_secret",
+    "known_exploited_reachable_first_party",
+    "critical_privilege_regression",
+    "docker_socket_exposure",
+    "privileged_mode",
+    "host_namespace_regression",
+    "digest_pin_removal",
+    "expired_exception",
+    "scanner_failure",
+    "redaction_failure",
+    "input_identity_mismatch"
+  ],
+  "blocking": {
+    "first_party_runtime": {
+      "critical": ["new", "resurfaced", "baseline", "expired_exception"],
+      "high": ["new", "resurfaced", "expired_exception"]
+    },
+    "github_workflow": {
+      "critical": ["new", "resurfaced", "baseline", "expired_exception"],
+      "high": ["new", "resurfaced", "expired_exception"]
+    },
+    "vendor_runtime": {
+      "critical": ["new", "resurfaced", "expired_exception"],
+      "high": ["new", "resurfaced", "expired_exception"]
+    }
+  },
+  "exception_maximum_days": {
+    "first_party_critical": 7,
+    "first_party_fixed_available_high": 14,
+    "first_party_no_fix_high": 30,
+    "vendor_critical_high": 60,
+    "development_or_build_only": 90,
+    "disputed_or_withdrawn": 90,
+    "false_positive": 180,
+    "fake_secret_fixture": 180,
+    "scanner_outage_emergency": 1
+  },
+  "report_retention_days": {
+    "pull_request": 14,
+    "main_or_scheduled": 30,
+    "release": 90,
+    "raw_secret": 0
+  },
+  "dependency_scope_overrides": [
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "brace-expansion",
+      "package_version": "1.1.16",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    },
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "brace-expansion",
+      "package_version": "5.0.7",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    },
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "js-yaml",
+      "package_version": "4.2.0",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    },
+    {
+      "lock_path": "pnpm-lock.yaml",
+      "package": "vite",
+      "package_version": "8.0.2",
+      "scope": "first_party_development",
+      "exploitability": "development_only",
+      "evidence": "Absent from pnpm --filter @fintech/portal-web list --prod --depth Infinity"
+    }
+  ]
+}

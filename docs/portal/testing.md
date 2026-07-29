@@ -1,5 +1,12 @@
 # Portal testing
 
+Security scanner orchestration is documented in
+[`security-scanning.md`](security-scanning.md). Use `make security-policy` for the non-network policy
+and identity check, `make security-fast` for the pull-request-equivalent source/dependency/secret
+gate, and `make security-images` only after the reproducible Portal artifact manifest and exact
+images exist. These commands scan Git-index inputs and do not inspect unrestricted local untracked
+content.
+
 ## Backend
 
 `apps/portal-api/tests/unit` covers typed production safety, correlation validation, dependency
