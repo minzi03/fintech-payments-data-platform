@@ -1234,6 +1234,16 @@ def test_artifact_manifest_must_match_source_and_exact_image_ids(
             expected_image_ids=expected,
         )
 
+    missing_source = json.loads(manifest.read_text(encoding="utf-8"))
+    del missing_source["repository"]["source_commit"]
+    manifest.write_text(json.dumps(missing_source), encoding="utf-8")
+    with pytest.raises(scanner.ScanFailure, match="source identity mismatch"):
+        scanner.validate_artifact_manifest(
+            manifest,
+            source="c" * 40,
+            expected_image_ids=expected,
+        )
+
 
 def test_artifact_manifest_allows_one_governance_only_child_commit(
     scanner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1265,6 +1275,8 @@ def test_artifact_manifest_allows_one_governance_only_child_commit(
             return artifact_source
         if arguments == ("diff", "--name-only", f"{artifact_source}..{governance_source}"):
             return "security/scanning/exceptions.json\nscripts/security/scan.py"
+        if arguments[:4] == ("ls-tree", "--name-only", governance_source, "--"):
+            return arguments[4]
         raise AssertionError(arguments)
 
     monkeypatch.setattr(scanner, "git", fake_git)
@@ -1287,3 +1299,229 @@ def test_artifact_manifest_allows_one_governance_only_child_commit(
             source=governance_source,
             expected_image_ids=expected,
         )
+
+
+APPROVED_FF06C_PATHS = frozenset(
+    {
+        "Makefile",
+        "docs/validation/ff-06c-minio-isolation.md",
+        "scripts/validation/run_disposable_minio_tests.py",
+        "tests/unit/test_disposable_minio_validation.py",
+    }
+)
+APPROVED_FF06D_PATHS = frozenset({"README.md", "docs/roadmap.md"})
+
+
+def governance_git(
+    artifact_source: str,
+    governance_source: str,
+    changed_paths: frozenset[str],
+):
+    def fake_git(*arguments: str, check: bool = True) -> str:
+        del check
+        if arguments == ("merge-base", artifact_source, governance_source):
+            return artifact_source
+        if arguments == ("diff", "--name-only", f"{artifact_source}..{governance_source}"):
+            return "\n".join(sorted(changed_paths))
+        if arguments[:4] == ("ls-tree", "--name-only", governance_source, "--"):
+            return arguments[4]
+        raise AssertionError(arguments)
+
+    return fake_git
+
+
+@pytest.mark.parametrize(
+    "changed_paths",
+    [
+        APPROVED_FF06C_PATHS,
+        APPROVED_FF06D_PATHS,
+        APPROVED_FF06C_PATHS | APPROVED_FF06D_PATHS,
+        frozenset({"scripts/security/scan.py", "tests/security/test_security_scanning.py"}),
+        APPROVED_FF06C_PATHS
+        | APPROVED_FF06D_PATHS
+        | frozenset({"scripts/security/scan.py", "tests/security/test_security_scanning.py"}),
+    ],
+)
+def test_artifact_governance_accepts_only_explicit_approved_descendants(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    changed_paths: frozenset[str],
+) -> None:
+    artifact_source = "a" * 40
+    governance_source = "b" * 40
+    monkeypatch.setattr(
+        scanner,
+        "git",
+        governance_git(artifact_source, governance_source, changed_paths),
+    )
+
+    assert scanner._artifact_source_is_current_or_governance_child(
+        artifact_source=artifact_source,
+        source=governance_source,
+    )
+
+
+@pytest.mark.parametrize(
+    "changed_output",
+    [
+        "unexpected.txt",
+        "Makefile.local",
+        "README-public.md",
+        "docs/roadmap-public.md",
+        "docs/validation/other.md",
+        "scripts/validation/other.py",
+        "tests/unit/other.py",
+        "apps/portal-api/Dockerfile",
+        "apps/portal-web/Dockerfile",
+        "apps/portal-api/requirements.lock",
+        "pnpm-lock.yaml",
+        "apps/portal-api/app/portal_api/main.py",
+        "apps/portal-web/src/app/page.tsx",
+        "apps/portal-api/docker-entrypoint.sh",
+        "build/portal-artifacts/manifest.json",
+        "security/scanning/final-artifacts-copy.json",
+        "security/scanning/reports/portal-api.json",
+        "security/scanning/policy-copy.json",
+        "security/scanning/exceptions-copy.json",
+        "/README.md",
+        "../README.md",
+        "docs/../README.md",
+        "README.md\nREADME.md",
+        "README.md\\copy",
+        "README.md/",
+        "*.md",
+        "readme.md",
+        "C:/repository/README.md",
+        " README.md",
+        "README.md ",
+        "docs//roadmap.md",
+        "README.md\napps/portal-api/Dockerfile",
+    ],
+)
+def test_artifact_governance_rejects_unapproved_or_ambiguous_descendants(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    changed_output: str,
+) -> None:
+    artifact_source = "a" * 40
+    governance_source = "b" * 40
+
+    def fake_git(*arguments: str, check: bool = True) -> str:
+        del check
+        if arguments == ("merge-base", artifact_source, governance_source):
+            return artifact_source
+        if arguments == ("diff", "--name-only", f"{artifact_source}..{governance_source}"):
+            return changed_output
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(scanner, "git", fake_git)
+
+    assert not scanner._artifact_source_is_current_or_governance_child(
+        artifact_source=artifact_source,
+        source=governance_source,
+    )
+
+
+def test_artifact_governance_rejects_non_descendant_source(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_source = "a" * 40
+    governance_source = "b" * 40
+    monkeypatch.setattr(scanner, "git", lambda *args, **kwargs: "c" * 40)
+
+    assert not scanner._artifact_source_is_current_or_governance_child(
+        artifact_source=artifact_source,
+        source=governance_source,
+    )
+
+
+def test_artifact_governance_rejects_deleted_approved_path(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_source = "a" * 40
+    governance_source = "b" * 40
+
+    def fake_git(*arguments: str, check: bool = True) -> str:
+        del check
+        if arguments == ("merge-base", artifact_source, governance_source):
+            return artifact_source
+        if arguments == ("diff", "--name-only", f"{artifact_source}..{governance_source}"):
+            return "README.md"
+        if arguments == ("ls-tree", "--name-only", governance_source, "--", "README.md"):
+            return ""
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(scanner, "git", fake_git)
+
+    assert not scanner._artifact_source_is_current_or_governance_child(
+        artifact_source=artifact_source,
+        source=governance_source,
+    )
+
+
+def test_current_head_is_an_approved_artifact_governance_child(scanner: ModuleType) -> None:
+    handoff = scanner._json(REPOSITORY_ROOT / "security" / "scanning" / "final-artifacts.json")
+
+    assert scanner.VALIDATION_INFRASTRUCTURE_ONLY_PATHS == APPROVED_FF06C_PATHS
+    assert scanner.PUBLIC_STATUS_ONLY_PATHS == APPROVED_FF06D_PATHS
+    assert scanner._artifact_source_is_current_or_governance_child(
+        artifact_source=handoff["source_commit"],
+        source=scanner.source_commit(),
+    )
+
+
+def test_current_handoff_reaches_pinned_trivy_invocation_boundary(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    handoff_path = REPOSITORY_ROOT / "security" / "scanning" / "final-artifacts.json"
+    handoff = scanner._json(handoff_path)
+    expected = {
+        item["name"]: (item["local_tag"], item["image_id"]) for item in handoff["artifacts"]
+    }
+    _architectures, _evidence_version, database_identity = scanner.validate_final_artifact_handoff(
+        handoff_path,
+        source=scanner.source_commit(),
+        expected_images=expected,
+    )
+    runner = scanner.DockerScannerRunner(
+        snapshot=tmp_path,
+        output=tmp_path,
+        scanners={
+            "trivy": {
+                "version": "0.70.0",
+                "image": "aquasec/trivy:0.70.0@sha256:" + ("a" * 64),
+            }
+        },
+        source=scanner.source_commit(),
+        trivy_cache=tmp_path / "trivy-cache",
+    )
+    runner.trivy_cache.mkdir()
+    image_id = expected["portal-api"][1]
+    monkeypatch.setattr(runner, "validate_version", lambda _name: None)
+    monkeypatch.setattr(runner, "_verify_pinned_trivy_database", lambda: database_identity)
+    monkeypatch.setattr(runner, "_image_id", lambda _tag: image_id)
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        *,
+        accepted: frozenset[int] = frozenset({0}),
+        safe_name: str,
+    ) -> tuple[str, str, int]:
+        del accepted, safe_name
+        commands.append(command)
+        if command[:3] == ["docker", "image", "save"]:
+            Path(command[command.index("--output") + 1]).write_bytes(b"frozen-image")
+        return "{}", "", 0
+
+    monkeypatch.setattr(scanner, "_run", fake_run)
+
+    assert runner.trivy_image(expected["portal-api"][0], scope="first_party_runtime") == []
+    trivy_command = commands[-1]
+    assert "--skip-db-update" in trivy_command
+    assert "--skip-java-db-update" in trivy_command
+    assert any(argument.startswith("--input=/work/") for argument in trivy_command)

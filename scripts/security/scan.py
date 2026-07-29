@@ -96,7 +96,7 @@ EXIT_INVALID_GOVERNANCE: Final = 23
 EXIT_UNSAFE_REPORT: Final = 24
 EXIT_TOOL_IDENTITY: Final = 25
 
-ARTIFACT_GOVERNANCE_ONLY_PATHS: Final = frozenset(
+BASE_ARTIFACT_GOVERNANCE_ONLY_PATHS: Final = frozenset(
     {
         "docs/portal/security-scanning.md",
         "docs/governance/reviews/PORTAL-002-workstream-b-completion-report-f002.md",
@@ -111,6 +111,25 @@ ARTIFACT_GOVERNANCE_ONLY_PATHS: Final = frozenset(
         "apps/portal-api/tests/unit/test_reproducible_artifact_tools.py",
         "tests/security/test_security_scanning.py",
     }
+)
+VALIDATION_INFRASTRUCTURE_ONLY_PATHS: Final = frozenset(
+    {
+        "Makefile",
+        "docs/validation/ff-06c-minio-isolation.md",
+        "scripts/validation/run_disposable_minio_tests.py",
+        "tests/unit/test_disposable_minio_validation.py",
+    }
+)
+PUBLIC_STATUS_ONLY_PATHS: Final = frozenset(
+    {
+        "README.md",
+        "docs/roadmap.md",
+    }
+)
+ARTIFACT_GOVERNANCE_ONLY_PATHS: Final = (
+    BASE_ARTIFACT_GOVERNANCE_ONLY_PATHS
+    | VALIDATION_INFRASTRUCTURE_ONLY_PATHS
+    | PUBLIC_STATUS_ONLY_PATHS
 )
 
 
@@ -2413,18 +2432,51 @@ def _portal_vendor_images(compose: Path) -> tuple[str, ...]:
     return tuple(images)
 
 
+def _canonical_governance_paths(value: str) -> frozenset[str] | None:
+    raw_paths = value.splitlines()
+    if not raw_paths:
+        return None
+    authorized_by_case = {path.casefold(): path for path in ARTIFACT_GOVERNANCE_ONLY_PATHS}
+    canonical_paths: set[str] = set()
+    seen_casefolded: set[str] = set()
+    for raw_path in raw_paths:
+        parts = raw_path.split("/")
+        if (
+            not raw_path
+            or raw_path != raw_path.strip()
+            or raw_path.endswith("/")
+            or "\\" in raw_path
+            or any(character in raw_path for character in "*?[]{}")
+            or re.match(r"^[A-Za-z]:", raw_path) is not None
+            or any(part in {"", ".", ".."} for part in parts)
+            or any(ord(character) < 32 for character in raw_path)
+        ):
+            return None
+        path = PurePosixPath(raw_path)
+        if path.is_absolute() or path.as_posix() != raw_path:
+            return None
+        casefolded = raw_path.casefold()
+        if raw_path in canonical_paths or casefolded in seen_casefolded:
+            return None
+        if casefolded in authorized_by_case and authorized_by_case[casefolded] != raw_path:
+            return None
+        canonical_paths.add(raw_path)
+        seen_casefolded.add(casefolded)
+    return frozenset(canonical_paths)
+
+
 def _artifact_source_is_current_or_governance_child(*, artifact_source: str, source: str) -> bool:
     if artifact_source == source:
         return True
     merge_base = git("merge-base", artifact_source, source)
     if merge_base != artifact_source:
         return False
-    changed = frozenset(
-        path
-        for path in git("diff", "--name-only", f"{artifact_source}..{source}").splitlines()
-        if path
+    changed = _canonical_governance_paths(
+        git("diff", "--name-only", f"{artifact_source}..{source}")
     )
-    return bool(changed) and changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS
+    if changed is None or not changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS:
+        return False
+    return all(git("ls-tree", "--name-only", source, "--", path) == path for path in changed)
 
 
 def validate_final_artifact_handoff(
