@@ -57,6 +57,7 @@ EXPLOITABILITY: Final = (
     "unknown",
     "build_only",
     "development_only",
+    "not_present",
 )
 FIX_STATUSES: Final = (
     "fixed_available",
@@ -92,6 +93,18 @@ EXIT_INPUT_MISMATCH: Final = 22
 EXIT_INVALID_GOVERNANCE: Final = 23
 EXIT_UNSAFE_REPORT: Final = 24
 EXIT_TOOL_IDENTITY: Final = 25
+
+ARTIFACT_GOVERNANCE_ONLY_PATHS: Final = frozenset(
+    {
+        "docs/portal/security-scanning.md",
+        "scripts/security/scan.py",
+        "security/scanning/baseline.json",
+        "security/scanning/exceptions.json",
+        "security/scanning/policy.json",
+        "security/scanning/schemas/finding.schema.json",
+        "tests/security/test_security_scanning.py",
+    }
+)
 
 
 class ScanFailure(RuntimeError):
@@ -1180,6 +1193,100 @@ def apply_dependency_scope_overrides(
     return result
 
 
+def apply_image_reachability_overrides(
+    findings: Sequence[Finding],
+    overrides: object,
+) -> list[Finding]:
+    """Apply exact, evidence-bearing reachability decisions to first-party images."""
+
+    if not isinstance(overrides, list):
+        raise ScanFailure(
+            "image reachability overrides must be a list",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    indexed: dict[tuple[str, str, str, str], tuple[str, str]] = {}
+    for item in overrides:
+        if not isinstance(item, dict) or set(item) != {
+            "asset_identities",
+            "vulnerability_id",
+            "packages",
+            "package_version",
+            "exploitability",
+            "evidence",
+        }:
+            raise ScanFailure(
+                "invalid image reachability override",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        assets = item["asset_identities"]
+        packages = item["packages"]
+        vulnerability_id = str(item["vulnerability_id"])
+        package_version = str(item["package_version"])
+        exploitability = str(item["exploitability"])
+        evidence = str(item["evidence"])
+        if (
+            not isinstance(assets, list)
+            or not assets
+            or not all(isinstance(value, str) and SHA256.fullmatch(value) for value in assets)
+            or len(set(assets)) != len(assets)
+            or not isinstance(packages, list)
+            or not packages
+            or not all(isinstance(value, str) and value and "*" not in value for value in packages)
+            or len(set(packages)) != len(packages)
+            or not vulnerability_id
+            or "*" in vulnerability_id
+            or not package_version
+            or "*" in package_version
+            or exploitability not in {"reachable", "likely_reachable", "unknown", "not_present"}
+            or not evidence.strip()
+            or "*" in evidence
+        ):
+            raise ScanFailure(
+                "unsafe image reachability override",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        for asset in assets:
+            for package in packages:
+                key = (asset, vulnerability_id, package, package_version)
+                if key in indexed:
+                    raise ScanFailure(
+                        "duplicate image reachability override",
+                        exit_code=EXIT_INVALID_GOVERNANCE,
+                    )
+                indexed[key] = (exploitability, evidence)
+
+    matched: set[tuple[str, str, str, str]] = set()
+    result: list[Finding] = []
+    for finding in findings:
+        if (
+            finding.scanner != "trivy"
+            or finding.scope != "first_party_runtime"
+            or finding.severity not in {"critical", "high"}
+        ):
+            result.append(finding)
+            continue
+        key = (
+            finding.asset_identity,
+            finding.rule_or_vulnerability_id,
+            finding.package,
+            finding.package_version,
+        )
+        override = indexed.get(key)
+        if override is None:
+            raise ScanFailure(
+                "first-party image finding lacks exact reachability evidence",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        matched.add(key)
+        result.append(replace(finding, exploitability=override[0]))
+    if matched != set(indexed):
+        raise ScanFailure(
+            "image reachability evidence does not match exact findings",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    return result
+
+
 def classify_findings(
     findings: Sequence[Finding],
     *,
@@ -1964,6 +2071,11 @@ def run_mode(
         findings,
         policy.get("dependency_scope_overrides", []),
     )
+    if mode == "images":
+        findings = apply_image_reachability_overrides(
+            findings,
+            policy.get("image_reachability_overrides", []),
+        )
     unique = {finding.safe_fingerprint: finding for finding in findings}
     classified = classify_findings(
         list(unique.values()),
@@ -2033,8 +2145,25 @@ def validate_artifact_manifest(
     if manifest.get("schema_version") != "portal-artifact-build/v1":
         raise ScanFailure("Portal artifact manifest schema mismatch", exit_code=EXIT_INPUT_MISMATCH)
     repository = manifest.get("repository")
-    if not isinstance(repository, dict) or repository.get("source_commit") != source:
+    artifact_source = repository.get("source_commit") if isinstance(repository, dict) else None
+    if not isinstance(artifact_source, str) or not COMMIT_SHA.fullmatch(artifact_source):
         raise ScanFailure("Portal artifact source identity mismatch", exit_code=EXIT_INPUT_MISMATCH)
+    if artifact_source != source:
+        parent = git("rev-parse", f"{source}^")
+        changed = frozenset(
+            path
+            for path in git("diff", "--name-only", f"{artifact_source}..{source}").splitlines()
+            if path
+        )
+        if (
+            parent != artifact_source
+            or not changed
+            or not changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS
+        ):
+            raise ScanFailure(
+                "Portal artifact source identity mismatch",
+                exit_code=EXIT_INPUT_MISMATCH,
+            )
     images = manifest.get("images")
     if not isinstance(images, list):
         raise ScanFailure(

@@ -7,10 +7,11 @@ secrets, exact Portal container images, pinned Portal vendor images, Docker conf
 GitHub Actions. It is a regression gate and evidence source, not proof that vulnerabilities are
 absent.
 
-Security scanning does not mutate dependencies, source, images, Git history, runtime state, or
-PostgreSQL data. It does not authorize production security policy. Remediation, SBOM generation,
-artifact signing, provenance, registry monitoring, and continuous production CVE monitoring remain
-separate work.
+Security scanning does not mutate dependencies, source, Git history, runtime state, or PostgreSQL
+data. FF-02 performs separately reviewed dependency and image remediation before the scanner
+evaluates the rebuilt immutable artifacts. Scanning does not authorize production security policy.
+SBOM generation, artifact signing, provenance, registry monitoring, and continuous production CVE
+monitoring remain separate work.
 
 ## Authority map
 
@@ -106,9 +107,12 @@ python scripts/security/scan.py images \
 ```
 
 The wrapper compares the manifest source commit and output digests with the exact current image IDs
-before exporting images to ignored temporary archives. Audit-worker and migration use the Portal API
-image result. PostgreSQL, Redis, and Keycloak use their immutable Compose digests and a separate
-vendor policy.
+before exporting images to ignored temporary archives. A single immediate child commit containing
+only the explicitly allowlisted scanning-governance files may attest its parent remediation
+artifacts; every other source mismatch fails closed. This narrow rule avoids rebuilding images for
+policy-only metadata while preserving the exact artifact identity. Audit-worker and migration use
+the Portal API image result. PostgreSQL, Redis, and Keycloak use their immutable Compose digests and
+a separate vendor policy.
 
 On pull requests, CI supplies `PORTAL_SECURITY_GIT_RANGE` as an exact
 `<base-commit>..<head-commit>` pair for bounded Gitleaks history scanning. The wrapper accepts only
@@ -126,7 +130,7 @@ The normalized finding schema is `portal-security-finding/v1`. Classification co
 
 - severity: critical, high, medium, low, informational;
 - exploitability: known exploited, reachable, likely reachable, unknown, build only, development
-  only;
+  only, not present;
 - fix status: fixed available, mitigation available, no fix, disputed, withdrawn, false positive;
 - scope: first-party runtime/development, vendor runtime, test fixture, documentation, generated
   artifact, GitHub workflow;
@@ -168,7 +172,7 @@ exceptions. Every exception requires:
 
 Wildcard, ownerless, approval-less, expiry-less, metadata-mismatched, or over-duration entries are
 invalid. Expired exceptions fail the gate. Confirmed credentials cannot be excepted. Default maximum
-lifetimes are 7 days for first-party critical, 14 days for first-party high/fix-available, 30 days
+lifetimes are 7 days for first-party critical, 14 days for first-party high/fix-available, 60 days
 for first-party high/no-fix, 60 days for vendor critical/high, 90 days for development/disputed
 entries, 180 days for verified false positives or fake fixtures, and 24 hours for an emergency
 scanner outage.
@@ -215,6 +219,49 @@ secret material and context are never persisted in reports or logs.
 The earliest active image exception expires on 2026-08-05. Dependency and base-image remediation,
 fresh image builds, and the complete validation suite are required to remove these exceptions.
 The active exceptions mean this repository is not approved or ready for production deployment.
+
+### FF-02 current image disposition
+
+FF-02 rebuilt the exact first-party artifacts from remediation commit
+`534f5b70d677333299f0fa12a3011168f332a05c`:
+
+| Artifact | Exact image identity |
+| --- | --- |
+| Portal API, audit worker, and migration | `sha256:b46b4518c0933c547fd7c09416efc8391bb342b566f65e0d6a1dc69aec2572bd` |
+| Portal Web | `sha256:663ad676c0e5d632f6a21d399bf73bf7242bea2afdcf75928c34066f0b83791a` |
+
+The scan used Trivy 0.70.0 and vulnerability database identity
+`sha256:cee72afaa19faad1252d37bbb98a4f7eb23bc830e7dec8b9f406bc77d7b105e4`.
+The immutable build manifest identity is
+`sha256:0508cdd8a130bbffceb907b282cf0e686c94f8be179feb1157728346dec1e432`.
+
+The remediation upgraded `cryptography`, `postcss`, `sharp`, and the exact Node base image. It
+purged the unused SQLite runtime library from the Portal API image after confirming that the
+production application does not use SQLite and the package has no image reverse dependencies. It
+did not run a broad operating-system upgrade. The exact first-party Critical/High inventory changed
+from 13 Critical and 47 High findings to 10 Critical and 35 High findings. No first-party
+Critical/High finding with a scanner-recorded fix remains.
+
+Every remaining first-party Critical/High finding requires an exact rule keyed by image digest,
+advisory, binary package, and package version. Missing, duplicate, or unused rules invalidate the
+policy. Current disposition is:
+
+| Disposition | Count | Evidence boundary | Expiry |
+| --- | ---: | --- | --- |
+| Affected condition not present | 35 | MiniZip not built; affected Perl modules/version/architecture absent; or source-package sibling attribution does not contain the affected binary | 2027-01-25 |
+| No fix; indirect reachability unknown | 10 | Affected package/code is present, direct Portal entrypoint use was not found, and complete indirect non-reachability was not claimed | 2026-09-27 |
+
+The 35 `not_present` decisions use exact false-positive exceptions and must be reopened if any image
+digest, package version, advisory condition, architecture, or scanner database identity changes.
+The 10 unknown-reachability High/no-fix decisions retain bounded risk acceptance. They rely on the
+non-root, read-only, capability-free container boundary and require an exact-image rescan when
+upstream fixes become available. Neither group is a wildcard, a vulnerability-free claim, or an
+authorization for production.
+
+The register now contains 46 active records: the 45 first-party dispositions above plus the
+existing exact PostgreSQL snakeoil false positive. Superseded `SCN-001` through `SCN-065` records
+were removed; their historical rationale remains in the initial triage sections and Git history.
+Vendor findings remain report-only under the unchanged vendor policy.
 
 ## CI execution
 
@@ -264,9 +311,9 @@ If a potential credential is reported, stop unsafe output and inspect only the s
 If confirmed, revoke and rotate it through a separately authorized response. Do not baseline the
 credential, commit raw evidence, upload raw reports, or rewrite Git history during a scan.
 
-Dependency or image remediation is also separate from scanning implementation. Preserve the finding
-identity, establish reachability and fix status, then authorize the smallest dependency or image
-change through normal review.
+Further dependency or image remediation remains separate from scanner governance. Preserve the
+finding identity, establish reachability and fix status, then authorize the smallest dependency or
+image change through normal review.
 
 ## Rollback
 
@@ -292,6 +339,6 @@ Never alter PostgreSQL state or the intentional audit dead letter while diagnosi
 
 Accurate maturity statement:
 
-> Security scanning implemented for first-party Portal source, dependencies, secrets, container
-> images and CI configuration; remediation, supply-chain attestation and production security
-> authorization remain pending.
+> First-party Portal fixed-available Critical/High image vulnerabilities remediated and remaining
+> exact-image findings dispositioned with bounded evidence; supply-chain attestation and production
+> security authorization remain pending.

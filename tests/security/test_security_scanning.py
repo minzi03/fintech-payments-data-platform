@@ -391,6 +391,49 @@ def test_dependency_scope_override_is_exact_and_development_only(
         )
 
 
+def test_image_reachability_override_requires_exact_complete_evidence(
+    scanner: ModuleType,
+) -> None:
+    image = "sha256:" + ("a" * 64)
+    vulnerable = scanner.make_finding(
+        scanner="trivy",
+        scanner_version="0.70.0",
+        database_identity="sha256:" + ("b" * 64),
+        identifier="CVE-2026-0001",
+        source="c" * 40,
+        asset_type="container_image",
+        asset_identity=image,
+        repository_path="",
+        package="example-package",
+        package_version="1.2.3",
+        severity="critical",
+        exploitability="unknown",
+        fix_status="no_fix",
+    )
+    override = {
+        "asset_identities": [image],
+        "vulnerability_id": "CVE-2026-0001",
+        "packages": ["example-package"],
+        "package_version": "1.2.3",
+        "exploitability": "not_present",
+        "evidence": "Exact image inspection proves the affected component is absent.",
+    }
+
+    result = scanner.apply_image_reachability_overrides([vulnerable], [override])
+    assert result[0].exploitability == "not_present"
+
+    with pytest.raises(scanner.ScanFailure):
+        scanner.apply_image_reachability_overrides([vulnerable], [])
+
+    unused = dict(override)
+    unused["package_version"] = "9.9.9"
+    with pytest.raises(scanner.ScanFailure):
+        scanner.apply_image_reachability_overrides([], [unused])
+
+    with pytest.raises(scanner.ScanFailure):
+        scanner.apply_image_reachability_overrides([vulnerable], [override, override])
+
+
 def test_zizmor_v1_locations_are_normalized(scanner: ModuleType) -> None:
     payload = [
         {
@@ -716,7 +759,9 @@ def test_policy_configuration_files_are_internally_valid(scanner: ModuleType) ->
         maximum_days=policy["exception_maximum_days"],
     )
     assert len(baseline["findings"]) == 89
-    assert len(indexed) == 66
+    assert len(indexed) == 46
+    assert sum(item["fix_status"] == "false_positive" for item in indexed.values()) == 36
+    assert sum(item["fix_status"] == "no_fix" for item in indexed.values()) == 10
     assert not expired
 
 
@@ -759,5 +804,59 @@ def test_artifact_manifest_must_match_source_and_exact_image_ids(
         scanner.validate_artifact_manifest(
             manifest,
             source="d" * 40,
+            expected_image_ids=expected,
+        )
+
+
+def test_artifact_manifest_allows_one_governance_only_child_commit(
+    scanner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    artifact_source = "c" * 40
+    governance_source = "d" * 40
+    expected = {
+        "portal-api": "sha256:" + ("a" * 64),
+        "portal-web": "sha256:" + ("b" * 64),
+    }
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "portal-artifact-build/v1",
+                "repository": {"source_commit": artifact_source},
+                "images": [
+                    {"name": name, "output": {"digest": digest}}
+                    for name, digest in expected.items()
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_git(*arguments: str, check: bool = True) -> str:
+        del check
+        if arguments == ("rev-parse", f"{governance_source}^"):
+            return artifact_source
+        if arguments == ("diff", "--name-only", f"{artifact_source}..{governance_source}"):
+            return "security/scanning/exceptions.json\nscripts/security/scan.py"
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(scanner, "git", fake_git)
+    scanner.validate_artifact_manifest(
+        manifest,
+        source=governance_source,
+        expected_image_ids=expected,
+    )
+
+    def unsafe_git(*arguments: str, check: bool = True) -> str:
+        del check
+        if arguments[0] == "rev-parse":
+            return artifact_source
+        return "apps/portal-api/Dockerfile"
+
+    monkeypatch.setattr(scanner, "git", unsafe_git)
+    with pytest.raises(scanner.ScanFailure):
+        scanner.validate_artifact_manifest(
+            manifest,
+            source=governance_source,
             expected_image_ids=expected,
         )

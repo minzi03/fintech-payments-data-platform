@@ -51,7 +51,8 @@
         "likely_reachable",
         "unknown",
         "build_only",
-        "development_only"
+        "development_only",
+        "not_present"
       ]
     },
     "fix_status": {
