@@ -50,20 +50,27 @@ jobs:
           python scripts/portal/lock_portal_dependencies.py --check
           pnpm install --frozen-lockfile
 
-      - name: Start disposable Portal control database
-        run: docker compose --env-file .env.example up -d --wait portal-postgres
-
       - name: Validate Portal API
-        env:
-          PORTAL_TEST_MIGRATION_DATABASE_URL: >-
-            postgresql+psycopg://portal_migration:change_me@127.0.0.1:55432/portal_control
-          PORTAL_TEST_RUNTIME_DATABASE_URL: >-
-            postgresql+psycopg://portal_runtime:change_me@127.0.0.1:55432/portal_control
         run: |
           python -m ruff check apps/portal-api
           python -m ruff format --check apps/portal-api
           python -m mypy --config-file apps/portal-api/pyproject.toml
-          python -m pytest -c apps/portal-api/pyproject.toml apps/portal-api/tests
+          python -m pytest -c apps/portal-api/pyproject.toml \
+            apps/portal-api/tests \
+            --ignore=apps/portal-api/tests/integration/test_redis_abuse_enforcement.py \
+            -m "not destructive_migration"
+
+      - name: Start isolated Redis test dependency
+        run: docker compose --env-file .env.example up -d --wait portal-redis
+
+      - name: Validate real-Redis abuse enforcement
+        run: >-
+          python -m pytest -c apps/portal-api/pyproject.toml
+          apps/portal-api/tests/integration/test_redis_abuse_enforcement.py
+
+      - name: Stop isolated Redis test dependency
+        if: always()
+        run: docker compose --env-file .env.example rm --stop --force portal-redis
 
       - name: Detect generated contract drift
         run: |
@@ -83,9 +90,61 @@ jobs:
           pnpm --filter @fintech/portal-web test
           pnpm --filter @fintech/portal-web build
 
-      - name: Stop disposable Portal control database
-        if: always()
-        run: docker compose --env-file .env.example down --remove-orphans
+  portal-database-integration:
+    name: Portal disposable database integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install immutable Portal dependencies
+        run: |
+          python -m pip install \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement apps/portal-api/requirements-dev.lock
+          python scripts/portal/lock_portal_dependencies.py --check
+
+      - name: Run integration tests in a run-owned database
+        run: python scripts/portal/run_disposable_portal_tests.py --suite integration
+
+  portal-migration-validation:
+    name: Portal destructive migration validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install immutable Portal dependencies
+        run: |
+          python -m pip install \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement apps/portal-api/requirements-dev.lock
+          python scripts/portal/lock_portal_dependencies.py --check
+
+      - name: Run destructive migration tests in a run-owned database
+        run: python scripts/portal/run_disposable_portal_tests.py --suite migration
 
   portal-containers:
     name: Portal container security and health

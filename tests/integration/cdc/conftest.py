@@ -30,9 +30,9 @@ def cdc_environment() -> Iterator[CdcEnvironment]:
     client = ConnectClient(settings)
     client.wait_ready()
     client.wait_running()
-    database_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+    database_url = os.getenv("TEST_DATABASE_URL")
     if not database_url:
-        pytest.fail("TEST_DATABASE_URL or DATABASE_URL is required for CDC integration")
+        pytest.fail("An explicitly isolated TEST_DATABASE_URL is required for CDC integration")
     try:
         connection = psycopg.connect(database_url, autocommit=True, connect_timeout=10)
     except psycopg.OperationalError as error:

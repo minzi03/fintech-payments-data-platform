@@ -11,8 +11,18 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from portal_api.db.migration_integrity import MIGRATION_LOCK_KEY, MigrationIntegrityError
+from portal_test_support.disposable_database import (
+    DestructiveOperationGrant,
+    PostgresDisposableDatabaseProbe,
+)
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError, ProgrammingError
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.destructive_migration,
+    pytest.mark.usefixtures("disposable_database_grant"),
+]
 
 EXPECTED_TABLES = {
     "audit_delivery_receipts",
@@ -61,12 +71,17 @@ def _alembic_config(url: str) -> Config:
     return config
 
 
-@pytest.mark.integration
-def test_upgrade_downgrade_and_authoritative_history() -> None:
+def test_upgrade_downgrade_and_authoritative_history(
+    disposable_database_grant: DestructiveOperationGrant,
+) -> None:
     url = _migration_url()
     config = _alembic_config(url)
 
     command.downgrade(config, "base")
+    marker = PostgresDisposableDatabaseProbe().read_marker(url)
+    assert marker is not None
+    assert marker.run_id == disposable_database_grant.identity.run_id
+    assert marker.consumed_at is not None
     command.upgrade(config, "head")
 
     engine = create_engine(url)
@@ -98,7 +113,6 @@ def test_upgrade_downgrade_and_authoritative_history() -> None:
     command.upgrade(config, "head")
 
 
-@pytest.mark.integration
 def test_runtime_role_cannot_read_history_or_execute_ddl() -> None:
     config = _alembic_config(_migration_url())
     command.upgrade(config, "head")
@@ -112,7 +126,6 @@ def test_runtime_role_cannot_read_history_or_execute_ddl() -> None:
         engine.dispose()
 
 
-@pytest.mark.integration
 def test_runtime_and_archive_roles_preserve_audit_authority_boundaries() -> None:
     config = _alembic_config(_migration_url())
     command.upgrade(config, "head")
@@ -152,7 +165,6 @@ def test_runtime_and_archive_roles_preserve_audit_authority_boundaries() -> None
         archive.dispose()
 
 
-@pytest.mark.integration
 def test_database_trigger_rejects_audit_mutation_with_frozen_sqlstate() -> None:
     url = _migration_url()
     config = _alembic_config(url)
@@ -189,7 +201,6 @@ def test_database_trigger_rejects_audit_mutation_with_frozen_sqlstate() -> None:
         engine.dispose()
 
 
-@pytest.mark.integration
 def test_applied_migration_checksum_tampering_is_rejected() -> None:
     url = _migration_url()
     config = _alembic_config(url)
@@ -224,7 +235,6 @@ def test_applied_migration_checksum_tampering_is_rejected() -> None:
         engine.dispose()
 
 
-@pytest.mark.integration
 def test_concurrent_migration_runner_is_rejected_without_retry() -> None:
     url = _migration_url()
     config = _alembic_config(url)

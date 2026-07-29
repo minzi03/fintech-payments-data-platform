@@ -179,14 +179,14 @@ Destination configuration is currently bounded to the idempotent local PostgreSQ
 Focused PostgreSQL validation:
 
 ```bash
+make portal-api-integration-test
 cd apps/portal-api
-python -m pytest tests/integration/test_audit_outbox_worker.py
 python scripts/validate_audit_outbox_load.py
 ```
 
 The load harness defaults to 10,000 committed events and eight competing workers. It fails on
 incomplete delivery, duplicate receipts, stale finalization, excessive p95 delivery latency, or
-excessive traced allocation. Supply separate runtime and archive-role URLs through
-`PORTAL_TEST_RUNTIME_DATABASE_URL` and `PORTAL_TEST_ARCHIVE_DATABASE_URL`.
-The bounded maintenance-load scenario additionally requires
-`PORTAL_TEST_MIGRATION_DATABASE_URL` for isolated fixture setup and teardown.
+excessive traced allocation. The automated integration target creates and owns its disposable
+database; repository defaults do not contain test database URLs. The standalone load harness is
+operator-controlled evidence and must receive separate runtime, archive, and migration URLs for
+an explicitly isolated database. It must never target the normal `portal_control` database.

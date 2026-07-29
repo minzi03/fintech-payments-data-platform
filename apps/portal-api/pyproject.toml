@@ -39,8 +39,9 @@ where = ["app"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
-pythonpath = ["app"]
+pythonpath = ["app", "test_support"]
 markers = [
+  "destructive_migration: explicit disposable-database migration validation",
   "integration: Portal API integration tests",
 ]
 

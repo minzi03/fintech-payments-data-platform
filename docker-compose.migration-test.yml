@@ -1,0 +1,35 @@
+services:
+  portal-migration-postgres:
+    image: postgres:16.4-bookworm@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412
+    restart: "no"
+    environment:
+      POSTGRES_DB: ${PORTAL_TEST_DATABASE_NAME:?PORTAL_TEST_DATABASE_NAME is required}
+      POSTGRES_USER: ${PORTAL_TEST_ADMIN_USER:?PORTAL_TEST_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${PORTAL_TEST_ADMIN_PASSWORD:?PORTAL_TEST_ADMIN_PASSWORD is required}
+      PORTAL_DB_MIGRATION_PASSWORD: >-
+        ${PORTAL_TEST_MIGRATION_PASSWORD:?PORTAL_TEST_MIGRATION_PASSWORD is required}
+      PORTAL_DB_RUNTIME_PASSWORD: >-
+        ${PORTAL_TEST_RUNTIME_PASSWORD:?PORTAL_TEST_RUNTIME_PASSWORD is required}
+      PORTAL_DB_AUDIT_PASSWORD: >-
+        ${PORTAL_TEST_AUDIT_PASSWORD:?PORTAL_TEST_AUDIT_PASSWORD is required}
+      PORTAL_DB_ARCHIVE_PASSWORD: >-
+        ${PORTAL_TEST_ARCHIVE_PASSWORD:?PORTAL_TEST_ARCHIVE_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${PORTAL_TEST_DATABASE_PORT:?PORTAL_TEST_DATABASE_PORT is required}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data:rw,nosuid,nodev,noexec,size=512m
+    volumes:
+      - ./infrastructure/portal/postgres/001_create_roles.sh:/docker-entrypoint-initdb.d/001_create_roles.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks:
+      - disposable-database
+
+networks:
+  disposable-database: {}

@@ -30,9 +30,6 @@ def _url(name: str) -> str:
     value = os.environ.get(name, "")
     if value:
         return value
-    migration = os.environ.get("PORTAL_TEST_MIGRATION_DATABASE_URL", "")
-    if name == "PORTAL_TEST_ARCHIVE_DATABASE_URL" and migration:
-        return migration.replace("portal_migration:", "portal_archive:")
     pytest.skip(f"{name} is not configured")
 
 

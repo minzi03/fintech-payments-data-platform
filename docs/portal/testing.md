@@ -10,14 +10,40 @@ content.
 ## Backend
 
 `apps/portal-api/tests/unit` covers typed production safety, correlation validation, dependency
-aggregation, timeout mapping, telemetry, and log redaction. `tests/integration` creates the real
-FastAPI application and verifies routes, Problem Details, security headers, CORS, trusted hosts,
-safe metadata, correlation propagation, provider refresh concurrency, rotation/reuse detection,
-bounded provider-outage recovery, back-channel replay protection, logout, and crypto-erasure.
+aggregation, timeout mapping, telemetry, log redaction, and the disposable-database refusal
+boundary. `tests/integration` creates the real FastAPI application and verifies routes, Problem
+Details, security headers, CORS, trusted hosts, safe metadata, correlation propagation, provider
+refresh concurrency, rotation/reuse detection, bounded provider-outage recovery, back-channel
+replay protection, logout, and crypto-erasure.
 
 ```bash
 make portal-api-test
 ```
+
+The ordinary backend target deliberately excludes tests marked `destructive_migration` and the
+real-Redis file that has its own explicit dependency workflow. It cannot run Alembic downgrade.
+Database-backed integration and migration validation are separate explicit targets:
+
+```bash
+make portal-api-integration-test
+make portal-migration-test
+```
+
+Both commands create their own isolated Compose project and a unique PostgreSQL database. The
+orchestrator creates run-scoped credentials, installs a database marker outside the
+Alembic-managed schemas, and supplies a short-lived one-use destructive token. The test process
+must prove:
+
+- exact database, run, Compose-project, and role identities;
+- a current unconsumed marker and matching token;
+- loopback-only connectivity and a non-persistent database name;
+- zero pre-existing Portal authority state.
+
+Any failed proof stops before migration or cleanup. Arbitrary URLs, normal `portal_control`,
+payments, Airflow, PostgreSQL maintenance databases, remote hosts, missing role URLs, and fallback
+from `TEST_DATABASE_URL` to `DATABASE_URL` are refused. The raw token and credential-bearing URLs
+are never logged. The disposable marker survives `alembic downgrade base`; the orchestrator
+verifies token consumption and tears down only its uniquely named Compose project.
 
 Container hardening has separate static and runtime validation:
 
@@ -32,7 +58,10 @@ The runtime verifier reports only control identifiers and service names. It does
 environment values. See [Portal container hardening](container-hardening.md) for the control and
 exception model.
 
-This runs Ruff, formatting checks, strict mypy, unit tests, and integration tests.
+The ordinary target runs Ruff, formatting checks, strict mypy, non-database tests, and integration
+cases that do not need PostgreSQL or Redis. CI executes database and real-Redis checks through
+explicit dependency steps, so destructive migration validation is never reachable through
+ordinary backend validation. Redis is not started by the disposable PostgreSQL orchestrator.
 
 ## Frontend
 

@@ -59,12 +59,11 @@ export CDC_FRESHNESS_WARN_SECONDS CDC_FRESHNESS_FAIL_SECONDS
 export PORTAL_DB_PORT PORTAL_DB_NAME PORTAL_DB_ADMIN_USER PORTAL_DB_ADMIN_PASSWORD
 export PORTAL_DB_MIGRATION_PASSWORD PORTAL_DB_RUNTIME_PASSWORD PORTAL_DB_AUDIT_PASSWORD
 export PORTAL_DB_ARCHIVE_PASSWORD PORTAL_MIGRATION_DATABASE_URL
-export PORTAL_TEST_MIGRATION_DATABASE_URL PORTAL_TEST_RUNTIME_DATABASE_URL
 
-.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-lock-check portal-lock-update portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-web-test portal-test portal-build portal-artifacts portal-config-check security-policy security-fast security-full security-images security-history portal-db-up portal-db-migrate portal-db-down portal-db-logs portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
+.PHONY: help install lint format format-check test test-unit test-integration test-batch-unit test-batch-integration test-minio-integration test-cdc-integration test-cdc-consumer-unit test-cdc-consumer-integration test-silver-unit test-silver-integration test-airflow-unit test-airflow-integration coverage yaml yaml-check compose-config compose-check validate quality portal-install portal-lock-check portal-lock-update portal-openapi portal-client portal-contracts portal-contract-check portal-api-test portal-api-integration-test portal-migration-test portal-web-test portal-test portal-build portal-artifacts portal-config-check security-policy security-fast security-full security-images security-history portal-db-up portal-db-migrate portal-db-down portal-db-logs portal-up portal-down portal-logs portal-e2e postgres-up postgres-down postgres-logs postgres-reset minio-up minio-down minio-logs minio-reset kafka-up kafka-down kafka-logs connect-logs cdc-up cdc-down cdc-status cdc-register cdc-restart cdc-delete cdc-inspect cdc-consumer-run cdc-consumer-once cdc-consumer-logs inspect-cdc-bronze reset-cdc-consumer-state silver-process-cdc silver-process-settlements silver-process-once silver-inspect reset-silver-state airflow-build airflow-init airflow-up airflow-down airflow-logs airflow-shell airflow-demo-login-info airflow-show-demo-password airflow-dags-list airflow-dag-test trigger-settlement-pipeline trigger-cdc-silver-pipeline trigger-backfill reset-airflow-metadata generate-data generate-settlement-fixtures ingest-settlements ingest-settlements-minio clean-runtime-data clean
 
 help:
-	@echo "Targets: install lint format-check test-unit test-integration portal-install portal-contracts portal-test portal-build portal-up portal-e2e portal-down postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down"
+	@echo "Targets: install lint format-check test-unit test-integration portal-install portal-contracts portal-test portal-api-integration-test portal-migration-test portal-build portal-up portal-e2e portal-down postgres-up minio-up kafka-up cdc-up airflow-build airflow-init airflow-up airflow-down"
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -159,7 +158,15 @@ portal-api-test:
 	$(PYTHON) -m ruff check apps/portal-api
 	$(PYTHON) -m ruff format --check apps/portal-api
 	$(PYTHON) -m mypy --config-file apps/portal-api/pyproject.toml
-	$(PYTHON) -m pytest -c apps/portal-api/pyproject.toml apps/portal-api/tests
+	$(PYTHON) -m pytest -c apps/portal-api/pyproject.toml apps/portal-api/tests \
+		--ignore=apps/portal-api/tests/integration/test_redis_abuse_enforcement.py \
+		-m "not destructive_migration"
+
+portal-api-integration-test:
+	$(PYTHON) scripts/portal/run_disposable_portal_tests.py --suite integration
+
+portal-migration-test:
+	$(PYTHON) scripts/portal/run_disposable_portal_tests.py --suite migration
 
 portal-web-test:
 	$(PNPM) --filter @fintech/portal-web format:check
