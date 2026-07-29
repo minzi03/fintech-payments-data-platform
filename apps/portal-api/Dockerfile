@@ -37,6 +37,7 @@ RUN addgroup --system --gid 10001 portal \
 COPY --from=dependencies /wheels /wheels
 RUN python -m pip install --no-cache-dir --no-compile --no-deps /wheels/* \
     && python -m pip uninstall --yes pip setuptools wheel \
+    && dpkg --purge libsqlite3-0 \
     && rm -rf /wheels /root/.cache \
     && find /bin /sbin /usr/bin /usr/sbin -xdev -type f \
         \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} +
