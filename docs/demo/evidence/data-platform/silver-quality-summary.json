@@ -1,0 +1,27 @@
+{
+  "schema_version": "demo-silver-quality-summary/v1",
+  "provenance": "generated-from-source",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "outputs": {
+    "history": "all ordered CDC evidence",
+    "latest_all": "latest row including delete state",
+    "current": "active current rows only",
+    "transaction_events": "append-only lifecycle events",
+    "settlements": "typed accepted partner rows",
+    "quality": "reason-coded failures and unresolved-reference evidence"
+  },
+  "normalization": [
+    "fixed-precision Decimal",
+    "UTC timestamps",
+    "explicit PyArrow schemas",
+    "coordinate-aware ordering",
+    "deterministic input/output lineage"
+  ],
+  "live_counts": null,
+  "limitations": [
+    "This source-derived summary contains no claim that Silver ran during the current demo.",
+    "Warehouse, dbt, Gold, reconciliation products, and dashboard KPIs are not implemented."
+  ],
+  "runtime_proof": false
+}

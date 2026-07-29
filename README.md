@@ -228,13 +228,14 @@ full stack. When GNU Make is available, `make help` lists the wider repository c
 | Path                         | Start here                                                                                                                                                   | Current status                                          |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
 | Architecture/evidence review | [Business case](docs/business/business-case.md), then this README                                                                                            | Available                                               |
-| Data-platform demo           | [Demo guide](docs/demo/demo-guide.md) and [demo script](docs/demo/demo-script.md)                                                                            | Available for local rehearsal                           |
+| Canonical interview demo     | [Demo and evidence package](docs/demo/README.md)                                                                                                             | 5/10/20-minute and offline routes available             |
+| Detailed data-platform demo  | [Phase demo guide](docs/demo/demo-guide.md) and [extended script](docs/demo/demo-script.md)                                                                  | Optional detailed local reference                       |
 | Portal-focused review        | [Local development](docs/portal/local-development.md) and [testing](docs/portal/testing.md)                                                                  | Separate from the data-platform demo                    |
 | Full verification            | [Portal testing](docs/portal/testing.md) and repository `Makefile`                                                                                           | Commands are explicit; some require disposable services |
 | Security deep dive           | [Scanning](docs/portal/security-scanning.md), [hardening](docs/portal/container-hardening.md), and [threat model](docs/portal/pr-portal-002-threat-model.md) | Current first-party evidence                            |
 
-The final unified demo/evidence package belongs to FF-05. A sanitized screenshot bundle, recorded
-video, offline fallback pack, and final release manifest are not currently claimed.
+FF-05 provides a text/JSON-first canonical demo and offline evidence package. No screenshot or
+recorded-video proof is claimed; text assets were chosen to reduce privacy and metadata leakage.
 
 ## Verification snapshot
 
@@ -401,7 +402,7 @@ Architecture and claims:
 Reconciled by FF-04
 
 Public presentation:
-Pending FF-05 and FF-06
+Pending FF-06
 
 Push:
 Not performed
@@ -423,6 +424,7 @@ No remote CI result is claimed for the unpushed checkpoint.
 - [Portal security scanning](docs/portal/security-scanning.md)
 - [Architecture decisions](docs/adr/README.md)
 - [Current demo guide](docs/demo/demo-guide.md)
+- [Canonical demo and evidence package](docs/demo/README.md)
 
 The root README is the canonical reviewer entrypoint. Detailed documents provide evidence and
 historical context but do not override the implemented/deferred boundaries stated here.

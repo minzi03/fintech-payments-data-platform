@@ -328,7 +328,8 @@ Deferred items are possible future work, not committed delivery.
 - [Portal architecture boundary](../portal/architecture-boundaries.md)
 - [Portal troubleshooting](../portal/troubleshooting.md)
 - [Security scanning and dispositions](../portal/security-scanning.md)
-- [Data-platform demo guide](../demo/demo-guide.md)
+- [Canonical demo and evidence package](../demo/README.md)
+- [Detailed Phase 0–7 demo guide](../demo/demo-guide.md)
 
 ADRs and design-freeze documents retain historical decisions and wording; they do not override
 this current implementation view.

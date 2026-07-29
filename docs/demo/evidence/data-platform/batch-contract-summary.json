@@ -1,0 +1,30 @@
+{
+  "schema_version": "demo-batch-contract-summary/v1",
+  "provenance": "generated-from-source",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "source_path": "contracts/batch/settlement_v1.yml",
+  "sanitization_status": "reviewed-safe",
+  "contract": {
+    "name": "banking_partner_settlement",
+    "schema_version": "settlement-v1",
+    "contract_version": "1.0.0",
+    "format": "csv",
+    "encoding": "utf-8",
+    "business_key": ["partner_id", "settlement_date", "settlement_reference"]
+  },
+  "publication": {
+    "accepted": "immutable Bronze object with checksum and manifest identity",
+    "file_failure": "private quarantine",
+    "row_failure": "reason-coded rejection evidence with partial acceptance",
+    "reconciliation_product": "not implemented"
+  },
+  "quality_rule_codes": [
+    "PARTNER_MATCHES_FILENAME",
+    "DATE_MATCHES_FILENAME",
+    "UNIQUE_SETTLEMENT_REFERENCE",
+    "DUPLICATE_ROW",
+    "NET_AMOUNT_CONSISTENT",
+    "PARTIAL_ACCEPTANCE"
+  ],
+  "runtime_proof": false
+}

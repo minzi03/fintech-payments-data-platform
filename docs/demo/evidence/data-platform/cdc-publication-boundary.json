@@ -1,0 +1,40 @@
+{
+  "schema_version": "demo-cdc-publication-boundary/v1",
+  "provenance": "generated-from-source",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "path": [
+    "PostgreSQL payment source",
+    "logical WAL / pgoutput",
+    "Debezium",
+    "Kafka CDC topic",
+    "manual-commit consumer",
+    "immutable Bronze Parquet"
+  ],
+  "safe_evidence_fields": [
+    "topic",
+    "partition",
+    "offset",
+    "timestamp",
+    "operation",
+    "sanitized key",
+    "schema version",
+    "object key",
+    "checksum",
+    "row count"
+  ],
+  "ordering": [
+    "parse and validate a contiguous partition range",
+    "serialize deterministic Parquet",
+    "publish immutable object",
+    "verify checksum and metadata",
+    "record uploaded manifest state",
+    "commit offset_end + 1",
+    "record committed manifest state"
+  ],
+  "claim_boundary": {
+    "approved": "Offsets are committed after immutable publication succeeds.",
+    "prohibited": "The entire platform is exactly-once."
+  },
+  "runtime_proof": false
+}

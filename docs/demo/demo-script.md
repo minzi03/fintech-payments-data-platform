@@ -1,5 +1,9 @@
 # Demo Script — 25–28 phút
 
+> **Status:** Extended historical script. Use the
+> [canonical 10-minute demo](canonical-demo.md) or the
+> [20-minute deep dive](deep-dive-demo.md) for current presentation claims and safety boundaries.
+
 ## Mục tiêu người trình bày
 
 Kể một câu chuyện end-to-end, tập trung vào reliability và business value thay vì liệt kê công nghệ. Mỗi lần chuyển màn hình phải trả lời được ba câu: dữ liệu đến từ đâu, được bảo vệ thế nào, và người vận hành xác minh ở đâu.

@@ -122,6 +122,9 @@ A claim is reviewable only when it links to one or more of:
 Historical prompts, proposals, screenshots without provenance, and empty scaffold directories are
 not implementation evidence.
 
+The [canonical demo and evidence package](../demo/README.md) applies this matrix to live,
+prepared, and offline presentation routes.
+
 ## Review triggers
 
 Reassess affected rows when any of these changes:

@@ -1,0 +1,31 @@
+{
+  "schema_version": "demo-prepared-dataset/v1",
+  "provenance": "illustrative",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "contains_synthetic_data": true,
+  "runtime_proof": false,
+  "namespace": {
+    "generator_seed": 50501,
+    "settlement_seed": 50501,
+    "settlement_partner": "DEMO1",
+    "settlement_date": "2026-07-29"
+  },
+  "bounds": {
+    "customers": 1,
+    "merchants": 1,
+    "payment_transactions": 1,
+    "invalid_rate": 0,
+    "duplicate_rate": 0
+  },
+  "policy": {
+    "generator_seed_is_one_use_per_persistent_database": true,
+    "delete_existing_rows_to_reuse_seed": false,
+    "default_cleanup": "none",
+    "fallback_when_seed_exists": "use prepared evidence"
+  },
+  "limitations": [
+    "This is a synthetic demo specification, not evidence that a live generator command ran.",
+    "Related synthetic source rows and lifecycle events are created with the one transaction."
+  ]
+}

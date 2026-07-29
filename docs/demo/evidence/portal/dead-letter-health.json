@@ -1,0 +1,24 @@
+{
+  "schema_version": "demo-worker-health/v1",
+  "provenance": "live-captured",
+  "captured_at": "2026-07-29T05:39:22.723Z",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "runtime_mutation_required": false,
+  "health": {
+    "status": "DEGRADED",
+    "database": "UP",
+    "destination": "UP",
+    "outbox": "UP",
+    "pending": 0,
+    "dead_lettered": 1,
+    "maintenance_overdue": 0
+  },
+  "interpretation": [
+    "One intentional poison event demonstrates dead-letter handling.",
+    "DEGRADED is operationally available because required worker dependencies remain UP.",
+    "DOWN has a different availability meaning.",
+    "The dead-letter record must not be repaired or replayed for presentation aesthetics."
+  ],
+  "payload_included": false
+}

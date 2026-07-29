@@ -1,5 +1,9 @@
 # Demo Checklist — Phase 0 đến Phase 7
 
+> **Status:** Detailed phase checklist. The current fail-closed interview checklist is
+> [preflight.md](preflight.md); it does not authorize cold reset, volume deletion, migration
+> downgrade, or dead-letter repair.
+
 ## 1. Trước ngày demo
 
 - [ ] Đã đọc lại `docs/demo/demo-guide.md` và rehearsed `docs/demo/demo-script.md` trong 25–28 phút.

@@ -1,0 +1,24 @@
+{
+  "schema_version": "demo-airflow-dag-summary/v1",
+  "provenance": "generated-from-source",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "executor": "LocalExecutor",
+  "dags": [
+    "cdc_bronze_control",
+    "cdc_silver_processing_pipeline",
+    "data_platform_backfill",
+    "settlement_batch_pipeline"
+  ],
+  "state_ownership": {
+    "scheduling_and_task_instances": "Airflow metadata PostgreSQL",
+    "cross_pipeline_runs_quality_backfill": "PostgreSQL control schema",
+    "component_file_object_batch_lifecycle": "component SQLite manifests",
+    "business_data_and_immutable_objects": "owning source and storage components"
+  },
+  "runtime_proof": false,
+  "limitations": [
+    "This is a tracked DAG inventory, not evidence of a current successful run.",
+    "The local Airflow topology is not highly available."
+  ]
+}

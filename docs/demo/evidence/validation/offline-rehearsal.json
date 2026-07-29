@@ -1,0 +1,37 @@
+{
+  "schema_version": "demo-offline-rehearsal/v1",
+  "provenance": "live-captured",
+  "captured_at": "2026-07-29T05:47:16.906Z",
+  "source_commit": "11ba97f539f9f3ed7e16c2e772a9988afce7e9e5",
+  "sanitization_status": "reviewed-safe",
+  "rehearsal": {
+    "mode": "offline-fallback",
+    "start_conditions": [
+      "locked Git baseline matched",
+      "canonical architecture and claim documents available",
+      "all twelve evidence assets present"
+    ],
+    "services_used": [],
+    "live_actions": [],
+    "expected_result": "Complete the architecture, data-platform, Portal, security, validation, and limitations narrative without runtime services.",
+    "actual_result": "All evidence categories and claim boundaries were available from tracked text and JSON assets.",
+    "persistent_impact": "none",
+    "cleanup": "not required",
+    "duration_category": "under fifteen minutes",
+    "fallback_assets_used": 12,
+    "result": "completed"
+  },
+  "checks": [
+    "architecture and boundary narrative available",
+    "batch, CDC, Bronze, Silver, and Airflow summaries available",
+    "Portal, dead-letter, security, and validation evidence available",
+    "claims and limitations explicit",
+    "no Docker or network dependency",
+    "no credential, PII, local path, or runtime mutation required"
+  ],
+  "deviations": [
+    "Airflow live view was unavailable because the scheduler service was not running; the tracked DAG summary was used.",
+    "Live CDC rehearsal was intentionally deferred to FF-06 because FF-05 did not authorize persistent source mutation."
+  ],
+  "privacy_review": "No credentials, tokens, PII, local paths, internal URLs, screenshots, or binary metadata were used."
+}
