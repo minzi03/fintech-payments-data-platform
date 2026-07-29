@@ -302,7 +302,7 @@ See the [security scanning boundary and current disposition](docs/portal/securit
 | Vendor image findings report-only            | Vendor risk requires a separate release disposition                          |
 | Ten first-party High/no-fix dispositions     | Indirect reachability remains unknown and time-bounded                       |
 | Intentional dead letter                      | Audit-worker health remains DEGRADED as validation evidence                  |
-| Public publication pending FF-06             | Sanitized fallback evidence exists; publication is not yet approved          |
+| Local publication verification completed     | Remote publication still requires an explicitly authorized push              |
 | Current branch is not pushed                 | Remote CI and public visibility do not include this checkpoint               |
 
 ## Choose your path
@@ -341,7 +341,7 @@ See the [security scanning boundary and current disposition](docs/portal/securit
 
 [Demo guide](docs/demo/demo-guide.md) -> [demo script](docs/demo/demo-script.md) ->
 [expected checklist](docs/demo/demo-checklist.md). The sanitized fallback package is available;
-portfolio publication remains gated by FF-06.
+FF-06 approved publication locally, while remote publication remains unperformed.
 
 ## Repository map
 
@@ -402,7 +402,7 @@ Architecture and claims:
 Reconciled by FF-04
 
 Public presentation:
-Pending FF-06
+Approved locally by FF-06
 
 Push:
 Not performed

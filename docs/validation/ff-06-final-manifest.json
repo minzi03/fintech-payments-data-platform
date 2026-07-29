@@ -1,0 +1,123 @@
+{
+  "schema_version": "ff-06-final-verification/v1",
+  "verification_timestamp": "2026-07-29T16:58:18Z",
+  "source": {
+    "branch": "feat/portal-002-runtime-conformance",
+    "commit_before_final": "2ab4f649deb5bd2c9c9e0718cac9c7dee096d571",
+    "parent": "5a6fe89d7e0f010a640d2c9a68cfc366141348db",
+    "baseline_tag": "phase-portal-finalization-artifact-governance-child-sync"
+  },
+  "release_state": {
+    "publication_decision": "approved_locally",
+    "push": "not_performed",
+    "merge": "not_performed",
+    "release": "not_performed",
+    "pull_request": {
+      "number": 11,
+      "state": "open",
+      "modified_during_verification": false
+    }
+  },
+  "artifacts": {
+    "portal_api_image": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+    "portal_web_image": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
+    "artifact_manifest": "sha256:27bea0e7d7e6df6f3167c441f6a0bf39fbeaae5d4ec40bea05c336afb8eabcdb",
+    "oci_byte_determinism": "not_verified"
+  },
+  "security": {
+    "trivy_version": "0.70.0",
+    "trivy_database": "sha256:f6e81714e94ef9becd5e44f25d7b9888e5b7c257303888229d9c4709b30b1a3e",
+    "normalized_findings": "sha256:50db77dec1f4aabca73418f7f67eebdfc745ccadda6a881ca2769640553911d8",
+    "artifact_report_set": "sha256:d391b8837f1faecc191d46a5c39521c516b1e188a146c8f7c86cb563e2a8f643",
+    "reachability_evidence": "sha256:be66730a451bc7dd8083679a137ae4d76a46dfca2868c5e0ca0e0fe67b6c07bb",
+    "exception_register": "sha256:8129c2a8e5fb7c5c3f1cd7a1cb523b51c1c261df8226758770ee68216ec3ad44",
+    "central_policy": "sha256:d08d77daeef36ab1c9f73f976f096ab840e2651f25cf1b5b9c1689713f8e7140",
+    "findings": 1340,
+    "blocking": 0,
+    "first_party_critical_high": 45,
+    "fixed_first_party_critical_high": 0,
+    "exceptions": 46,
+    "expired_exceptions": 0,
+    "exceptions_within_30_days": 0,
+    "earliest_expiry": "2026-09-27"
+  },
+  "contracts": {
+    "openapi_sha256": "9fab4ac5b9e41dab87f648d2e797a99caefe51fefacacf4407df97f694471fb2",
+    "alembic_head": "008_audit_outbox_and_maintenance"
+  },
+  "verification": {
+    "baseline": "pass",
+    "protected_path_isolation": "pass",
+    "tracked_only_command_scope": "pass",
+    "annotated_tag_chain": "pass",
+    "artifact_ancestry": "pass",
+    "authorized_descendant_path_count": 6,
+    "frozen_artifact_identity": "pass",
+    "pinned_scanner_database": "pass",
+    "static_validation": "pass",
+    "backend_regression": "pass",
+    "platform_regression": "pass",
+    "frontend_regression": "pass",
+    "browser_verification": "pass_with_expected_auth_skips",
+    "exact_image_security": "pass",
+    "container_hardening": "pass",
+    "live_cdc_rehearsal": "pass",
+    "offline_fallback": "pass",
+    "documentation_audit": "pass",
+    "public_review_simulation": "pass",
+    "disposable_resource_cleanup": "pass",
+    "remote_mutation_prohibition": "pass"
+  },
+  "test_counts": {
+    "portal_backend_passed": 274,
+    "portal_backend_skipped": 41,
+    "portal_destructive_deselected": 6,
+    "portal_database_integration_passed": 56,
+    "migration_validation_passed": 6,
+    "redis_integration_passed": 4,
+    "platform_passed": 360,
+    "platform_skipped": 2,
+    "platform_deselected": 34,
+    "minio_silver_passed": 9,
+    "cdc_integration_passed": 5,
+    "batch_integration_passed": 8,
+    "airflow_unit_passed": 27,
+    "foundation_passed": 7,
+    "vitest_passed": 29,
+    "playwright_passed": 1,
+    "playwright_expected_skipped": 5
+  },
+  "live_cdc": {
+    "seed": 50501,
+    "transaction_id": "76e41690-1da1-5e9b-8def-d7a2cc5e3dec",
+    "kafka_partition": 1,
+    "kafka_offset": 10,
+    "bronze_batch": "e2f9765d2f487eeedc58fb88ca604f00d2ba707832cade57def213bd3f5deb86",
+    "silver_run": "68c2aacf-f2b9-4f0e-b7a9-48e01f8cd918",
+    "result": "pass",
+    "cleanup": "immutable_synthetic_evidence_retained"
+  },
+  "offline_fallback": {
+    "asset_count": 12,
+    "evidence_category_count": 5,
+    "runtime_services_used": 0,
+    "persistent_impact": "none",
+    "result": "pass"
+  },
+  "intentional_dead_letter": {
+    "health": "degraded",
+    "database": "up",
+    "destination": "up",
+    "outbox": "up",
+    "pending": 0,
+    "dead_lettered": 1,
+    "maintenance_overdue": 0,
+    "changed": false
+  },
+  "checkpoint_assets": [
+    {
+      "path": "docs/validation/ff-06-final-verification.md",
+      "sha256": "1083384deb4ba0d06e24993bbf890670eeb331a5be7c6a257d8dc21ebf96ae6f"
+    }
+  ]
+}

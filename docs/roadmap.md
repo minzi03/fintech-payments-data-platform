@@ -21,7 +21,7 @@ FF-02 Security disposition            COMPLETED
 FF-03 Canonical entrypoint             COMPLETED
 FF-04 Architecture and claims          COMPLETED
 FF-05 Demo and evidence                COMPLETED
-FF-06 Verification/publication         CURRENT
+FF-06 Verification/publication         COMPLETED
 ```
 
 Feature development is frozen. FF-04 through FF-06 may improve documentation, evidence,
@@ -75,11 +75,11 @@ adapters for Kafka, MinIO, Airflow, or Silver.
 | FF-03 | Establish canonical repository entrypoint     | Completed | Documentation accuracy                  |
 | FF-04 | Reconcile architecture and claims             | Completed | Documentation accuracy                  |
 | FF-05 | Build sanitized demo/evidence package         | Completed | Demo reliability and evidence           |
-| FF-06 | Run final verification and decide publication | Current   | Verification and publishing preparation |
+| FF-06 | Run final verification and decide publication | Completed | Verification and publishing preparation |
 
 FF-04 reconciled architecture and claims. FF-05 produced sanitized evidence without fabricated
-screenshots. Neither checkpoint authorized a push. FF-06 must distinguish local verification from
-remote CI and production authorization.
+screenshots. FF-06 approved portfolio publication locally; no checkpoint authorized a push, remote
+CI result, or production deployment.
 
 ## Deferred product/platform direction
 
