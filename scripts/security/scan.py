@@ -28,6 +28,7 @@ TOOLCHAIN_PATH: Final = SCANNING_ROOT / "toolchain.json"
 POLICY_PATH: Final = SCANNING_ROOT / "policy.json"
 BASELINE_PATH: Final = SCANNING_ROOT / "baseline.json"
 EXCEPTIONS_PATH: Final = SCANNING_ROOT / "exceptions.json"
+FINAL_ARTIFACTS_PATH: Final = SCANNING_ROOT / "final-artifacts.json"
 DEFAULT_OUTPUT: Final = REPOSITORY_ROOT / "build" / "security"
 IMAGE_REFERENCE: Final = re.compile(r"^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$")
 SHA256: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -58,6 +59,7 @@ EXPLOITABILITY: Final = (
     "build_only",
     "development_only",
     "not_present",
+    "affected_condition_absent",
 )
 FIX_STATUSES: Final = (
     "fixed_available",
@@ -97,11 +99,16 @@ EXIT_TOOL_IDENTITY: Final = 25
 ARTIFACT_GOVERNANCE_ONLY_PATHS: Final = frozenset(
     {
         "docs/portal/security-scanning.md",
+        "docs/governance/reviews/PORTAL-002-workstream-b-completion-report-f002.md",
+        "scripts/portal/reuse_verified_artifacts.py",
         "scripts/security/scan.py",
         "security/scanning/baseline.json",
         "security/scanning/exceptions.json",
+        "security/scanning/final-artifacts.json",
         "security/scanning/policy.json",
+        "security/scanning/schemas/exceptions.schema.json",
         "security/scanning/schemas/finding.schema.json",
+        "apps/portal-api/tests/unit/test_reproducible_artifact_tools.py",
         "tests/security/test_security_scanning.py",
     }
 )
@@ -428,8 +435,22 @@ def validate_exceptions(
         "removal_criteria",
         "evidence_link",
     }
+    exact_image_required = {
+        "package",
+        "package_version",
+        "architecture",
+        "scanner_database_identity",
+        "evidence_version",
+    }
     for item in exceptions:
-        if not isinstance(item, dict) or set(item) != required:
+        if not isinstance(item, dict):
+            raise ScanFailure("invalid SCN exception", exit_code=EXIT_INVALID_GOVERNANCE)
+        expected_fields = (
+            required | exact_image_required
+            if item.get("scanner") == "trivy" and item.get("scope") == "first_party_runtime"
+            else required
+        )
+        if set(item) != expected_fields:
             raise ScanFailure("invalid SCN exception", exit_code=EXIT_INVALID_GOVERNANCE)
         identifier = item.get("id")
         fingerprint = item.get("safe_fingerprint")
@@ -445,6 +466,29 @@ def validate_exceptions(
             if not isinstance(value, str) or not value or "*" in value or "?" in value:
                 raise ScanFailure(
                     "wildcard or empty SCN exception",
+                    exit_code=EXIT_INVALID_GOVERNANCE,
+                )
+        if expected_fields != required:
+            for key in exact_image_required:
+                value = item.get(key)
+                if not isinstance(value, str) or not value or "*" in value or "?" in value:
+                    raise ScanFailure(
+                        "incomplete exact-image SCN exception",
+                        exit_code=EXIT_INVALID_GOVERNANCE,
+                    )
+            if not SHA256.fullmatch(str(item["asset"])):
+                raise ScanFailure(
+                    "invalid exact-image SCN asset identity",
+                    exit_code=EXIT_INVALID_GOVERNANCE,
+                )
+            if not SHA256.fullmatch(str(item["scanner_database_identity"])):
+                raise ScanFailure(
+                    "invalid exact-image scanner database identity",
+                    exit_code=EXIT_INVALID_GOVERNANCE,
+                )
+            if item["architecture"] not in {"amd64", "arm64"}:
+                raise ScanFailure(
+                    "invalid exact-image architecture",
                     exit_code=EXIT_INVALID_GOVERNANCE,
                 )
         for key in (
@@ -1196,6 +1240,8 @@ def apply_dependency_scope_overrides(
 def apply_image_reachability_overrides(
     findings: Sequence[Finding],
     overrides: object,
+    *,
+    artifact_architectures: Mapping[str, str],
 ) -> list[Finding]:
     """Apply exact, evidence-bearing reachability decisions to first-party images."""
 
@@ -1204,26 +1250,47 @@ def apply_image_reachability_overrides(
             "image reachability overrides must be a list",
             exit_code=EXIT_INVALID_GOVERNANCE,
         )
-    indexed: dict[tuple[str, str, str, str], tuple[str, str]] = {}
+    required_fields = {
+        "asset_identities",
+        "vulnerability_id",
+        "packages",
+        "package_version",
+        "architectures",
+        "exploitability",
+        "evidence",
+        "evidence_source",
+        "analysis_date",
+        "review_owner",
+        "expiry_or_removal_trigger",
+        "scanner_database_identity",
+        "evidence_version",
+    }
+    indexed: dict[tuple[str, str, str, str, str, str], tuple[str, str]] = {}
     for item in overrides:
-        if not isinstance(item, dict) or set(item) != {
-            "asset_identities",
-            "vulnerability_id",
-            "packages",
-            "package_version",
-            "exploitability",
-            "evidence",
-        }:
+        if not isinstance(item, dict) or set(item) != required_fields:
             raise ScanFailure(
                 "invalid image reachability override",
                 exit_code=EXIT_INVALID_GOVERNANCE,
             )
         assets = item["asset_identities"]
         packages = item["packages"]
+        architectures = item["architectures"]
         vulnerability_id = str(item["vulnerability_id"])
         package_version = str(item["package_version"])
         exploitability = str(item["exploitability"])
         evidence = str(item["evidence"])
+        evidence_source = str(item["evidence_source"])
+        review_owner = str(item["review_owner"])
+        expiry_or_removal_trigger = str(item["expiry_or_removal_trigger"])
+        scanner_database_identity = str(item["scanner_database_identity"])
+        evidence_version = str(item["evidence_version"])
+        try:
+            analysis_date = date.fromisoformat(str(item["analysis_date"]))
+        except ValueError as error:
+            raise ScanFailure(
+                "invalid image reachability evidence date",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            ) from error
         if (
             not isinstance(assets, list)
             or not assets
@@ -1233,13 +1300,30 @@ def apply_image_reachability_overrides(
             or not packages
             or not all(isinstance(value, str) and value and "*" not in value for value in packages)
             or len(set(packages)) != len(packages)
+            or not isinstance(architectures, list)
+            or not architectures
+            or not all(value in {"amd64", "arm64"} for value in architectures)
+            or len(set(architectures)) != len(architectures)
             or not vulnerability_id
             or "*" in vulnerability_id
             or not package_version
             or "*" in package_version
-            or exploitability not in {"reachable", "likely_reachable", "unknown", "not_present"}
+            or exploitability
+            not in {
+                "reachable",
+                "likely_reachable",
+                "unknown",
+                "not_present",
+                "affected_condition_absent",
+            }
             or not evidence.strip()
             or "*" in evidence
+            or not evidence_source.strip()
+            or not review_owner.strip()
+            or not expiry_or_removal_trigger.strip()
+            or not SHA256.fullmatch(scanner_database_identity)
+            or re.fullmatch(r"[A-Za-z0-9._-]{1,80}", evidence_version) is None
+            or analysis_date > datetime.now(UTC).date()
         ):
             raise ScanFailure(
                 "unsafe image reachability override",
@@ -1247,13 +1331,21 @@ def apply_image_reachability_overrides(
             )
         for asset in assets:
             for package in packages:
-                key = (asset, vulnerability_id, package, package_version)
-                if key in indexed:
-                    raise ScanFailure(
-                        "duplicate image reachability override",
-                        exit_code=EXIT_INVALID_GOVERNANCE,
+                for architecture in architectures:
+                    key = (
+                        asset,
+                        vulnerability_id,
+                        package,
+                        package_version,
+                        architecture,
+                        scanner_database_identity,
                     )
-                indexed[key] = (exploitability, evidence)
+                    if key in indexed:
+                        raise ScanFailure(
+                            "duplicate image reachability override",
+                            exit_code=EXIT_INVALID_GOVERNANCE,
+                        )
+                    indexed[key] = (exploitability, evidence)
 
     matched: set[tuple[str, str, str, str]] = set()
     result: list[Finding] = []
@@ -1265,11 +1357,19 @@ def apply_image_reachability_overrides(
         ):
             result.append(finding)
             continue
+        architecture = artifact_architectures.get(finding.asset_identity)
+        if architecture is None:
+            raise ScanFailure(
+                "first-party image architecture is not governed",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
         key = (
             finding.asset_identity,
             finding.rule_or_vulnerability_id,
             finding.package,
             finding.package_version,
+            architecture,
+            finding.scanner_database_identity,
         )
         override = indexed.get(key)
         if override is None:
@@ -1325,6 +1425,8 @@ def is_blocking(
     finding: Finding,
     *,
     exceptions: Mapping[str, Mapping[str, Any]],
+    artifact_architectures: Mapping[str, str] | None = None,
+    evidence_version: str = "",
 ) -> bool:
     if _is_non_suppressible(finding):
         return True
@@ -1338,6 +1440,16 @@ def is_blocking(
             "severity": finding.severity,
             "exploitability": finding.exploitability,
         }
+        if finding.scanner == "trivy" and finding.scope == "first_party_runtime":
+            expected.update(
+                {
+                    "package": finding.package,
+                    "package_version": finding.package_version,
+                    "architecture": (artifact_architectures or {}).get(finding.asset_identity),
+                    "scanner_database_identity": finding.scanner_database_identity,
+                    "evidence_version": evidence_version,
+                }
+            )
         if any(exception.get(key) != value for key, value in expected.items()):
             raise ScanFailure(
                 "SCN exception metadata mismatch",
@@ -2033,6 +2145,9 @@ def run_mode(
     findings: list[Finding] = []
     advisory_scanners: frozenset[str] = frozenset()
     artifact_manifest_identity = ""
+    artifact_architectures: dict[str, str] = {}
+    evidence_version = ""
+    expected_image_database_identity = ""
     if mode in {"fast", "full"}:
         findings.extend(runner.semgrep())
         findings.extend(runner.osv())
@@ -2049,13 +2164,26 @@ def run_mode(
     elif mode == "history":
         findings.extend(runner.gitleaks_history())
     elif mode == "images":
+        expected_image_ids = {
+            "portal-api": runner._image_id(api_image),
+            "portal-web": runner._image_id(web_image),
+        }
+        (
+            artifact_architectures,
+            evidence_version,
+            expected_image_database_identity,
+        ) = validate_final_artifact_handoff(
+            FINAL_ARTIFACTS_PATH,
+            source=source,
+            expected_images={
+                "portal-api": (api_image, expected_image_ids["portal-api"]),
+                "portal-web": (web_image, expected_image_ids["portal-web"]),
+            },
+        )
         artifact_manifest_identity = validate_artifact_manifest(
             output / ".." / "portal-artifacts" / "manifest.json",
             source=source,
-            expected_image_ids={
-                "portal-api": runner._image_id(api_image),
-                "portal-web": runner._image_id(web_image),
-            },
+            expected_image_ids=expected_image_ids,
         )
         findings.extend(runner.trivy_config())
         findings.extend(runner.trivy_image(api_image, scope="first_party_runtime"))
@@ -2064,6 +2192,16 @@ def run_mode(
         for image in vendor_images:
             findings.extend(runner.trivy_image(image, scope="vendor_runtime"))
         advisory_scanners = frozenset({"trivy"})
+        first_party_database_identities = {
+            execution.database_identity
+            for execution in runner.executions
+            if execution.scanner == "trivy" and execution.input_identity in artifact_architectures
+        }
+        if first_party_database_identities != {expected_image_database_identity}:
+            raise ScanFailure(
+                "final-artifact scanner database identity mismatch",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
     else:
         raise ScanFailure("unsupported scan mode", exit_code=EXIT_INPUT_MISMATCH)
 
@@ -2075,6 +2213,7 @@ def run_mode(
         findings = apply_image_reachability_overrides(
             findings,
             policy.get("image_reachability_overrides", []),
+            artifact_architectures=artifact_architectures,
         )
     unique = {finding.safe_fingerprint: finding for finding in findings}
     classified = classify_findings(
@@ -2085,7 +2224,14 @@ def run_mode(
         advisory_scanners=advisory_scanners,
     )
     blocking = [
-        finding for finding in classified if is_blocking(finding, exceptions=exception_index)
+        finding
+        for finding in classified
+        if is_blocking(
+            finding,
+            exceptions=exception_index,
+            artifact_architectures=artifact_architectures,
+            evidence_version=evidence_version,
+        )
     ]
     report = build_report(
         mode=mode,
@@ -2132,6 +2278,162 @@ def _portal_vendor_images(compose: Path) -> tuple[str, ...]:
     return tuple(images)
 
 
+def _artifact_source_is_current_or_governance_child(*, artifact_source: str, source: str) -> bool:
+    if artifact_source == source:
+        return True
+    parent = git("rev-parse", f"{source}^")
+    changed = frozenset(
+        path
+        for path in git("diff", "--name-only", f"{artifact_source}..{source}").splitlines()
+        if path
+    )
+    return parent == artifact_source and bool(changed) and changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS
+
+
+def validate_final_artifact_handoff(
+    path: Path,
+    *,
+    source: str,
+    expected_images: Mapping[str, tuple[str, str]],
+) -> tuple[dict[str, str], str, str]:
+    handoff = _json(path.resolve())
+    required = {
+        "schema_version",
+        "evidence_version",
+        "source_commit",
+        "canonical_policy_identity",
+        "artifact_manifest_identity",
+        "policy_identity",
+        "exception_register_identity",
+        "scanner",
+        "artifacts",
+        "dependency_locks",
+        "build_tools",
+        "build_commands",
+        "verification_commands",
+        "oci_nondeterminism",
+    }
+    if set(handoff) != required or handoff.get("schema_version") != "portal-final-artifacts/v1":
+        raise ScanFailure(
+            "unsupported final-artifact handoff schema",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    artifact_source = handoff.get("source_commit")
+    if (
+        not isinstance(artifact_source, str)
+        or not COMMIT_SHA.fullmatch(artifact_source)
+        or not _artifact_source_is_current_or_governance_child(
+            artifact_source=artifact_source,
+            source=source,
+        )
+    ):
+        raise ScanFailure(
+            "final-artifact source identity mismatch",
+            exit_code=EXIT_INPUT_MISMATCH,
+        )
+    if handoff.get("canonical_policy_identity") != "docker_image_id":
+        raise ScanFailure(
+            "unsupported final-artifact policy identity",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    evidence_version = handoff.get("evidence_version")
+    manifest_identity = handoff.get("artifact_manifest_identity")
+    policy_identity = handoff.get("policy_identity")
+    exception_identity = handoff.get("exception_register_identity")
+    if (
+        not isinstance(evidence_version, str)
+        or re.fullmatch(r"[A-Za-z0-9._-]{1,80}", evidence_version) is None
+        or not isinstance(manifest_identity, str)
+        or not SHA256.fullmatch(manifest_identity)
+        or not isinstance(policy_identity, str)
+        or not SHA256.fullmatch(policy_identity)
+        or not isinstance(exception_identity, str)
+        or not SHA256.fullmatch(exception_identity)
+    ):
+        raise ScanFailure(
+            "invalid final-artifact evidence identity",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    if policy_identity != sha256_file(POLICY_PATH) or exception_identity != sha256_file(
+        EXCEPTIONS_PATH
+    ):
+        raise ScanFailure(
+            "final-artifact governance identity mismatch",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    scanner = handoff.get("scanner")
+    if (
+        not isinstance(scanner, dict)
+        or set(scanner) != {"name", "version", "immutable_image", "database_identity"}
+        or scanner.get("name") != "trivy"
+        or scanner.get("version") != "0.70.0"
+        or not SHA256.fullmatch(str(scanner.get("database_identity") or ""))
+        or "@sha256:" not in str(scanner.get("immutable_image") or "")
+    ):
+        raise ScanFailure(
+            "invalid final-artifact scanner identity",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    artifacts = handoff.get("artifacts")
+    if not isinstance(artifacts, list) or len(artifacts) != 2:
+        raise ScanFailure(
+            "invalid final-artifact inventory",
+            exit_code=EXIT_INVALID_GOVERNANCE,
+        )
+    architectures: dict[str, str] = {}
+    actual: dict[str, tuple[str, str]] = {}
+    artifact_fields = {
+        "name",
+        "local_tag",
+        "image_id",
+        "config_digest",
+        "repository_digest",
+        "architecture",
+        "os",
+        "created",
+        "application_content_digest",
+        "package_inventory_digest",
+        "dockerfile",
+        "base_images",
+        "inspection",
+        "build_once",
+    }
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or set(artifact) != artifact_fields:
+            raise ScanFailure(
+                "invalid final-artifact record",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        name = str(artifact.get("name") or "")
+        tag = str(artifact.get("local_tag") or "")
+        image_id = str(artifact.get("image_id") or "")
+        architecture = str(artifact.get("architecture") or "")
+        if (
+            name not in {"portal-api", "portal-web"}
+            or not tag.startswith(f"{name}:ff06a-")
+            or not SHA256.fullmatch(image_id)
+            or artifact.get("config_digest") != image_id
+            or architecture not in {"amd64", "arm64"}
+            or artifact.get("os") != "linux"
+            or not isinstance(artifact.get("created"), str)
+            or not SHA256.fullmatch(str(artifact.get("application_content_digest") or ""))
+            or not SHA256.fullmatch(str(artifact.get("package_inventory_digest") or ""))
+            or artifact.get("build_once") is not True
+        ):
+            raise ScanFailure(
+                "unsafe final-artifact record",
+                exit_code=EXIT_INVALID_GOVERNANCE,
+            )
+        actual[name] = (tag, image_id)
+        architectures[image_id] = architecture
+    if actual != dict(expected_images):
+        raise ScanFailure(
+            "final-artifact tag or image identity mismatch",
+            exit_code=EXIT_INPUT_MISMATCH,
+        )
+    return architectures, str(evidence_version), str(scanner["database_identity"])
+
+
 def validate_artifact_manifest(
     path: Path,
     *,
@@ -2148,22 +2450,14 @@ def validate_artifact_manifest(
     artifact_source = repository.get("source_commit") if isinstance(repository, dict) else None
     if not isinstance(artifact_source, str) or not COMMIT_SHA.fullmatch(artifact_source):
         raise ScanFailure("Portal artifact source identity mismatch", exit_code=EXIT_INPUT_MISMATCH)
-    if artifact_source != source:
-        parent = git("rev-parse", f"{source}^")
-        changed = frozenset(
-            path
-            for path in git("diff", "--name-only", f"{artifact_source}..{source}").splitlines()
-            if path
+    if not _artifact_source_is_current_or_governance_child(
+        artifact_source=artifact_source,
+        source=source,
+    ):
+        raise ScanFailure(
+            "Portal artifact source identity mismatch",
+            exit_code=EXIT_INPUT_MISMATCH,
         )
-        if (
-            parent != artifact_source
-            or not changed
-            or not changed <= ARTIFACT_GOVERNANCE_ONLY_PATHS
-        ):
-            raise ScanFailure(
-                "Portal artifact source identity mismatch",
-                exit_code=EXIT_INPUT_MISMATCH,
-            )
     images = manifest.get("images")
     if not isinstance(images, list):
         raise ScanFailure(

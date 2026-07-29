@@ -415,23 +415,187 @@ def test_image_reachability_override_requires_exact_complete_evidence(
         "vulnerability_id": "CVE-2026-0001",
         "packages": ["example-package"],
         "package_version": "1.2.3",
-        "exploitability": "not_present",
+        "architectures": ["amd64"],
+        "exploitability": "affected_condition_absent",
         "evidence": "Exact image inspection proves the affected component is absent.",
+        "evidence_source": "Exact package and file inspection.",
+        "analysis_date": "2026-07-29",
+        "review_owner": "portal-maintainers",
+        "expiry_or_removal_trigger": "Revalidate when the image or package changes.",
+        "scanner_database_identity": "sha256:" + ("b" * 64),
+        "evidence_version": "ff06a-test.1",
     }
 
-    result = scanner.apply_image_reachability_overrides([vulnerable], [override])
-    assert result[0].exploitability == "not_present"
+    result = scanner.apply_image_reachability_overrides(
+        [vulnerable],
+        [override],
+        artifact_architectures={image: "amd64"},
+    )
+    assert result[0].exploitability == "affected_condition_absent"
 
     with pytest.raises(scanner.ScanFailure):
-        scanner.apply_image_reachability_overrides([vulnerable], [])
+        scanner.apply_image_reachability_overrides(
+            [vulnerable],
+            [],
+            artifact_architectures={image: "amd64"},
+        )
 
     unused = dict(override)
     unused["package_version"] = "9.9.9"
     with pytest.raises(scanner.ScanFailure):
-        scanner.apply_image_reachability_overrides([], [unused])
+        scanner.apply_image_reachability_overrides(
+            [],
+            [unused],
+            artifact_architectures={image: "amd64"},
+        )
 
     with pytest.raises(scanner.ScanFailure):
-        scanner.apply_image_reachability_overrides([vulnerable], [override, override])
+        scanner.apply_image_reachability_overrides(
+            [vulnerable],
+            [override, override],
+            artifact_architectures={image: "amd64"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("asset_identities", ["sha256:" + ("d" * 64)]),
+        ("vulnerability_id", "CVE-2026-9999"),
+        ("packages", ["different-package"]),
+        ("package_version", "9.9.9"),
+        ("architectures", ["arm64"]),
+        ("scanner_database_identity", "sha256:" + ("e" * 64)),
+    ],
+)
+def test_image_evidence_is_rejected_for_every_exact_key_mismatch(
+    scanner: ModuleType,
+    field: str,
+    replacement: Any,
+) -> None:
+    image = "sha256:" + ("a" * 64)
+    database = "sha256:" + ("b" * 64)
+    vulnerable = scanner.make_finding(
+        scanner="trivy",
+        scanner_version="0.70.0",
+        database_identity=database,
+        identifier="CVE-2026-0001",
+        source="c" * 40,
+        asset_type="container_image",
+        asset_identity=image,
+        package="example-package",
+        package_version="1.2.3",
+        severity="high",
+        exploitability="unknown",
+        fix_status="no_fix",
+    )
+    override = {
+        "asset_identities": [image],
+        "vulnerability_id": "CVE-2026-0001",
+        "packages": ["example-package"],
+        "package_version": "1.2.3",
+        "architectures": ["amd64"],
+        "exploitability": "unknown",
+        "evidence": "Indirect reachability cannot be completely excluded.",
+        "evidence_source": "Exact image inspection.",
+        "analysis_date": "2026-07-29",
+        "review_owner": "portal-maintainers",
+        "expiry_or_removal_trigger": "Revalidate when any exact key changes.",
+        "scanner_database_identity": database,
+        "evidence_version": "ff06a-test.1",
+    }
+    override[field] = replacement
+
+    with pytest.raises(scanner.ScanFailure):
+        scanner.apply_image_reachability_overrides(
+            [vulnerable],
+            [override],
+            artifact_architectures={image: "amd64"},
+        )
+
+
+def test_image_evidence_rejects_missing_fields_wildcards_and_ungoverned_architecture(
+    scanner: ModuleType,
+) -> None:
+    image = "sha256:" + ("a" * 64)
+    vulnerable = scanner.make_finding(
+        scanner="trivy",
+        scanner_version="0.70.0",
+        database_identity="sha256:" + ("b" * 64),
+        identifier="CVE-2026-0001",
+        source="c" * 40,
+        asset_type="container_image",
+        asset_identity=image,
+        package="example-package",
+        package_version="1.2.3",
+        severity="high",
+        exploitability="unknown",
+        fix_status="no_fix",
+    )
+    override = {
+        "asset_identities": [image],
+        "vulnerability_id": "CVE-2026-0001",
+        "packages": ["example-package"],
+        "package_version": "1.2.3",
+        "architectures": ["amd64"],
+        "exploitability": "unknown",
+        "evidence": "Indirect reachability cannot be completely excluded.",
+        "evidence_source": "Exact image inspection.",
+        "analysis_date": "2026-07-29",
+        "review_owner": "portal-maintainers",
+        "expiry_or_removal_trigger": "Revalidate when any exact key changes.",
+        "scanner_database_identity": "sha256:" + ("b" * 64),
+        "evidence_version": "ff06a-test.1",
+    }
+
+    missing = dict(override)
+    del missing["evidence_source"]
+    wildcard = dict(override)
+    wildcard["packages"] = ["*"]
+    for invalid in (missing, wildcard):
+        with pytest.raises(scanner.ScanFailure):
+            scanner.apply_image_reachability_overrides(
+                [vulnerable],
+                [invalid],
+                artifact_architectures={image: "amd64"},
+            )
+    with pytest.raises(scanner.ScanFailure, match="architecture is not governed"):
+        scanner.apply_image_reachability_overrides(
+            [vulnerable],
+            [override],
+            artifact_architectures={},
+        )
+
+
+def test_final_artifact_handoff_binds_tags_ids_source_and_architecture(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handoff = REPOSITORY_ROOT / "security" / "scanning" / "final-artifacts.json"
+    value = json.loads(handoff.read_text(encoding="utf-8"))
+    expected = {item["name"]: (item["local_tag"], item["image_id"]) for item in value["artifacts"]}
+    source = value["source_commit"]
+    monkeypatch.setattr(scanner, "REPOSITORY_ROOT", REPOSITORY_ROOT)
+
+    architectures, evidence_version, database_identity = scanner.validate_final_artifact_handoff(
+        handoff,
+        source=source,
+        expected_images=expected,
+    )
+
+    assert set(architectures.values()) == {"amd64"}
+    assert evidence_version == "ff06a-2026-07-29.1"
+    assert database_identity.startswith("sha256:")
+
+    changed = dict(expected)
+    api_tag, _api_id = changed["portal-api"]
+    changed["portal-api"] = (api_tag, "sha256:" + ("f" * 64))
+    with pytest.raises(scanner.ScanFailure, match="tag or image identity mismatch"):
+        scanner.validate_final_artifact_handoff(
+            handoff,
+            source=source,
+            expected_images=changed,
+        )
 
 
 def test_zizmor_v1_locations_are_normalized(scanner: ModuleType) -> None:
@@ -726,6 +890,78 @@ def test_false_positive_exception_is_bounded_and_authorizes_high_finding(
     exceptions, expired = scanner.validate_exceptions(register, today=date(2026, 7, 29))
     assert not expired
     assert not scanner.is_blocking(current, exceptions=exceptions)
+
+
+def test_first_party_image_exception_requires_exact_package_database_and_evidence(
+    scanner: ModuleType,
+) -> None:
+    image = "sha256:" + ("a" * 64)
+    database = "sha256:" + ("b" * 64)
+    current = scanner.make_finding(
+        scanner="trivy",
+        scanner_version="0.70.0",
+        database_identity=database,
+        identifier="CVE-2026-0001",
+        asset_type="container_image",
+        asset_identity=image,
+        package="example-package",
+        package_version="1.2.3",
+        repository_path="",
+        exploitability="unknown",
+        fix_status="no_fix",
+        scope="first_party_runtime",
+        severity="high",
+        source="c" * 40,
+    )
+    item = {
+        "id": "SCN-001",
+        "scanner": "trivy",
+        "finding_identifier": "CVE-2026-0001",
+        "package": "example-package",
+        "package_version": "1.2.3",
+        "safe_fingerprint": current.safe_fingerprint,
+        "asset": image,
+        "architecture": "amd64",
+        "scanner_database_identity": database,
+        "evidence_version": "ff06a-test.1",
+        "scope": "first_party_runtime",
+        "severity": "high",
+        "exploitability": "unknown",
+        "fix_status": "no_fix",
+        "reason": "Bounded exact-image exception.",
+        "compensating_control": "Read-only non-root runtime.",
+        "owner": "portal-maintainers",
+        "approved_by": "security-review",
+        "created_date": "2026-07-01",
+        "expiry_date": "2026-08-30",
+        "review_trigger": "Any exact identity changes.",
+        "removal_criteria": "A fixed package is available.",
+        "evidence_link": "docs/portal/security-scanning.md",
+    }
+    exceptions, expired = scanner.validate_exceptions(
+        {
+            "schema_version": "portal-security-exceptions/v1",
+            "exceptions": [item],
+        },
+        today=date(2026, 7, 29),
+    )
+    assert not expired
+    assert not scanner.is_blocking(
+        current,
+        exceptions=exceptions,
+        artifact_architectures={image: "amd64"},
+        evidence_version="ff06a-test.1",
+    )
+
+    mismatched = dict(item)
+    mismatched["package_version"] = "9.9.9"
+    with pytest.raises(scanner.ScanFailure, match="metadata mismatch"):
+        scanner.is_blocking(
+            current,
+            exceptions={current.safe_fingerprint: mismatched},
+            artifact_architectures={image: "amd64"},
+            evidence_version="ff06a-test.1",
+        )
 
 
 def test_local_and_ci_policy_evaluation_is_equivalent(scanner: ModuleType) -> None:

@@ -615,7 +615,7 @@ Keycloak import completed successfully and all three services became healthy. Th
 recorded and is not treated as a hidden successful command.
 
 Docker also emitted a local client-config permission warning for
-`C:\Users\miynzi\.docker\config.json`; Compose materialization and runtime operations otherwise
+`%USERPROFILE%\.docker\config.json`; Compose materialization and runtime operations otherwise
 completed.
 
 ### Positive integrated discovery evidence

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -89,6 +91,67 @@ def test_manifest_safety_rejects_sensitive_fields_and_host_paths() -> None:
             "digest": "sha256:" + ("a" * 64),
         }
     )
+
+
+def test_verified_artifact_handoff_materializes_the_recorded_manifest_identity() -> None:
+    reuse = load_script("reuse_verified_artifacts")
+    handoff = reuse.load_handoff(REPOSITORY_ROOT / "security" / "scanning" / "final-artifacts.json")
+    manifest = reuse.build_manifest(
+        handoff,
+        sorted(handoff["artifacts"], key=lambda item: item["name"]),
+    )
+    encoded = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
+    identity = f"sha256:{hashlib.sha256(encoded.encode()).hexdigest()}"
+
+    assert identity == handoff["artifact_manifest_identity"]
+    assert manifest["reproducibility"]["selection_mode"] == "reuse_exact_verified_artifacts"
+    assert {item["output"]["digest"] for item in manifest["images"]} == {
+        item["image_id"] for item in handoff["artifacts"]
+    }
+
+
+def test_verified_artifact_reuse_rejects_an_image_identity_substitution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reuse = load_script("reuse_verified_artifacts")
+    handoff = reuse.load_handoff(REPOSITORY_ROOT / "security" / "scanning" / "final-artifacts.json")
+    records = handoff["artifacts"]
+    source = handoff["source_commit"]
+    inspected = {
+        record["local_tag"]: {
+            "Id": record["image_id"],
+            "Architecture": record["architecture"],
+            "Os": record["os"],
+            "Config": {"Labels": {"org.opencontainers.image.revision": source}},
+        }
+        for record in records
+    }
+    monkeypatch.setattr(reuse, "git", lambda *arguments: source)
+    monkeypatch.setattr(reuse, "image_inspect", lambda tag: inspected[tag])
+    monkeypatch.setattr(
+        reuse,
+        "application_content_digest",
+        lambda tag, name: next(
+            item["application_content_digest"] for item in records if item["name"] == name
+        ),
+    )
+    monkeypatch.setattr(
+        reuse,
+        "package_inventory_digest",
+        lambda tag: next(
+            item["package_inventory_digest"] for item in records if item["local_tag"] == tag
+        ),
+    )
+
+    assert len(reuse.verify_handoff(handoff)) == 2
+
+    api_tag = records[0]["local_tag"]
+    inspected[api_tag] = {
+        **inspected[api_tag],
+        "Id": "sha256:" + ("f" * 64),
+    }
+    with pytest.raises(ValueError, match="image identity mismatch"):
+        reuse.verify_handoff(handoff)
 
 
 def test_container_hardening_compose_contract_is_complete() -> None:

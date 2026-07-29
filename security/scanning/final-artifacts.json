@@ -1,0 +1,273 @@
+{
+  "schema_version": "portal-final-artifacts/v1",
+  "evidence_version": "ff06a-2026-07-29.1",
+  "source_commit": "c9516f9455d90be24dccd62869c2d5afd8b5f802",
+  "canonical_policy_identity": "docker_image_id",
+  "artifact_manifest_identity": "sha256:27bea0e7d7e6df6f3167c441f6a0bf39fbeaae5d4ec40bea05c336afb8eabcdb",
+  "policy_identity": "sha256:eb5603f044325a86fe904e8b86d0a6c909b41ca15b360e2b25a9f62e07174cc3",
+  "exception_register_identity": "sha256:927d11c6ee9f106cb76a924f090d412ab226555e72305a1a7a5dcd43dc4cd167",
+  "scanner": {
+    "name": "trivy",
+    "version": "0.70.0",
+    "immutable_image": "docker.io/aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+    "database_identity": "sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead"
+  },
+  "artifacts": [
+    {
+      "name": "portal-api",
+      "local_tag": "portal-api:ff06a-c9516f9-20260729a",
+      "image_id": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+      "config_digest": "sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+      "repository_digest": "portal-api@sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3",
+      "architecture": "amd64",
+      "os": "linux",
+      "created": "2026-07-29T05:54:54Z",
+      "application_content_digest": "sha256:6ec54955dec91ec9d66216b0cbc165fa0ccfe66d499eb9261c1de1aa11d319b9",
+      "package_inventory_digest": "sha256:d8e051c1cec3e4c6e4b18974cf7785d723e7fc920758f5e9922e98fc0b5aaff0",
+      "dockerfile": {
+        "path": "apps/portal-api/Dockerfile",
+        "sha256": "sha256:d0e1607e1410980184ce60f443cba3d7ec631beb3513b7b2eaa1cf575b077c38",
+        "frontend": "docker/dockerfile:1.23@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769"
+      },
+      "base_images": [
+        {
+          "stage": "dependencies",
+          "reference": "python:3.11.15-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba"
+        },
+        {
+          "stage": "runtime",
+          "reference": "python:3.11.15-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba"
+        }
+      ],
+      "inspection": {
+        "non_root_user": "10001:10001",
+        "root_owned_application": true,
+        "runtime_application_writable": false,
+        "forbidden_paths_absent": true,
+        "sensitive_env_absent": true,
+        "setid_files_absent": true,
+        "forbidden_runtime_tools_absent": [
+          "pip",
+          "pip3",
+          "gcc",
+          "cc",
+          "make"
+        ],
+        "entrypoint": [],
+        "command": [
+          "uvicorn",
+          "portal_api.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8010",
+          "--no-access-log"
+        ],
+        "exposed_ports": [
+          "8010/tcp",
+          "9464/tcp"
+        ],
+        "safe_source_maps": 0
+      },
+      "build_once": true
+    },
+    {
+      "name": "portal-web",
+      "local_tag": "portal-web:ff06a-c9516f9-20260729a",
+      "image_id": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
+      "config_digest": "sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
+      "repository_digest": "portal-web@sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7",
+      "architecture": "amd64",
+      "os": "linux",
+      "created": "2026-07-29T05:54:54Z",
+      "application_content_digest": "sha256:f8cfdfd0d5b5a8249c31aee02a1065a11cb4b8319bdf92b19b5152e95edce83f",
+      "package_inventory_digest": "sha256:79b6b9a2510a3747dca5db97b7c9086505a8a1e7425093302f7fdfc5c23fb3b9",
+      "dockerfile": {
+        "path": "apps/portal-web/Dockerfile",
+        "sha256": "sha256:1a8cd905565f31112bd2e64aa8134c14edf0053ebcc71de8fe4c0de72aefbc71",
+        "frontend": "docker/dockerfile:1.23@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769"
+      },
+      "base_images": [
+        {
+          "stage": "dependencies",
+          "reference": "node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3"
+        },
+        {
+          "stage": "build",
+          "source_stage": "dependencies"
+        },
+        {
+          "stage": "runtime",
+          "reference": "node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3"
+        }
+      ],
+      "inspection": {
+        "non_root_user": "10001:10001",
+        "root_owned_application": true,
+        "runtime_application_writable": false,
+        "forbidden_paths_absent": true,
+        "sensitive_env_absent": true,
+        "setid_files_absent": true,
+        "forbidden_runtime_tools_absent": [
+          "npm",
+          "npx",
+          "corepack",
+          "yarn",
+          "yarnpkg",
+          "gcc",
+          "cc",
+          "make"
+        ],
+        "entrypoint": [
+          "docker-entrypoint.sh"
+        ],
+        "command": [
+          "node",
+          "apps/portal-web/server.js"
+        ],
+        "exposed_ports": [
+          "3000/tcp"
+        ],
+        "safe_source_maps": 9
+      },
+      "build_once": true
+    }
+  ],
+  "dependency_locks": [
+    {
+      "path": "apps/portal-api/requirements.lock",
+      "sha256": "sha256:8dd042dd07e20f3a31a3e617a5c380cd497bb0bbbfd49cd8db56a70d79ae3103"
+    },
+    {
+      "path": "apps/portal-api/requirements-dev.lock",
+      "sha256": "sha256:eabf9b3ef23c0d7f811c77e7d89c1c18036ea694c0e486f53b8db0a31945ad77"
+    },
+    {
+      "path": "package.json",
+      "sha256": "sha256:e29a84d122143d75d6538c2269f55e00373ec698d54c5a8f462f5bd1a357c901"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "sha256:7e86da746fe3635ec1476c82acf1acd9c19d82027f184965b6edc51a1a35e3c0"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "sha256": "sha256:bb0e7746c1c92cdbea7cf624525dc143e1be25eb7e5d0f4a0d726d308a6c9b47"
+    }
+  ],
+  "build_tools": {
+    "docker": "29.6.2",
+    "buildx": "github.com/docker/buildx v0.35.0-desktop.2 b554ce1decd8b509893b1e7c6227eabfb923d094",
+    "python_lock_compiler": "pip-tools==7.5.2",
+    "pnpm": "11.9.0"
+  },
+  "build_commands": {
+    "portal-api": [
+      "docker",
+      "buildx",
+      "build",
+      "--load",
+      "--pull",
+      "--no-cache",
+      "--platform",
+      "linux/amd64",
+      "--provenance=false",
+      "--sbom=false",
+      "--file",
+      "apps/portal-api/Dockerfile",
+      "--tag",
+      "portal-api:ff06a-c9516f9-20260729a",
+      "--label",
+      "org.opencontainers.image.revision=c9516f9455d90be24dccd62869c2d5afd8b5f802",
+      "--build-arg",
+      "PORTAL_API_VERSION=0.1.0",
+      "--build-arg",
+      "PORTAL_API_BUILD_SHA=c9516f9455d90be24dccd62869c2d5afd8b5f802",
+      "--build-arg",
+      "PORTAL_API_BUILD_TIME=2026-07-29T05:54:54Z",
+      "--build-arg",
+      "SOURCE_DATE_EPOCH=1785304494",
+      "."
+    ],
+    "portal-web": [
+      "docker",
+      "buildx",
+      "build",
+      "--load",
+      "--pull",
+      "--no-cache",
+      "--platform",
+      "linux/amd64",
+      "--provenance=false",
+      "--sbom=false",
+      "--file",
+      "apps/portal-web/Dockerfile",
+      "--tag",
+      "portal-web:ff06a-c9516f9-20260729a",
+      "--label",
+      "org.opencontainers.image.revision=c9516f9455d90be24dccd62869c2d5afd8b5f802",
+      "--build-arg",
+      "PORTAL_WEB_VERSION=0.1.0",
+      "--build-arg",
+      "PORTAL_BUILD_SHA=c9516f9455d90be24dccd62869c2d5afd8b5f802",
+      "--build-arg",
+      "PORTAL_ENV=local",
+      "--build-arg",
+      "PORTAL_API_INTERNAL_URL=http://portal-api:8010",
+      "--build-arg",
+      "PORTAL_IDP_PUBLIC_URL=http://portal-idp.localhost:8081",
+      "--build-arg",
+      "SOURCE_DATE_EPOCH=1785304494",
+      "."
+    ]
+  },
+  "verification_commands": [
+    [
+      "python",
+      "scripts/portal/reuse_verified_artifacts.py",
+      "--handoff",
+      "security/scanning/final-artifacts.json",
+      "--output",
+      "build/portal-artifacts/manifest.json",
+      "--require-clean"
+    ],
+    [
+      "python",
+      "scripts/security/scan.py",
+      "images",
+      "--output",
+      "build/ff06a-raw",
+      "--api-image",
+      "portal-api:ff06a-c9516f9-20260729a",
+      "--web-image",
+      "portal-web:ff06a-c9516f9-20260729a"
+    ],
+    [
+      "python",
+      "scripts/security/scan.py",
+      "policy"
+    ]
+  ],
+  "oci_nondeterminism": [
+    {
+      "image": "portal-api",
+      "classification": "expected_nondeterministic_metadata",
+      "oci_digest_reproduced": false,
+      "application_content_stable_against_ff06_build": true,
+      "changed_application_paths": [],
+      "reason": "Local Docker exporter layer metadata differs while application and dependency file content remains identical."
+    },
+    {
+      "image": "portal-web",
+      "classification": "application_content_difference",
+      "oci_digest_reproduced": false,
+      "application_content_stable_against_ff06_build": false,
+      "changed_application_paths": [
+        "/app/apps/portal-web/.next/prerender-manifest.json",
+        "/app/apps/portal-web/.next/server/server-reference-manifest.js",
+        "/app/apps/portal-web/.next/server/server-reference-manifest.json"
+      ],
+      "reason": "Next.js emits per-build preview and server-action cryptographic material in generated manifests."
+    }
+  ]
+}

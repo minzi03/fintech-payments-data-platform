@@ -52,7 +52,8 @@
         "unknown",
         "build_only",
         "development_only",
-        "not_present"
+        "not_present",
+        "affected_condition_absent"
       ]
     },
     "fix_status": {

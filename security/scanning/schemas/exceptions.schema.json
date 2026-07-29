@@ -35,8 +35,16 @@
           "id": {"type": "string", "pattern": "^SCN-[0-9]{3}$"},
           "scanner": {"type": "string"},
           "finding_identifier": {"type": "string"},
+          "package": {"type": "string"},
+          "package_version": {"type": "string"},
           "safe_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
           "asset": {"type": "string"},
+          "architecture": {"enum": ["amd64", "arm64"]},
+          "scanner_database_identity": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "evidence_version": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,80}$"},
           "scope": {"type": "string"},
           "severity": {"type": "string"},
           "exploitability": {"type": "string"},
@@ -50,7 +58,27 @@
           "review_trigger": {"type": "string", "minLength": 1},
           "removal_criteria": {"type": "string", "minLength": 1},
           "evidence_link": {"type": "string", "minLength": 1}
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "scanner": {"const": "trivy"},
+                "scope": {"const": "first_party_runtime"}
+              },
+              "required": ["scanner", "scope"]
+            },
+            "then": {
+              "required": [
+                "package",
+                "package_version",
+                "architecture",
+                "scanner_database_identity",
+                "evidence_version"
+              ]
+            }
+          }
+        ]
       }
     }
   }

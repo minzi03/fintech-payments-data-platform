@@ -99,20 +99,24 @@ make security-history
 `build/portal-artifacts/manifest.json` and exact local images:
 
 ```bash
-python scripts/portal/build_reproducible_artifacts.py \
-  --output build/portal-artifacts/manifest.json
+python scripts/portal/reuse_verified_artifacts.py \
+  --handoff security/scanning/final-artifacts.json \
+  --output build/portal-artifacts/manifest.json \
+  --require-clean
 python scripts/security/scan.py images \
-  --api-image fintech-portal-api:local \
-  --web-image fintech-payments-data-platform-portal-web
+  --api-image portal-api:ff06a-c9516f9-20260729a \
+  --web-image portal-web:ff06a-c9516f9-20260729a
 ```
 
-The wrapper compares the manifest source commit and output digests with the exact current image IDs
-before exporting images to ignored temporary archives. A single immediate child commit containing
-only the explicitly allowlisted scanning-governance files may attest its parent remediation
-artifacts; every other source mismatch fails closed. This narrow rule avoids rebuilding images for
-policy-only metadata while preserving the exact artifact identity. Audit-worker and migration use
-the Portal API image result. PostgreSQL, Redis, and Keycloak use their immutable Compose digests and
-a separate vendor policy.
+The reuse command does not build, pull, retag, or replace an image. It validates the run-scoped
+tags, Docker image IDs, revision labels, application-content digests, package-inventory digests,
+source relationship, and deterministic manifest identity from
+`security/scanning/final-artifacts.json`. The scanner then compares that manifest with the same
+current Docker image IDs before exporting ignored temporary archives. A single immediate child
+commit containing only explicitly allowlisted artifact-governance files may attest its parent
+artifacts; every other source mismatch fails closed. Audit-worker and migration use the Portal API
+image result. PostgreSQL, Redis, and Keycloak use their immutable Compose digests and a separate
+vendor policy.
 
 On pull requests, CI supplies `PORTAL_SECURITY_GIT_RANGE` as an exact
 `<base-commit>..<head-commit>` pair for bounded Gitleaks history scanning. The wrapper accepts only
@@ -130,7 +134,7 @@ The normalized finding schema is `portal-security-finding/v1`. Classification co
 
 - severity: critical, high, medium, low, informational;
 - exploitability: known exploited, reachable, likely reachable, unknown, build only, development
-  only, not present;
+  only, not present, affected condition absent;
 - fix status: fixed available, mitigation available, no fix, disputed, withdrawn, false positive;
 - scope: first-party runtime/development, vendor runtime, test fixture, documentation, generated
   artifact, GitHub workflow;
@@ -251,8 +255,9 @@ policy. Current disposition is:
 | Affected condition not present | 35 | MiniZip not built; affected Perl modules/version/architecture absent; or source-package sibling attribution does not contain the affected binary | 2027-01-25 |
 | No fix; indirect reachability unknown | 10 | Affected package/code is present, direct Portal entrypoint use was not found, and complete indirect non-reachability was not claimed | 2026-09-27 |
 
-The 35 `not_present` decisions use exact false-positive exceptions and must be reopened if any image
-digest, package version, advisory condition, architecture, or scanner database identity changes.
+The 35 `affected_condition_absent` decisions use exact false-positive exceptions and must be
+reopened if any image digest, package version, advisory condition, architecture, or scanner
+database identity changes.
 The 10 unknown-reachability High/no-fix decisions retain bounded risk acceptance. They rely on the
 non-root, read-only, capability-free container boundary and require an exact-image rescan when
 upstream fixes become available. Neither group is a wildcard, a vulnerability-free claim, or an
@@ -262,6 +267,55 @@ The register now contains 46 active records: the 45 first-party dispositions abo
 existing exact PostgreSQL snakeoil false positive. Superseded `SCN-001` through `SCN-065` records
 were removed; their historical rationale remains in the initial triage sections and Git history.
 Vendor findings remain report-only under the unchanged vendor policy.
+
+### Final artifact evidence rebinding
+
+FF-06A selected exactly one final build of each first-party image from source commit
+`c9516f9455d90be24dccd62869c2d5afd8b5f802`:
+
+| Artifact | Run-scoped local tag | Canonical policy identity |
+| --- | --- | --- |
+| Portal API, audit worker, and migration | `portal-api:ff06a-c9516f9-20260729a` | `sha256:619d53a92abf74a6af53756dd412d1ece9cf23bc59b12a54fc691aa65630e8a3` |
+| Portal Web | `portal-web:ff06a-c9516f9-20260729a` | `sha256:1553e6a46cdffe8bb029ec4265e5a19fcf68fcc8e099051d66f16e42a83562f7` |
+
+The canonical policy identity is the local Docker image ID, which is also the image config digest
+reported by `docker image inspect`. Mutable tags are convenience references and never authorize a
+finding. Locally generated repository-digest labels are recorded for mapping only; no registry
+digest or publication is claimed.
+
+The deterministic reuse manifest identity is
+`sha256:27bea0e7d7e6df6f3167c441f6a0bf39fbeaae5d4ec40bea05c336afb8eabcdb`.
+Policy `2026-07-29.3` is recorded as
+`sha256:eb5603f044325a86fe904e8b86d0a6c909b41ca15b360e2b25a9f62e07174cc3`;
+the rebound exception register is
+`sha256:927d11c6ee9f106cb76a924f090d412ab226555e72305a1a7a5dcd43dc4cd167`.
+Trivy 0.70.0 scanned both exact IDs with vulnerability database identity
+`sha256:3100c44c847cc7d5647d84ac39b6367b1229250dfce5d1712f3b348d9ed17ead`.
+The immutable evidence version is `ff06a-2026-07-29.1`. Every first-party Critical/High exception
+now additionally binds the binary package, installed version, `amd64` architecture, scanner
+database identity, evidence version, and exact finding fingerprint.
+
+Fresh exact-image probes reconfirmed:
+
+- Debian `zlib1g` contains libz but no MiniZip component;
+- Perl is 5.36.0 and the affected optional `Archive::Tar`, `Storable`, and
+  `IO::Compress::Base` modules are absent;
+- the architecture-specific Perl advisory condition does not apply to `amd64`;
+- `infocmp` belongs to `ncurses-bin`, while source-package sibling findings do not ship it;
+- the affected block-device parser is shipped by `libblkid1`, not its source-package siblings;
+- `gzip`, `infocmp`, `libblkid`, `libacl`, and core Perl operations retain `unknown`
+  reachability where complete indirect non-reachability is not proven.
+
+All 45 findings still report `no_fix` in the selected scanner database. The existing expiry dates
+remain unchanged: unknown/no-fix High dispositions expire on 2026-09-27, while verified
+condition-absent false positives expire on 2027-01-25. No wildcard identity, blanket renewal,
+tag-only exception, or fixed-available first-party Critical/High disposition was introduced.
+
+OCI byte identity remains nondeterministic. The API application content was stable while local
+exporter layer metadata changed. Next.js regenerated preview/server-action material in three
+generated manifest files. This limitation is recorded rather than replaced with a source-derived
+secret. FF-06 must reuse the exact handoff artifacts and must not rebuild before exact-image policy
+verification.
 
 ## CI execution
 
