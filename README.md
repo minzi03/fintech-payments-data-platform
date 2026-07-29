@@ -1,385 +1,427 @@
 # Fintech Payments Data Platform
 
-A production-like data platform for a hypothetical fintech providing payment gateway, merchant
-payments, account-to-account transfers, refunds, and banking-partner settlement.
+Production-oriented fintech payments data platform demonstrating PostgreSQL CDC, Kafka, immutable
+Bronze/Silver processing, Airflow orchestration, replay-safe failure handling, and a hardened OIDC
+Portal runtime.
 
-Long-term business use cases:
+> **Maturity:** Local/reference implementation. Production deployment, HA/DR, warehouse analytics,
+> and production security authorization remain deferred.
 
-1. Near-real-time payment operations monitoring.
-2. Daily reconciliation between internal payments and partner settlement files.
+## Business problem
 
-## Project status
+A payments platform must capture transaction changes and partner settlement files reliably,
+preserve immutable evidence, reject invalid records, recover safely from partial failures, and
+expose operational and security evidence without overstating production maturity.
 
-**Implementation baseline: Phase 7 complete**
+This repository models that problem through two implemented data paths:
 
-**Production-readiness phase: Design Freeze in progress**
+- payment transaction changes captured from PostgreSQL through Debezium and Kafka;
+- daily partner settlement CSV files validated against a versioned contract.
 
-The Phase 0-7 local platform is executable and tested. It is not approved for a production pilot.
-The first production blocker, dataset bootstrap and atomic activation, is frozen in ADR-001
-Revision 4. ADR-002 through ADR-005 still require architecture review before remediation code may
-start.
+Both paths preserve source evidence in Bronze, produce typed Silver outputs, and retain explicit
+quality, replay, and ownership state. Airflow schedules bounded work and records control evidence.
+A separate Portal runtime demonstrates identity, session, abuse-protection, audit, and operational
+security boundaries; it is not the data platform's control plane.
 
-- [Design Freeze status](docs/design-freeze.md)
-- [Production Readiness Backlog](docs/production-readiness-backlog.md)
-- [Accepted ADR-001](docs/adr/001-dataset-bootstrap-and-atomic-activation.md)
-- [ADR-001 final design review](docs/design-reviews/adr-001-design-freeze-review-v2.md)
-- [Enterprise Data Platform Portal target design](docs/product/enterprise-data-platform-portal.md)
+The detailed business context is in the
+[business case](docs/business/business-case.md).
 
-Implemented:
+## What the project demonstrates
 
-- Phase 0 repository standards, documentation, tests, CI, and safe configuration.
-- Phase 1 PostgreSQL 16 OLTP source and deterministic payment-domain generator.
-- A versioned `settlement-v1` CSV contract with Decimal, timestamp, naming, business-key, and quality
-  rules.
-- Deterministic settlement scenario fixtures.
-- A Python batch service with SHA-256 identity, SQLite manifest lifecycle, immutable local Bronze,
-  file/record validation, partial rejection, quarantine, dry-run, and structured results.
-- A storage interface with local filesystem and MinIO adapters, private bucket bootstrap, immutable
-  conditional writes, checksummed metadata, bounded retries, and collision protection.
-- PostgreSQL logical replication with a dedicated non-superuser CDC role, explicit six-table
-  publication, Kafka 4 KRaft broker, Debezium Kafka Connect, idempotent connector bootstrap, and
-  schema-enabled CDC topics.
-- Bounded metadata-only topic inspection plus opt-in integration coverage for initial snapshots,
-  inserts, updates, delete/tombstone behavior, exact Decimals, timestamps, LSNs, and restart safety.
-- A Python `confluent-kafka` consumer with auto commit/store disabled, partition-aware contiguous
-  micro-batches, explicit-schema ZSTD Parquet, deterministic event/batch/object identity, SQLite
-  batch manifest, upload-before-commit recovery, and private MinIO poison quarantine.
-- Docker-independent unit/local batch tests and opt-in integration tests against real Kafka/MinIO.
-- A Python/PyArrow Bronze-to-Silver CLI with incremental discovery, explicit entity schemas,
-  Decimal/UTC normalization, CDC history/latest/current, contract-based settlement projection,
-  quality outputs, immutable Silver publication, and processing lineage.
-- Apache Airflow 3.3 with LocalExecutor, dedicated metadata PostgreSQL, a least-privilege `control`
-  schema, four bounded DAGs, retries/timeouts, aggregate quality gates, manual backfill, and
-  idempotent orchestration of the existing batch/CDC/Silver applications.
-- PR-PORTAL-001 Enterprise Data Platform Portal foundation with an independently deployable
-  Next.js shell, FastAPI BFF, versioned OpenAPI contract, generated TypeScript client, truthful
-  health/readiness, correlation, Problem Details, and isolated Docker startup.
+- deterministic payment-domain data and constrained PostgreSQL source contracts;
+- a near-real-time CDC path without a production latency SLO;
+- versioned settlement contracts, partial rejection, and quarantine;
+- immutable MinIO Bronze and Silver publication;
+- explicit Kafka offset, object, checksum, manifest, and lineage identities;
+- effectively-once behavior at selected publication and delivery boundaries;
+- replay-safe, idempotent recovery at named boundaries;
+- Airflow orchestration without moving business transformations into DAG files;
+- a separate OIDC Portal with PostgreSQL security authority and Redis abuse enforcement;
+- reproducible Portal build inputs, hardened first-party containers, and fail-closed scanning;
+- destructive migration validation isolated to disposable, run-owned PostgreSQL databases.
 
-Spark/Flink, executable dbt models, Snowflake, dashboards, Gold reconciliation, and a full
-observability platform are not implemented. Empty runtime/package scaffolds for those planned
-phases are intentionally not shipped; they will be introduced with executable behavior and tests.
-The Enterprise Data Platform Portal currently ships only its technical foundation. It is not yet a
-complete operational UI: authentication, authorization, inventories, infrastructure adapters, and
-mutations remain explicitly disabled and deferred.
+## Architecture overview
+
+```mermaid
+flowchart TB
+    subgraph DATA["Implemented local data plane"]
+        PG["PostgreSQL payments"] -->|"logical WAL"| DBZ["Debezium"]
+        DBZ --> KAFKA["Kafka CDC topics"]
+        KAFKA --> CDC["Manual-commit CDC consumer"]
+
+        CSV["Partner settlement CSV"] --> BATCH["Contract validation"]
+        BATCH -->|"invalid evidence"| QUARANTINE["MinIO quarantine"]
+
+        CDC -->|"immutable Parquet"| BRONZE["MinIO Bronze"]
+        BATCH -->|"raw CSV + metadata"| BRONZE
+        BRONZE --> SILVER["PyArrow Silver + quality"]
+
+        AIRFLOW["Airflow"] -. "bounded batch scheduling" .-> BATCH
+        AIRFLOW -. "CDC health checks" .-> DBZ
+        AIRFLOW -. "Silver orchestration" .-> SILVER
+        AIRFLOW --> CONTROL["PostgreSQL control state"]
+    end
+
+    subgraph PORTAL["Separate Portal security/runtime"]
+        BROWSER["Browser"] --> WEB["Next.js Portal Web"]
+        WEB --> API["FastAPI Portal API"]
+        API --> IDP["Keycloak / OIDC"]
+        API --> PDB["Portal PostgreSQL"]
+        API --> REDIS["Redis"]
+        API --> WORKERS["Audit + maintenance workers"]
+    end
+```
+
+The two subgraphs intentionally have no control edge. The Portal does not currently operate Kafka,
+MinIO, Airflow, or Silver resources.
 
 ## Implemented data flow
 
-```text
-Payment generator --------------------------> PostgreSQL OLTP
-                                                    |
-                                                    v
-                                    logical WAL -> Debezium -> Kafka CDC topics
-                                                                  |
-                                                                  v
-                                         partition micro-batch -> Parquet
-                                                   |                   |
-                                                   v                   v
-                                         SQLite batch manifest   MinIO Bronze
-                                                                  |
-                                             poison record -------+--> MinIO quarantine
-                                                                  |
-                                                                  v
-                                         PyArrow Silver processing -> MinIO Silver
-                                                                  |
-                                                                  v
-                                              Airflow schedules/control + PostgreSQL control schema
+### CDC path
 
+```text
+PostgreSQL payment source
+  -> Debezium CDC
+  -> Kafka
+  -> manual-commit CDC consumer
+  -> immutable MinIO Bronze Parquet
+  -> PyArrow Silver processing
+  -> Airflow orchestration and control evidence
+```
+
+The consumer disables automatic offset commit/store. It publishes and verifies immutable objects
+before synchronously committing the next Kafka offset. Exact source coordinates remain available
+for replay and lineage.
+
+### Settlement path
+
+```text
 Partner settlement CSV
-        |
-        v
-filename + SHA-256 + settlement-v1 validation
-        |
-        +--> SQLite manifest/control state
-        +--> storage interface --> local or MinIO Bronze (unaltered raw CSV + metadata)
-        `--> storage interface --> local or MinIO quarantine (invalid file or rejected rows)
+  -> filename, checksum, contract, and record validation
+  -> Bronze or quarantine
+  -> PyArrow Silver processing
+  -> quality evidence and Airflow control state
 ```
 
-## Repository map
+The raw source and its checksum remain authoritative evidence. Rejected files or rows are preserved
+under bounded quarantine rules rather than silently discarded.
 
-| Path | Responsibility |
-| --- | --- |
-| `contracts/batch/` | Versioned partner settlement file contracts. |
-| `src/ingestion/batch/` | Discovery, contract loading, validation, manifest, storage, fixtures, orchestration, and CLI. |
-| `data/` | Ignored local inbound, Bronze, quarantine, and control runtime data. |
-| `src/common/` | Typed configuration, database lifecycle, logging, and shared immutable storage backends. |
-| `src/generators/` | Phase 1 deterministic PostgreSQL domain generator. |
-| `infrastructure/postgres/init/` | Phase 1 OLTP schema, reference data, and indexes. |
-| `infrastructure/debezium/` | Versioned connector config and pinned bootstrap image. |
-| `scripts/cdc/` | Least-privilege PostgreSQL bootstrap, connector lifecycle, and safe topic inspection. |
-| `src/ingestion/cdc_consumer/` | Envelope parsing, batching, Parquet, manifest, storage, DLQ, recovery, Kafka loop, and CLI. |
-| `src/processing/silver/` | Bronze read, normalization, state/quality, Parquet, lineage manifest, and CLI. |
-| `src/orchestration/` | Airflow-neutral control store, health checks, quality gates, and application adapters. |
-| `airflow/dags/` | Four Phase 7 DAG definitions; no business transformation logic. |
-| `infrastructure/airflow/` | Pinned Airflow image and versioned control-schema DDL. |
-| `apps/portal-api/` | FastAPI Portal BFF foundation, health, adapters, errors, telemetry, and tests. |
-| `apps/portal-web/` | Next.js Portal shell, System Status, generated-client integration, and tests. |
-| `packages/portal-contracts/` | Checked-in OpenAPI and generated TypeScript API client. |
-| `docs/portal/` | Portal boundaries, contract, configuration, local development, testing, and troubleshooting. |
-| `infrastructure/cdc-consumer/` | Profile-gated pinned Python consumer image. |
-| `tests/unit/` | Docker-independent unit tests. |
-| `tests/integration/batch/` | Local filesystem and SQLite batch integration tests. |
-| `tests/integration/minio/` | Opt-in real MinIO storage and ingestion integration tests. |
-| `tests/integration/cdc/` | Opt-in PostgreSQL/Kafka/Debezium end-to-topic acceptance tests. |
-| `tests/integration/cdc_consumer/` | Opt-in real Kafka-to-MinIO Parquet/recovery acceptance tests. |
-| `docs/adr/` | Versioned production-readiness architecture decisions. |
-| `docs/design-reviews/` | Architecture-only freeze evidence and verdicts. |
-| `docs/product/` | Target product architecture; no Portal runtime implementation. |
-| `docs/` | Business context, contracts, architecture, roadmap, runbooks, and readiness backlog. |
+## Implemented capabilities
 
-## Setup
+| Capability                        | Status                       | Evidence / implementation                                                | Scope limitation                                    |
+| --------------------------------- | ---------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
+| Deterministic payment generator   | Implemented locally          | [`src/generators/`](src/generators/)                                     | Synthetic scale and identities only                 |
+| PostgreSQL payment source         | Implemented locally          | [`infrastructure/postgres/init/`](infrastructure/postgres/init/)         | Single-node local topology                          |
+| Debezium CDC                      | Implemented locally          | [CDC architecture](docs/architecture/cdc-architecture.md)                | Local connector, no production HA/security          |
+| Kafka topics and source envelopes | Implemented locally          | [CDC event contract](docs/data-model/cdc-event-contract.md)              | Database CDC topics, not business event topics      |
+| Manual-commit CDC consumer        | Implemented locally          | [CDC Bronze ingestion](docs/architecture/cdc-bronze-ingestion.md)        | Effectively-once only at named boundaries           |
+| Immutable MinIO Bronze            | Implemented locally          | [Storage abstraction](docs/architecture/storage-abstraction.md)          | Local MinIO, no production retention/KMS            |
+| Settlement contract validation    | Implemented locally          | [Settlement contract](docs/data-model/settlement-contract.md)            | One versioned partner contract                      |
+| Quarantine evidence               | Implemented locally          | [Settlement runbook](docs/runbooks/settlement-batch-ingestion.md)        | Local/reference operational policy                  |
+| PyArrow Silver                    | Implemented locally          | [Silver architecture](docs/architecture/silver-processing.md)            | No distributed table format                         |
+| Data-quality evidence             | Implemented locally          | [Silver quality rules](docs/data-model/silver-quality-rules.md)          | No Gold business classification                     |
+| Airflow DAGs and control state    | Implemented with limitations | [Orchestration](docs/architecture/orchestration.md)                      | LocalExecutor and local PostgreSQL                  |
+| Recovery and replay behavior      | Implemented with limitations | [CDC recovery](docs/runbooks/cdc-recovery.md)                            | Named component boundaries, not global exactly-once |
+| Portal OIDC with PKCE             | Implemented locally          | [Provider lifecycle](docs/portal/provider-session-lifecycle.md)          | Local Keycloak topology                             |
+| Opaque server-side sessions       | Implemented locally          | [Portal security ADRs](docs/adr/README.md#portal-security-design-freeze) | Production authorization deferred                   |
+| Redis abuse controls              | Implemented locally          | [Abuse protection](docs/portal/abuse-protection.md)                      | Development policy remains active                   |
+| Audit outbox and workers          | Implemented locally          | [Audit outbox](docs/portal/audit-outbox-and-maintenance.md)              | Local archive destination                           |
+| Portal observability              | Implemented with limitations | [Observability](docs/portal/observability.md)                            | Platform-wide observability is incomplete           |
+| Reproducible Portal inputs        | Implemented with limitations | [Reproducible artifacts](docs/portal/reproducible-artifacts.md)          | Byte-identical OCI digest not guaranteed            |
+| First-party container hardening   | Implemented locally          | [Container hardening](docs/portal/container-hardening.md)                | First-party Portal services only                    |
+| Security scanning                 | Implemented with limitations | [Security scanning](docs/portal/security-scanning.md)                    | Policy result is not production approval            |
+| Disposable migration validation   | Implemented locally          | [Portal testing](docs/portal/testing.md)                                 | Explicit isolated command only                      |
 
-Python 3.11 or newer is required. Docker is optional for the default local storage backend.
+## Deferred capabilities
+
+| Capability                               | Status   | Current boundary                                                |
+| ---------------------------------------- | -------- | --------------------------------------------------------------- |
+| Executable Snowflake path                | Deferred | No warehouse runtime or credentials                             |
+| dbt transformations                      | Deferred | No executable models                                            |
+| Dimensional marts                        | Deferred | Data path currently ends at Silver/control evidence             |
+| Gold reconciliation product              | Deferred | Settlement evidence exists; matching product does not           |
+| Dashboards and business analytics        | Deferred | No implemented dashboard runtime                                |
+| Portal Kafka adapter                     | Deferred | No Portal-to-Kafka operational capability                       |
+| Portal MinIO adapter                     | Deferred | No Portal object browsing or mutation                           |
+| Portal Airflow adapter                   | Deferred | No Portal DAG control                                           |
+| Portal Silver adapter                    | Deferred | No Portal dataset operations                                    |
+| Production callback policy               | Deferred | Local/test/development policy only                              |
+| Production abuse policy                  | Deferred | Development policy remains explicit                             |
+| Concrete non-environment secret provider | Deferred | Vendor-neutral boundary exists; environment adapter is concrete |
+| Production Keycloak topology             | Deferred | Local/reference identity provider                               |
+| High availability                        | Deferred | Single-node reference services                                  |
+| Multi-region operation                   | Deferred | No multi-region topology                                        |
+| Full disaster recovery                   | Deferred | Component recovery exists; no full DR guarantee                 |
+| Production deployment                    | Deferred | No approved deployment target or rollout                        |
+| SBOM                                     | Deferred | Reproducible artifact inputs exist                              |
+| Artifact signing                         | Deferred | No signing identity or release signature                        |
+| Provenance attestation                   | Deferred | No release attestation is issued                                |
+
+Deferred scope is not required to understand or evaluate the completed local reference
+implementation.
+
+## Reliability and failure semantics
+
+- Kafka offsets advance only after immutable Bronze publication and checksum verification.
+- Object keys, Kafka ranges, input checksums, and processing run IDs are deterministic or
+  explicitly recorded.
+- Settlement manifests own file lifecycle; CDC manifests own partition-range publication;
+  Silver lineage owns object processing; PostgreSQL control state owns cross-pipeline execution.
+- Same identity and checksum is idempotent; different content at the same immutable key is a hard
+  collision.
+- Invalid settlement and poison CDC evidence is quarantined before its source can advance.
+- Retries reuse component identities rather than hiding partial work.
+- The Portal audit outbox commits with the security action and delivers asynchronously with
+  `SKIP LOCKED`, leases, fencing, retries, and idempotent receipts.
+- Destructive migration checks require a unique disposable database, ownership marker, one-use
+  token, bounded role, and scoped teardown.
+
+The Portal audit worker intentionally retains one poison event to demonstrate dead-letter
+handling. Health is therefore **DEGRADED** rather than **DOWN**.
+
+Effectively-once behavior is demonstrated at selected immutable publication and delivery
+boundaries; the project does not claim exactly-once semantics across the entire platform.
+
+## Portal security/runtime boundary
+
+The Portal is a separate security and runtime engineering surface subordinate to the primary
+data-platform story. It demonstrates:
+
+- OIDC Authorization Code with PKCE;
+- opaque browser sessions with PostgreSQL server-side authority;
+- AES-GCM encrypted provider-token envelopes;
+- refresh rotation, generation fencing, revocation, logout, and crypto-erasure;
+- signed back-channel logout and durable replay protection;
+- Redis-backed distributed abuse enforcement with bounded fallback;
+- transactional audit/outbox delivery and maintenance workers;
+- structured logs, metrics, tracing, readiness, and correlation;
+- immutable build inputs, hardened images, and security scanning.
+
+The Portal is not a unified data-platform control plane, production administration plane,
+orchestration UI, or data-governance console. It does not yet operate Kafka, MinIO, Airflow, or
+Silver resources. See [Portal boundaries](docs/portal/architecture-boundaries.md) and the
+[Portal testing guide](docs/portal/testing.md).
+
+## Quick exploration
+
+This path is read-only or static and does not require full platform startup:
+
+1. Read the [architecture overview](#architecture-overview).
+2. Compare [implemented capabilities](#implemented-capabilities) with
+   [deferred capabilities](#deferred-capabilities).
+3. Choose a reviewer route below.
+4. Review the [data-platform demo guide](docs/demo/demo-guide.md) and
+   [Portal testing evidence](docs/portal/testing.md).
+5. Optionally run safe cross-platform validation:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate        # PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-cp .env.example .env             # PowerShell: Copy-Item .env.example .env
-```
-
-`.env` and the entire `data/` runtime tree are ignored by Git.
-
-## Enterprise Data Platform Portal foundation
-
-The Portal is a control-plane client with one guarded interaction path:
-
-```text
-Browser -> Next.js Portal Web -> FastAPI Portal API -> explicit versioned adapters
-```
-
-PR-PORTAL-001 exposes foundation health and safe build metadata only. It does not connect the
-browser to PostgreSQL, Kafka, Kafka Connect, MinIO, Airflow, or any control database, and it does
-not present planned operations as available.
-
-```bash
-make portal-install
-make portal-contracts
-make portal-up
-```
-
-Open:
-
-- Portal Web: <http://localhost:3000>
-- System Status: <http://localhost:3000/system-status>
-- Portal API health: <http://localhost:8010/health/live>
-- Development API documentation: <http://localhost:8010/docs>
-
-Validate with `make portal-test`, `make portal-contract-check`, and `make portal-e2e`; stop with
-`make portal-down`. See [Portal local development](docs/portal/local-development.md) and
-[architecture boundaries](docs/portal/architecture-boundaries.md).
-
-## Generate settlement fixtures
-
-```bash
-python -m ingestion.batch.cli generate-settlement-fixtures \
-  --output-dir data/inbound/settlements \
-  --partner-id VCB \
-  --settlement-date 2026-07-22 \
-  --seed 42
-```
-
-## Ingest settlements
-
-```bash
-python -m ingestion.batch.cli ingest-settlements \
-  --input-dir data/inbound/settlements \
-  --partner-id VCB \
-  --contract contracts/batch/settlement_v1.yml
-```
-
-Use `--file` for one file, `--dry-run` for validation without persistent writes, or
-`--fail-on-rejected-records` for strict file quarantine. The default permits partial row rejection
-while preserving the complete raw source in Bronze.
-
-To use private MinIO buckets, put non-production local values in untracked `.env`, then run:
-
-```bash
-make minio-up
-python -m ingestion.batch.cli ingest-settlements \
-  --storage-backend minio \
-  --input-dir data/inbound/settlements \
-  --partner-id VCB \
-  --contract contracts/batch/settlement_v1.yml
-```
-
-MinIO manifests store `s3://fintech-bronze/...` and `s3://fintech-quarantine/...` URIs. The source
-bytes are unchanged; metadata headers contain only an explicit non-secret allowlist.
-
-GNU Make equivalents:
-
-```bash
-make generate-settlement-fixtures
-make ingest-settlements
-make ingest-settlements-minio
-```
-
-See the [settlement ingestion runbook](docs/runbooks/settlement-batch-ingestion.md) for manifest
-states and replay, and the [local MinIO runbook](docs/runbooks/local-minio.md) for object storage.
-
-## PostgreSQL source
-
-The Phase 1 source remains unchanged:
-
-```bash
-docker compose up -d --wait postgres
-make generate-data GENERATOR_ARGS="--once --seed 20260722 --customers 50 --merchants 15 --transactions 250"
-```
-
-See the [local PostgreSQL runbook](docs/runbooks/local-postgres.md).
-
-## PostgreSQL CDC to Kafka
-
-Configure ignored `.env`, generate source rows before the first connector registration when you
-want to exercise the initial snapshot, then start the bounded Phase 4 stack:
-
-```bash
-make postgres-up
-make generate-data GENERATOR_ARGS="--once --seed 20260722 --customers 50 --merchants 15 --transactions 250"
-make cdc-up
-make cdc-status
-make cdc-inspect CDC_TABLE=payment_transactions
-```
-
-The six CDC topics follow `fintech.cdc.payments.<table>`. JSON converters keep schemas and the full
-Debezium envelope. `NUMERIC(18,2)` uses Kafka Connect Decimal bytes (`precise`), never a binary
-floating-point representation. Inspection prints primary keys and operational metadata only, not
-full customer/payment payloads. `make cdc-down` removes only connector/Kafka containers and retains
-PostgreSQL, MinIO, and the Kafka volume.
-
-See [CDC architecture](docs/architecture/cdc-architecture.md), the
-[CDC event contract](docs/data-model/cdc-event-contract.md), and the
-[local Kafka/Debezium runbook](docs/runbooks/local-kafka-debezium.md).
-
-## Reliable CDC Bronze consumer
-
-Run a bounded pass after Kafka, Connect, and MinIO are healthy:
-
-```bash
-python -m ingestion.cdc_consumer.cli run --storage-backend minio --once
-```
-
-The consumer subscribes only to the configured six-table allowlist. It stores one immutable object
-per topic/partition/contiguous offset range, verifies its checksum, records `UPLOADED`, synchronously
-commits `offset_end + 1`, and only then records `COMMITTED`. A replay reuses the same object when its
-checksum agrees and fails rather than overwriting when it differs. Malformed records are written to
-the private quarantine bucket before their source offsets advance.
-
-```bash
-make cdc-consumer-run
-make cdc-consumer-once
-make inspect-cdc-bronze
-```
-
-The Compose `cdc-consumer` service is behind the `cdc-consumer` profile, so core infrastructure does
-not automatically start a long-running consumer. See [CDC Bronze architecture](docs/architecture/cdc-bronze-ingestion.md),
-the [Bronze schema](docs/data-model/cdc-bronze-schema.md), and the
-[consumer runbook](docs/runbooks/cdc-consumer.md).
-
-## Bronze to Silver
-
-Process bounded CDC or settlement Bronze objects with local or MinIO storage:
-
-```bash
-python -m processing.silver.cli process-cdc \
-  --storage-backend minio --input-prefix cdc/ --max-objects 10
-python -m processing.silver.cli process-settlements \
-  --storage-backend minio --input-prefix settlements/
-```
-
-CDC produces immutable history, latest-all (including deletes), active current, append-only
-transaction events, rejections, and unresolved-reference evidence. Settlement processing applies
-`settlement-v1` and retains Decimal/UTC types; it does not reconcile. Completed inputs are skipped
-unless `--force-reprocess`; dry-run writes no manifest or object.
-
-See [Silver architecture](docs/architecture/silver-processing.md), the
-[Silver data model](docs/data-model/silver-data-model.md), and the
-[Silver runbook](docs/runbooks/silver-processing.md).
-
-## Airflow orchestration
-
-After replacing Airflow secret placeholders in ignored `.env`:
-
-```bash
-make airflow-build
-make airflow-init
-make airflow-up
-make airflow-dags-list
-```
-
-Airflow runs the settlement pipeline, a bounded CDC health/control DAG, dependency-aware CDC Silver
-processing, and a manual validated backfill. The long-running CDC consumer remains outside Airflow.
-Central PostgreSQL control state tracks pipeline/task aggregates and quality results while the
-three existing SQLite manifests remain fine-grained sources of truth.
-
-See [orchestration architecture](docs/architecture/orchestration.md), the
-[control-plane boundary](docs/architecture/control-plane.md), and the
-[local Airflow runbook](docs/runbooks/airflow-local.md).
-
-## Quality checks
-
-```bash
-ruff check .
-ruff format --check .
-pytest -m "not integration"
-pytest -m batch_integration
-RUN_MINIO_INTEGRATION=1 pytest -m minio_integration
-RUN_CDC_INTEGRATION=1 pytest -m cdc_integration
-RUN_CDC_CONSUMER_INTEGRATION=1 pytest -m cdc_consumer_integration
-RUN_SILVER_INTEGRATION=1 pytest -m silver_integration
-python -m yamllint .
+python scripts/security/scan.py policy
+python scripts/portal/verify_container_hardening.py
 docker compose --env-file .env.example config --quiet
 ```
 
-PostgreSQL integration tests remain opt-in through `TEST_DATABASE_URL`. MinIO and CDC tests require
-their healthy services and explicit run flags. `make validate` remains the fast default gate; real
-infrastructure suites have dedicated targets.
+These commands do not run migrations, reset databases, delete volumes, rebuild images, or start the
+full stack. When GNU Make is available, `make help` lists the wider repository command surface.
 
-## Documentation
+## Demo and evidence paths
+
+| Path                         | Start here                                                                                                                                                   | Current status                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Architecture/evidence review | [Business case](docs/business/business-case.md), then this README                                                                                            | Available                                               |
+| Data-platform demo           | [Demo guide](docs/demo/demo-guide.md) and [demo script](docs/demo/demo-script.md)                                                                            | Available for local rehearsal                           |
+| Portal-focused review        | [Local development](docs/portal/local-development.md) and [testing](docs/portal/testing.md)                                                                  | Separate from the data-platform demo                    |
+| Full verification            | [Portal testing](docs/portal/testing.md) and repository `Makefile`                                                                                           | Commands are explicit; some require disposable services |
+| Security deep dive           | [Scanning](docs/portal/security-scanning.md), [hardening](docs/portal/container-hardening.md), and [threat model](docs/portal/pr-portal-002-threat-model.md) | Current first-party evidence                            |
+
+The final unified demo/evidence package belongs to FF-05. A sanitized screenshot bundle, recorded
+video, offline fallback pack, and final release manifest are not currently claimed.
+
+## Verification snapshot
+
+The latest local checkpoint recorded:
+
+| Surface                         | Result                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| Portal backend                  | 272 passed, 41 skipped, 6 destructive deselected                                      |
+| Disposable Portal integration   | 56 passed                                                                             |
+| Disposable migration validation | 6 passed                                                                              |
+| Foundation                      | 289 passed, 2 skipped, 34 deselected                                                  |
+| Real Redis integration          | 4 passed                                                                              |
+| Portal Web                      | 29 tests; format, lint, typecheck, and build passed                                   |
+| OpenAPI                         | Unchanged; SHA-256 `9fab4ac5b9e41dab87f648d2e797a99caefe51fefacacf4407df97f694471fb2` |
+| Alembic                         | Single head `008_audit_outbox_and_maintenance`                                        |
+| Security source/dependency scan | 16 findings, 0 blocking                                                               |
+| Exact image scan                | 1,340 findings, 0 blocking under current policy                                       |
+| Exception register              | 46 active bounded records; none expired                                               |
+| Container hardening             | PASS                                                                                  |
+
+Passing policy means no blocking regression under the current policy. It does not mean the images
+are vulnerability-free or production-authorized.
+
+## Security posture
+
+Five OCI-digest-pinned scanners cover first-party source, immutable dependency locks, tracked
+secrets, exact container images, Git history, and GitHub Actions:
+
+- Semgrep CE;
+- OSV-Scanner;
+- Gitleaks;
+- Trivy;
+- zizmor.
+
+The policy fails closed on scanner/input identity problems, stale mandatory data, unsafe reports,
+confirmed secrets, expired exceptions, and unsupported first-party Critical/High findings.
+Reports are normalized and sanitized. Exceptions are fingerprint-specific, owned, approved,
+time-bounded, and review-triggered.
+
+There are no remaining fixed-available first-party Critical/High image findings. Ten
+first-party High/no-fix findings remain with indirect reachability classified as unknown and with
+bounded dispositions through `2026-09-27`. Verified condition-not-present findings have exact
+asset/package evidence. Vendor-image findings remain report-only. These facts do not grant
+production security authorization.
+
+See the [security scanning boundary and current disposition](docs/portal/security-scanning.md).
+
+## Known limitations
+
+| Limitation                                   | Consequence                                                                  |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| Local/reference deployment                   | Service topology and evidence are local, not a production rollout            |
+| No HA or multi-region                        | Single-node services cannot support availability claims                      |
+| No full DR guarantee                         | Component recovery is tested, but no complete recovery objective is approved |
+| Data path ends at Silver and Airflow control | Warehouse, Gold, and analytics outputs do not run                            |
+| No executable warehouse/dbt/dashboard path   | Those tools are not implementation claims                                    |
+| No Portal data-plane adapters                | Portal cannot operate Kafka, MinIO, Airflow, or Silver                       |
+| Local Keycloak topology                      | Production identity topology and authorization remain deferred               |
+| Environment-only concrete secret provider    | Vendor-neutral abstraction exists without an external provider               |
+| Production callback/abuse policy deferred    | Valid configuration is not production security authorization                 |
+| Partial platform observability               | Portal telemetry exists; platform-wide operations coverage is incomplete     |
+| OCI byte identity not guaranteed             | Inputs and identities are immutable/measured, not byte-identical             |
+| SBOM/signing/provenance deferred             | No supply-chain release attestation exists                                   |
+| Vendor image findings report-only            | Vendor risk requires a separate release disposition                          |
+| Ten first-party High/no-fix dispositions     | Indirect reachability remains unknown and time-bounded                       |
+| Intentional dead letter                      | Audit-worker health remains DEGRADED as validation evidence                  |
+| Public fallback demo pending FF-05           | No final sanitized offline evidence bundle is claimed                        |
+| Current branch is not pushed                 | Remote CI and public visibility do not include this checkpoint               |
+
+## Choose your path
+
+### Data Engineer
+
+[Business problem](#business-problem) -> [CDC and batch flow](#implemented-data-flow) ->
+[Bronze storage](docs/architecture/storage-abstraction.md) ->
+[Silver processing](docs/architecture/silver-processing.md) ->
+[Airflow orchestration](docs/architecture/orchestration.md) ->
+[quality rules](docs/data-model/silver-quality-rules.md)
+
+### Platform Engineer
+
+[Architecture](#architecture-overview) -> [reliability semantics](#reliability-and-failure-semantics)
+-> [recovery](docs/runbooks/orchestration-recovery.md) ->
+[container hardening](docs/portal/container-hardening.md) ->
+[security scanning](docs/portal/security-scanning.md)
+
+### Security Reviewer
+
+[Portal boundary](#portal-securityruntime-boundary) ->
+[OIDC/session lifecycle](docs/portal/provider-session-lifecycle.md) ->
+[abuse protection](docs/portal/abuse-protection.md) ->
+[security scanning](docs/portal/security-scanning.md) ->
+[bounded exceptions](docs/portal/security-scanning.md#ff-02-current-image-disposition)
+
+### Hiring Manager
+
+[Project summary](#what-the-project-demonstrates) ->
+[capability matrix](#implemented-capabilities) ->
+[verification](#verification-snapshot) ->
+[limitations](#known-limitations)
+
+### Demo Reviewer
+
+[Demo guide](docs/demo/demo-guide.md) -> [demo script](docs/demo/demo-script.md) ->
+[expected checklist](docs/demo/demo-checklist.md). The final public fallback package remains an
+FF-05 gate.
+
+## Repository map
+
+| Path                                               | Reviewer value                                                |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| [`src/generators/`](src/generators/)               | Deterministic payment-domain source data                      |
+| [`src/ingestion/`](src/ingestion/)                 | Settlement and CDC ingestion implementations                  |
+| [`src/processing/silver/`](src/processing/silver/) | Typed Silver and quality processing                           |
+| [`src/orchestration/`](src/orchestration/)         | Airflow-neutral control and execution boundaries              |
+| [`airflow/`](airflow/)                             | DAG definitions and orchestration tests                       |
+| [`infrastructure/`](infrastructure/)               | Local service images, bootstrap, and least-privilege setup    |
+| [`apps/portal-api/`](apps/portal-api/)             | FastAPI identity, session, abuse, audit, and runtime services |
+| [`apps/portal-web/`](apps/portal-web/)             | Next.js Portal and browser security boundary                  |
+| [`scripts/`](scripts/)                             | Bounded lifecycle, validation, and operational entrypoints    |
+| [`security/`](security/)                           | Scanner identities, policy, baseline, and exceptions          |
+| [`tests/`](tests/)                                 | Foundation unit and integration evidence                      |
+| [`docs/architecture/`](docs/architecture/)         | Data-platform engineering deep dives                          |
+| [`docs/portal/`](docs/portal/)                     | Portal security/runtime design and operations                 |
+| [`docs/demo/`](docs/demo/)                         | Current data-platform rehearsal material                      |
+| [`docs/adr/`](docs/adr/)                           | Architecture decisions and status registry                    |
+
+## Technology stack
+
+| Architectural role        | Technologies                                              |
+| ------------------------- | --------------------------------------------------------- |
+| Sources and CDC           | PostgreSQL, Debezium, Kafka                               |
+| Storage and processing    | MinIO, Parquet, PyArrow                                   |
+| Orchestration and control | Airflow, PostgreSQL, component manifests                  |
+| Portal                    | FastAPI, Next.js, PostgreSQL, Redis, Keycloak             |
+| Quality and security      | pytest, mypy, Ruff, Semgrep, OSV, Gitleaks, Trivy, zizmor |
+| Delivery                  | Docker Compose, GitHub Actions                            |
+
+Snowflake, dbt, Gold marts, and dashboards are deferred scope, not implemented runtime
+technologies.
+
+## Current checkpoint
+
+```text
+Branch:
+feat/portal-002-runtime-conformance
+
+Latest security checkpoint:
+44e61f98aaa070c16845425fb8adb8b7f1af44a6
+
+Feature state:
+Frozen
+
+Private review:
+Ready with limitations
+
+Security presentation gate:
+Cleared
+
+Canonical entrypoint:
+Implemented by FF-03
+
+Public presentation:
+Pending FF-04 through FF-06
+
+Push:
+Not performed
+```
+
+No remote CI result is claimed for the unpushed checkpoint.
+
+## Further reading
 
 - [Business case](docs/business/business-case.md)
-- [Requirements](docs/business/requirements.md)
-- [OLTP schema](docs/data-model/oltp-schema.md)
-- [Settlement contract](docs/data-model/settlement-contract.md)
-- [Source model](docs/data-model/source-model.md)
-- [Settlement batch runbook](docs/runbooks/settlement-batch-ingestion.md)
-- [Storage abstraction](docs/architecture/storage-abstraction.md)
-- [CDC architecture](docs/architecture/cdc-architecture.md)
-- [CDC event contract](docs/data-model/cdc-event-contract.md)
-- [CDC Bronze ingestion architecture](docs/architecture/cdc-bronze-ingestion.md)
-- [CDC Bronze Parquet schema](docs/data-model/cdc-bronze-schema.md)
-- [CDC consumer runbook](docs/runbooks/cdc-consumer.md)
-- [CDC recovery runbook](docs/runbooks/cdc-recovery.md)
-- [Silver processing architecture](docs/architecture/silver-processing.md)
-- [Silver data model](docs/data-model/silver-data-model.md)
-- [Silver quality rules](docs/data-model/silver-quality-rules.md)
-- [Silver processing runbook](docs/runbooks/silver-processing.md)
-- [Silver recovery runbook](docs/runbooks/silver-recovery.md)
-- [Local Kafka and Debezium runbook](docs/runbooks/local-kafka-debezium.md)
-- [Local MinIO runbook](docs/runbooks/local-minio.md)
-- [Current architecture state](docs/architecture/current-state.md)
-- [Production Readiness Backlog](docs/production-readiness-backlog.md)
-- [Design Freeze status](docs/design-freeze.md)
-- [Architecture Decision Records](docs/adr/README.md)
-- [Design Review process and evidence](docs/design-reviews/)
-- [Enterprise Data Platform Portal](docs/product/enterprise-data-platform-portal.md)
-- [Roadmap](docs/roadmap.md)
+- [Phase 7 data-plane snapshot](docs/architecture/current-state.md) — its Portal status predates the
+  completed Portal runtime track and is not authoritative for current Portal capability
+- [Target architecture](docs/architecture/target-architecture.md) — target context, not a current
+  implementation claim
+- [Implementation roadmap](docs/roadmap.md) — historical phase ordering; final claim
+  reconciliation belongs to FF-04
+- [CDC Bronze ingestion](docs/architecture/cdc-bronze-ingestion.md)
+- [Silver processing](docs/architecture/silver-processing.md)
+- [Airflow orchestration](docs/architecture/orchestration.md)
+- [Portal configuration](docs/portal/configuration.md)
+- [Portal security scanning](docs/portal/security-scanning.md)
+- [Architecture decisions](docs/adr/README.md)
+- [Current demo guide](docs/demo/demo-guide.md)
 
-## Security baseline
-
-- No credentials are required for local batch ingestion; MinIO values come only from environment
-  variables and secret-bearing configuration fields are excluded from representations.
-- PostgreSQL credentials remain environment variables and are never logged in full.
-- The Debezium role is separate from the application administrator, has replication plus explicit
-  schema/table read grants, and is actively verified as non-superuser.
-- Kafka and Kafka Connect bind only to loopback for local diagnostics; the inspection command
-  redacts row payloads and never creates a durable consumer group.
-- No card data, customer name, national ID, bank credential, or authentication token belongs in the
-  settlement contract.
-- Rejected-record evidence contains source financial references and must be treated as confidential.
-- CDC Parquet and poison evidence are confidential; logs/inspection omit keys and row payloads.
-- Silver and rejection Parquet are private/confidential; inspection exposes only schema, counts,
-  state flags, lineage, and checksums.
-- Buckets are private; anonymous access is explicitly disabled by bootstrap.
-- Local Kafka/Connect traffic is plaintext. TLS/SASL, external secret management, ACLs, retention
-  locking, and distributed deployment are future hardening work.
+The root README is the canonical reviewer entrypoint. Detailed documents provide evidence and
+historical context but do not override the implemented/deferred boundaries stated here.
