@@ -19,9 +19,9 @@ Sprint 06 tasks S06-01 through S06-05 COMPLETED
 FF-01 Validation isolation            COMPLETED
 FF-02 Security disposition            COMPLETED
 FF-03 Canonical entrypoint             COMPLETED
-FF-04 Architecture and claims          CURRENT
-FF-05 Demo and evidence                NEXT
-FF-06 Verification/publication         PENDING
+FF-04 Architecture and claims          COMPLETED
+FF-05 Demo and evidence                COMPLETED
+FF-06 Verification/publication         CURRENT
 ```
 
 Feature development is frozen. FF-04 through FF-06 may improve documentation, evidence,
@@ -73,12 +73,13 @@ adapters for Kafka, MinIO, Airflow, or Silver.
 | FF-01 | Isolate destructive migration validation      | Completed | Validation safety                       |
 | FF-02 | Remediate/disposition image findings          | Completed | Critical security/release evidence      |
 | FF-03 | Establish canonical repository entrypoint     | Completed | Documentation accuracy                  |
-| FF-04 | Reconcile architecture and claims             | Current   | Documentation accuracy                  |
-| FF-05 | Build sanitized demo/evidence package         | Pending   | Demo reliability and evidence           |
-| FF-06 | Run final verification and decide publication | Pending   | Verification and publishing preparation |
+| FF-04 | Reconcile architecture and claims             | Completed | Documentation accuracy                  |
+| FF-05 | Build sanitized demo/evidence package         | Completed | Demo reliability and evidence           |
+| FF-06 | Run final verification and decide publication | Current   | Verification and publishing preparation |
 
-FF-04 completion does not authorize a push. FF-05 must not fabricate screenshots or evidence.
-FF-06 must distinguish local verification from remote CI and production authorization.
+FF-04 reconciled architecture and claims. FF-05 produced sanitized evidence without fabricated
+screenshots. Neither checkpoint authorized a push. FF-06 must distinguish local verification from
+remote CI and production authorization.
 
 ## Deferred product/platform direction
 
